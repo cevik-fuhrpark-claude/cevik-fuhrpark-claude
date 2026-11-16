@@ -45,6 +45,12 @@ with sync_playwright() as p:
         check(q.evaluate('document.documentElement.scrollWidth') <= w, f'{lang}: kein Querscrollen')
         dl = api('GET', f'/api/vehicles/{VID}')['d'].get('drivers') or []
         check(any(d.get('user_id') == uid and not d.get('valid_to') for d in dl), f'{lang}: zugeordnet (nur Hinweis, keine Sperre)')
+        # Backlog 1517: Fahrerakte nennt denselben Hinweis beim zugeordneten Fahrzeug
+        q.goto(B + '/#/drivers/' + rec['d']['id']); q.wait_for_selector('[data-drvlicmm]', timeout=10000)
+        fh = q.locator('[data-drvlicmm]').first
+        check(fh.is_visible() and WARN[lang] in fh.inner_text(), f'{lang}: Hinweis in der Fahrerakte')
+        if SHOTS: fh.scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/fuehrerscheinklasse-akte-{lang}-{w}.png', full_page=False)
+        check(q.evaluate('document.documentElement.scrollWidth') <= w, f'{lang}: Fahrerakte ohne Querscrollen')
         check(not errs, f'{lang}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

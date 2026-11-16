@@ -42963,6 +42963,25 @@ await test('Backlog 1516 (Folge aus 1515, Blickwinkel „letzte Führerscheinkon
   }
 });
 
+await test('Backlog 1517 (Gegenrichtung zu 1514, Blickwinkel „Leitung trägt einen neuen Führerschein mit weniger Klassen ein, der Fahrer ist einem 18-t-Lkw zugeordnet“): Fahrerakte nennt je aktuell zugeordnetem Fahrzeug `license_mismatch` – nur Inhaber/Leitung, nicht der Fahrer selbst; passender Nachweis beendet den Hinweis; Oberfläche und Hilfe DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld();
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 1517', user_id: U.driver.id }); eq(dr.status, 201, JSON.stringify(dr.data));
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  const akte = async (c) => (await c.get(`/api/drivers/${dr.data.id}`)).data;
+  ok(!(await akte(U.fleet)).vehicles.some((v) => v.license_mismatch), 'ohne Klassen kein Hinweis');
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2033-01-31', evidence: 'Umtausch', license_classes: 'B, BE, C1, C1E' })).status, 201);
+  const v = (await akte(U.fleet)).vehicles.find((x) => x.id === V1);
+  eq(JSON.stringify(v.license_mismatch), JSON.stringify({ need: 'C', why: 'over_7_5', classes: 'B, BE, C1, C1E' }), 'Fahrerakte nennt den Hinweis beim Fahrzeug');
+  const own = await U.driver.get(`/api/drivers/${dr.data.id}`); eq(own.status, 200); ok(!own.data.vehicles.some((x) => x.license_mismatch), 'Fahrer selbst sieht ihn nicht');
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2033-01-31', evidence: 'korrigiert', license_classes: 'B, C, CE' })).status, 201);
+  ok(!(await akte(U.fleet)).vehicles.some((x) => x.license_mismatch), 'passender Nachweis → kein Hinweis');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-drvlicmm') && app.includes("x.vehicles.filter((v) => v.license_mismatch)"), 'Hinweis in der Fahrerakte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_drivers_s.split('|').some((x) => x.includes('C1E') && /Fahrerakte zeigt|Картка водія показує|driver file shows/.test(x)), `${l}: Hilfe nennt die Fahrerakte`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

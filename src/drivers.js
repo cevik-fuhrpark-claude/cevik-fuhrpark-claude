@@ -141,6 +141,12 @@ export async function driverDetail(env, user, envName, id) {
   const valid = downloads.find((x) => !x.cancelled_at);
   const tacho = hasCard || valid ? { ...tachoStatus(valid ? valid.downloaded_on : null, TACHO_RULE.card_days, berlinDate(), warnDaysOf(sm)), rule: TACHO_RULE } : null;
   const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)`).bind(d.user_id, nowIso()).all()).results : [];
+  // Backlog 1517 (Gegenrichtung zu 1514, Blickwinkel „Leitung trägt einen neuen Führerschein mit weniger Klassen ein, der Fahrer ist einem 18-t-Lkw zugeordnet“):
+  // die Fahrerakte nennt je aktuell zugeordnetem Fahrzeug den Klassenhinweis – nur Inhaber/Leitung; höchstens 5 Fahrzeuge (je eine Abfrage)
+  if (isMgr(user) && d.user_id && vehicles.length) {
+    const { licenseMismatches } = await import('./vehicles.js');
+    for (const v of vehicles.slice(0, 5)) { const m = (await licenseMismatches(env, envName, v.id, [d.user_id])).get(d.user_id); if (m) v.license_mismatch = m; }
+  }
   // Fahrer selbst: Kontrollverlauf ohne Vermerk/Prüfende der Leitung (wie der interne Vermerk der Akte; App zeigt ihn nur der Leitung, 19.10.2026)
   const checksOut = isMgr(user) ? checks : checks.map(({ note, checked_by, checked_by_name, ...r }) => r);
   // ebenso Bemerkung/Erfassende der Auslesungen und Erfassende der Nachweise (20.10.2026: Fahrer sah den Vermerk der Leitung)

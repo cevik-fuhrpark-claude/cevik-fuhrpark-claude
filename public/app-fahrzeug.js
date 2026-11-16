@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindChecklist, bindFormDraft, bindTachoCancel, cDesc, caseList, checkLabel, checklistHtml, collectChecklist, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, hj, hoMissing, huNote, isMgr, isVehHash, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmWarn, langAttr, lostDup, lostIs, lostMark, mEv, mPlanNote, mPlanNoteField, mPlanPast, mPlanPastChip, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, nowMs, offDayWatch, onPage, pastWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, scrollBeh, searchKey, siteKeyUi, siteWsHints, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateNextAction, uid, unitIn, vOverdue, vehSig, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_FMT, CT_KINDS, DEFECT_RESULTS, OPEN_CASE_ST, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, TST, VEH_SORTS, afLink, announceHits, api, bDate, bindChecklist, bindFormDraft, bindTachoCancel, cDesc, caseList, checkLabel, checklistHtml, collectChecklist, comboClearV, conflictKeep, conflictMine, ctChip, ctLines, ctRet, decIn, download, dqDetail, dur, envFn, esc, eur, eurIst, fMsg, fcLabel, fileUrl, fmtD, fmtDT, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, formVals, hashNorm, hj, hoMissing, huNote, isMgr, isVehHash, kmDigHtml, kmDigitsWarn, kmFcHint, kmFcHtml, kmInputOk, kmWarn, langAttr, licText, lostDup, lostIs, lostMark, mEv, mPlanNote, mPlanNoteField, mPlanPast, mPlanPastChip, mY, maintOrderHtml, mayReport, mk, mkR, noTr, noneP, nowMs, offDayWatch, onPage, pastWatch, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, render, rkFor, scrollBeh, searchKey, siteKeyUi, siteWsHints, sortPref, stackTables, supplierLabel, t, tachoHistList, tireAge, tireSizeSame, tlHash, tmAge, tmKmRej, tn, toast, todayMark, translateNextAction, uid, unitIn, vOverdue, vehSig, vlAt, vsDef, warrChip, wsForSite, wsOptions } from './app-main.js';
 
 
 const doneToast = (r) => toast(r && r.older_than_last ? '✓ ' + t('mt_older_saved').replace('{d}', fmtD(r.last_done_date)) : '✓');
@@ -199,9 +199,6 @@ async function viewVehicles() {
     const n = $$('#vl a').filter((a) => !a.hidden).length; const nh = $('#vnohit'); if (nh) nh.hidden = !(q && !n);
     clearTimeout(vAnn); vAnn = setTimeout(() => announceHits(n), 400); };
 }
-
-
-const licText = (m) => t('lic_mm').replace('{have}', m.classes).replace('{need}', t('lic_need_' + m.need)).replace('{why}', t('lic_why_' + m.why));
 
 
 const lkText = (x) => t('drv_lc_issue').replace('{date}', fmtD(x.checked_on)).replace('{result}', t('lcr_' + x.result));
