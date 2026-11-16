@@ -580,19 +580,30 @@ export async function getCaseDetail(env, user, envName, caseId) {
     const PK = PLATE_KEY_SQL;
     const coupledRows = (await env.DB.prepare(`SELECT o.id AS vehicle_id, o.plate, o.kind, x.id, x.case_no, x.status, x.priority, x.safety_lock, substr(x.description, 1, 120) AS description,
         ${isManager(user) ? "(SELECT json_object('insurer', ic.insurer, 'claim_no', ic.claim_no, 'police_station', ic.police_station, 'police_ref', ic.police_ref, 'police_reported_on', ic.police_reported_on) FROM insurance_claims ic WHERE ic.case_id=x.id)" : 'NULL'} AS claim,
-        ${wsOnly ? "(SELECT COUNT(*) FROM cases y WHERE y.vehicle_id=o.id AND y.environment=?2 AND y.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') AND COALESCE(y.workshop_site,'')<>?3)" : '0'} AS elsewhere
+        ${wsOnly ? "(SELECT COUNT(*) FROM cases y WHERE y.vehicle_id=o.id AND y.environment=?2 AND y.status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') AND COALESCE(y.workshop_site,'')<>?3)" : '0'} AS elsewhere,
+        -- Backlog 1520 (Blickwinkel „Zugmaschine steht in der Werkstatt – UVV/SP des fest gekoppelten Aufliegers ist ebenfalls fällig“): gespeicherte
+        -- Prüftermine des gekoppelten Fahrzeugs im selben Fenster wie die eigenen (Vorwarnzeit, mindestens 30 Tage) bzw. überfällig; erledigte Rückrufe nie
+        (SELECT json_group_array(json_object('kind', m.kind, 'title', m.title, 'next_due_date', m.next_due_date)) FROM maintenance_rules m WHERE m.vehicle_id=o.id
+          AND m.next_due_date IS NOT NULL AND NOT (m.kind='Rückruf' AND m.last_done_date IS NOT NULL)
+          AND m.next_due_date <= date(?4, '+' || MAX(30, COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key='maintenance_warn_days' AND trim(value)<>''), 30)) || ' days')) AS o_due
       FROM vehicles o JOIN vehicles v ON v.id=?1
       LEFT JOIN cases x ON x.vehicle_id=o.id AND x.environment=?2 AND x.status IN ('gemeldet','werkstatt_freigegeben','in_reparatur','wartet_teile','abschlusskontrolle') ${wsOnly ? "AND x.workshop_site=?3 AND x.status<>'gemeldet'" : ''}
       WHERE o.active=1 AND o.id<>v.id AND ${COUPLING_PREFERRED_SQL('v')} AND ${COUPLING_PREFERRED_SQL('o')} AND (
         (v.kind='anhaenger' AND o.kind='lkw' AND ${PK('o.trailer_plate')}<>'' AND ${PK('o.trailer_plate')}=${PK('v.plate')})
         OR (v.kind='lkw' AND o.kind='anhaenger' AND ${PK('v.trailer_plate')}<>'' AND ${PK('o.plate')}=${PK('v.trailer_plate')}))
-      ORDER BY o.plate, x.created_at DESC LIMIT ${COUPLED_CASE_MAX + 1}`).bind(...[c.vehicle_id, envName, ...(wsOnly ? [wsOnly] : [])]).all()).results;
+      ORDER BY o.plate, x.created_at DESC LIMIT ${COUPLED_CASE_MAX + 1}`).bind(c.vehicle_id, envName, wsOnly, berlinDate()).all()).results;
     const coupledTruncated = coupledRows.filter((r) => r.id).length > COUPLED_CASE_MAX;
     const coupled = [];
     for (const r of coupledRows) {
       let g = coupled.find((x) => x.vehicle_id === r.vehicle_id);
       // Backlog 1083: Werkstatt – gekoppeltes Fahrzeug in einem Auftrag einer anderen Werkstatt nur als Zustand (ohne Standort, Nummer, Text)
-      if (!g) { g = { vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind, open_cases: [], ...(wsOnly ? { elsewhere: r.elsewhere > 0 } : {}) }; coupled.push(g); }
+      if (!g) {
+        // Backlog 1520: fällige Prüfungen des gekoppelten Fahrzeugs (früheste zuerst, höchstens COUPLED_DUE_MAX, Rest als Anzahl – nie still kappen)
+        const od = (r.o_due ? JSON.parse(r.o_due) : []).sort((a, b) => a.next_due_date.localeCompare(b.next_due_date));
+        g = { vehicle_id: r.vehicle_id, plate: r.plate, kind: r.kind, open_cases: [], ...(wsOnly ? { elsewhere: r.elsewhere > 0 } : {}),
+          ...(od.length ? { inspections_due: od.slice(0, COUPLED_DUE_MAX).map((m) => (m.title ? m : { kind: m.kind, next_due_date: m.next_due_date })), ...(od.length > COUPLED_DUE_MAX ? { inspections_due_more: od.length - COUPLED_DUE_MAX } : {}) } : {}) };
+        coupled.push(g);
+      }
       if (r.id && g.open_cases.length + coupled.reduce((n, x) => n + (x === g ? 0 : x.open_cases.length), 0) < COUPLED_CASE_MAX) g.open_cases.push({ id: r.id, case_no: r.case_no, status: r.status, priority: r.priority, safety_lock: r.safety_lock, description: r.description, ...(r.claim ? { claim: JSON.parse(r.claim) } : {}) });
     }
     const others = othersRows.map(({ total, ...o }) => o);
@@ -750,6 +761,7 @@ function warrantyDateRaw(v) {
 // Nach „Nacharbeit“ wurde erneut am Fahrzeug gearbeitet – die alte Kontrolle belegt diesen Stand nicht mehr.
 // Weiterer offener, gesperrter Vorgang am Fahrzeug oder am fest gekoppelten Gespann (Kopplung laut Stammliste) – Vorgangsnummer oder null
 const COUPLED_CASE_MAX = 10; // Backlog 633: offene Vorgänge des gekoppelten Fahrzeugs im Vorgangsdetail
+const COUPLED_DUE_MAX = 5; // Backlog 1520: fällige Prüfungen des gekoppelten Fahrzeugs im Vorgangsdetail
 async function otherLockCaseNo(env, c) {
   const PK = PLATE_KEY_SQL;
   const r = await env.DB.prepare(`SELECT x.case_no, (SELECT p.plate FROM vehicles p WHERE p.id=x.vehicle_id) AS plate FROM cases x WHERE x.environment=?1 AND x.id<>?2 AND x.safety_lock=1 AND x.status NOT IN ('fahrzeug_freigegeben','abgelehnt')

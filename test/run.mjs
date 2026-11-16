@@ -43057,6 +43057,40 @@ await test('Backlog 1519 (Folge aus 1518, Blickwinkel „Leitung/Werkstatt legt 
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1519'), 'API.md');
 });
 
+await test('Backlog 1520 (Blickwinkel „Zugmaschine steht in der Werkstatt – UVV/SP des fest gekoppelten Aufliegers ist ebenfalls fällig“): Vorgangsdetail nennt beim gekoppelten Fahrzeug `inspections_due` (Fenster wie eigene Prüfungen, überfällig eingeschlossen, früheste zuerst, höchstens 5 + Anzahl) – erledigte Rückrufe und ferne Fristen nie; Werkstatt sieht es, Fahrer nicht; Oberfläche und Hilfe DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const t1 = await U.own.post('/api/vehicles', { plate: 'TQ-AD 1520', vin: 'WDB96340310991520', site: 'Dortmund', trailer_plate: 'TQ-AN 1520' }); eq(t1.status, 201, JSON.stringify(t1.data));
+  const a1 = await U.own.post('/api/vehicles', { plate: 'TQ-AN 1520', vin: 'WDB96340310991521', site: 'Dortmund', kind: 'anhaenger' }); eq(a1.status, 201, JSON.stringify(a1.data));
+  const T = t1.data.id; const A = a1.data.id;
+  const rule = async (vid, kind, due, extra = {}) => { const x = await U.fleet.post(`/api/vehicles/${vid}/maintenance`, { kind, next_due_date: due, evidence: 'Test 1520', ...extra }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  await rule(A, 'UVV', day(-3));
+  await rule(A, 'Feuerlöscher', day(20));
+  await rule(A, 'Bremsen', day(200)); // außerhalb des Fensters
+  const id = await newCase({ vehicle_id: T, description: 'Spiegel rechts abgebrochen' }, U.fleet);
+  const det = async (u, cid = id) => (await u.get(`/api/cases/${cid}`)).data;
+  let d = await det(U.fleet); let g = (d.vehicle_info.coupled || []).find((x) => x.vehicle_id === A);
+  ok(g, 'gekoppelter Auflieger genannt ' + JSON.stringify(d.vehicle_info.coupled));
+  eq(JSON.stringify(g.inspections_due), JSON.stringify([{ kind: 'UVV', next_due_date: day(-3) }, { kind: 'Feuerlöscher', next_due_date: day(20) }]), 'überfällig + bald fällig, früheste zuerst');
+  eq(g.inspections_due_more, undefined, 'keine weiteren');
+  // Werkstatt sieht es nach der Freigabe, Fahrer nie
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'Spiegel')).status, 200);
+  d = await det(U.ws); g = (d.vehicle_info.coupled || []).find((x) => x.vehicle_id === A); ok(g && g.inspections_due.length === 2, 'Werkstatt ' + JSON.stringify(g));
+  // Vorgang am Auflieger nennt die Zugmaschine – ohne fällige Prüfungen kein Feld
+  const id2 = await newCase({ vehicle_id: A, description: 'Plane eingerissen' }, U.fleet);
+  d = await det(U.fleet, id2); g = (d.vehicle_info.coupled || []).find((x) => x.vehicle_id === T); ok(g && !('inspections_due' in g), 'Zugmaschine ohne fällige Prüfungen ' + JSON.stringify(g));
+  // erledigter Rückruf zählt nicht, offener ohne Frist nicht (nur mit Frist), mehr als 5 → Anzahl
+  for (const k of ['Tachograph', 'Verbandkasten', 'Ladungssicherung', 'Hydraulik/Aufbau']) await rule(A, k, day(10));
+  d = await det(U.fleet); g = (d.vehicle_info.coupled || []).find((x) => x.vehicle_id === A);
+  eq(g.inspections_due.length, 5, 'höchstens 5'); eq(g.inspections_due_more, 1, 'Rest als Anzahl'); eq(g.inspections_due[0].kind, 'UVV', 'überfällige zuerst');
+  ok(!g.inspections_due.some((m) => m.kind === 'Bremsen'), 'ferne Frist nicht');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-vicoupleddue') && app.includes("t('vi_coupled_due')") && app.includes('g.inspections_due_more'), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vi_coupled_due && STRINGS[l].help_ws_s.split('|').some((p) => /Gespann in der Werkstatt|Зчіпка в майстерні|Combination in the workshop/.test(p)), `${l}: Text und Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1520'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
