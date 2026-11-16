@@ -1110,6 +1110,7 @@ export const PLURALS = { de: {}, uk: {}, en: {} };
 // 23.10.2026 (Teilagenten Inhaber am Handy / Fremdvergabe): Teilausfall der Startseite, „Erledigt“-Rückfrage, Fremdleistung ersetzt eigene Kosten
 // 23.10.2026 (Teilagenten geteiltes Werkstatt-Konto / Rückrufaktion / Monatswechsel): Wiederholung erkannt, Stundensatz von heute, Stichtag der Kennzahlen
 // 23.10.2026 (Teilagenten Anhänger abgestellt / Urlaubsrückkehr / neuer Standort)
+// Backlog 1525 (Blickwinkel „Leitung sattelt in den Stammdaten einen anderen Auflieger an die Zugmaschine“)
 // [CLAUDE] Backlog 188 (Jahresabschluss): Rückfrage bei Ratenänderung an einem Vertrag, der vor dem laufenden Monat begann
 // [CLAUDE] Backlog 189 (Jahresabschluss): nachträglich erfasste Arbeitszeit im Kostenbericht, Rückfrage bei Arbeitsdatum vor dem laufenden Monat
 // [CLAUDE] Backlog 190 (Werkstatt geschlossen): bisherige, nicht mehr aktive Werkstatt eines Kontos bleibt beim Bearbeiten ausgewählt

@@ -629,7 +629,7 @@ async function upsertVehicleRows(env, rows, { keepExisting = false, keepActive =
   return kindChanged;
 }
 
-export async function upsertVehicle(env, user, body) {
+export async function upsertVehicle(env, user, body, envName = 'test') {
   if (!isManager(user)) throw forbidden();
   const row = vehicleRow(user, body);
   // „Stammdaten bearbeiten“ (keep_active) lässt außer Betrieb genommene außer Betrieb; erneutes Anlegen mit vorhandener FIN nimmt es wieder
@@ -692,7 +692,29 @@ export async function upsertVehicle(env, user, body) {
     // „jetzt übergebbar“ (Werkstatt freigegeben) und „nicht übergebbar“ (in Arbeit) und lässt die Werkstatt des neuen Standorts weg
     siteHints = { site_changed: true, open_workshop_cases: ws.reduce((a, x) => a + x.n, 0), open_workshop_sites: [...new Set(ws.map((x) => x.site))], open_workshop_by_status: ws, planned_appointments: h.p || 0, coupled_other_site: coupled, drivers_other_site: drvOther };
   }
-  return { id: row.id, duplicate_plates: duplicates, ...(trailerOf.length ? { trailer_of_trucks: trailerOf, trailer_plate_old: before.plate } : {}), ...siteHints };
+  // Backlog 1525 (Blickwinkel „Leitung sattelt in den Stammdaten einen anderen Auflieger an die Zugmaschine“): bisher still – erst die Datenqualität
+  // meldete am nächsten Tag „Anhänger unbekannt/außer Betrieb/mehreren Zugmaschinen zugeordnet“. Jetzt sofort als Hinweis (nichts wird geändert):
+  // neuer Anhänger nicht im Bestand bzw. außer Betrieb, mit offener Sicherheitssperre dieser Umgebung, zusätzlich an anderen Zugmaschinen in
+  // Betrieb eingetragen; bisheriger Anhänger in Betrieb ohne Zugmaschine. Eine Abfrage, nur bei geändertem Anhängerkennzeichen.
+  let trailerSwap = null;
+  const fromK = before ? normPlate(before.trailer_plate) : '', toK = normPlate(row.trailer_plate);
+  if (before && before.active && (row.kind || before.kind) !== 'anhaenger' && changes && changes.trailer_plate && fromK !== toK) {
+    const cand = (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.trailer_plate, v.active, COALESCE(v.eval_excluded,0) AS x,
+        (v.kind='anhaenger' AND EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt'))) AS locked
+        FROM vehicles v WHERE v.id<>? AND (v.kind='anhaenger' OR (v.active=1 AND v.trailer_plate IS NOT NULL AND v.kind<>'anhaenger'))`).bind(envName, row.id).all()).results;
+    const trl = (k) => cand.filter((v) => v.kind === 'anhaenger' && normPlate(v.plate) === k);
+    const trucks = (k) => cand.filter((v) => v.kind !== 'anhaenger' && v.active && normPlate(v.trailer_plate) === k);
+    let newTrailer = null, status = null;
+    if (toK) {
+      const on = trl(toK).filter((v) => v.active).sort((a, b) => a.x - b.x);
+      status = on.length ? 'ok' : trl(toK).length ? 'inactive' : 'unknown';
+      if (on.length) newTrailer = { id: on[0].id, plate: on[0].plate, locked: !!on[0].locked };
+    }
+    const oldLeft = fromK && !trucks(fromK).length ? trl(fromK).filter((v) => v.active).map((v) => ({ id: v.id, plate: v.plate })) : [];
+    trailerSwap = { from: before.trailer_plate ?? null, to: row.trailer_plate ?? null, new_status: status, new_trailer: newTrailer,
+      also_on: toK ? trucks(toK).map((v) => ({ id: v.id, plate: v.plate })) : [], old_left: oldLeft };
+  }
+  return { id: row.id, duplicate_plates: duplicates, ...(trailerOf.length ? { trailer_of_trucks: trailerOf, trailer_plate_old: before.plate } : {}), ...siteHints, ...(trailerSwap ? { trailer_swap: trailerSwap } : {}) };
 }
 
 // Fahrzeug außer Betrieb nehmen (verkauft, abgemeldet): bleibt mit Historie erhalten, erscheint nicht mehr in Listen/Agent

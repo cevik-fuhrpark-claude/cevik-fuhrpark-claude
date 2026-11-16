@@ -43228,6 +43228,40 @@ await test('Backlog 1524 (Folge aus 1523): „Wieder in Betrieb“ bzw. „wiede
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1524'), 'API.md');
 });
 
+await test('Backlog 1525 (Blickwinkel „Leitung sattelt in den Stammdaten einen anderen Auflieger an die Zugmaschine“): `POST /api/vehicles` nennt in `trailer_swap` neuen Anhänger unbekannt/außer Betrieb/gesperrt, auch bei anderer Zugmaschine eingetragen und bisherigen Anhänger ohne Zugmaschine – nichts wird geändert; Oberfläche/Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const mk = async (b) => { const r = await U.own.post('/api/vehicles', { site: 'Dortmund', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data; };
+  const vin = 'WDB96340310991551';
+  await mk({ plate: 'TQ-ZM 1525', vin, trailer_plate: 'TQ-AN 1525' });
+  const A1 = (await mk({ plate: 'TQ-AN 1525', vin: 'WDB96340310991552', kind: 'anhaenger' })).id;
+  const A2 = (await mk({ plate: 'TQ-AN 2525', vin: 'WDB96340310991553', kind: 'anhaenger' })).id;
+  const T2 = (await mk({ plate: 'TQ-ZM 2525', vin: 'WDB96340310991554', trailer_plate: 'tq-an2525' })).id;
+  const A3 = (await mk({ plate: 'TQ-AN 3525', vin: 'WDB96340310991555', kind: 'anhaenger' })).id;
+  const edit = async (trailer_plate) => { const r = await U.fleet.post('/api/vehicles', { vin, plate: 'TQ-ZM 1525', site: 'Dortmund', keep_active: true, ...(trailer_plate ? { trailer_plate } : {}) }); eq(r.status, 201, JSON.stringify(r.data)); return r.data; };
+  // unverändert (nur andere Schreibweise) → kein Hinweis
+  eq((await edit('tq-an1525')).trailer_swap, undefined, 'gleiches Kennzeichen, andere Schreibweise');
+  // A2 ist schon bei T2 eingetragen, A1 bleibt ohne Zugmaschine
+  let r = await edit('TQ-AN 2525');
+  eq(JSON.stringify(r.trailer_swap), JSON.stringify({ from: 'TQ-AN1525', to: 'TQ-AN 2525', new_status: 'ok', new_trailer: { id: A2, plate: 'TQ-AN 2525', locked: false }, also_on: [{ id: T2, plate: 'TQ-ZM 2525' }], old_left: [{ id: A1, plate: 'TQ-AN 1525' }] }), 'auch an T2, A1 frei');
+  // unbekannter Anhänger; bisheriger A2 bleibt bei T2 → kein old_left
+  r = await edit('TQ-XX 9999'); eq(r.trailer_swap.new_status, 'unknown'); eq(r.trailer_swap.new_trailer, null); eq(r.trailer_swap.old_left.length, 0, 'A2 hat noch T2');
+  // außer Betrieb
+  eq((await U.fleet.post(`/api/vehicles/${A3}/active`, { active: false, reason: 'verkauft' })).status, 200);
+  r = await edit('TQ-AN 3525'); eq(r.trailer_swap.new_status, 'inactive'); eq(r.trailer_swap.new_trailer, null);
+  // gesperrter Anhänger (offene Sicherheitssperre dieser Umgebung)
+  const c = await U.fleet.post('/api/cases', { vehicle_id: A1, description: 'Bremse Auflieger defekt', priority: 'kritisch', driveability: 'nicht_fahrbereit', request_key: rk() }); eq(c.status, 201, JSON.stringify(c.data)); eq(c.data.safety_lock, true);
+  r = await edit('TQ-AN 1525'); eq(JSON.stringify(r.trailer_swap.new_trailer), JSON.stringify({ id: A1, plate: 'TQ-AN 1525', locked: true }), 'gesperrt'); eq(r.trailer_swap.also_on.length, 0);
+  // Kennzeichen entfernt → new_status null, A1 ohne Zugmaschine
+  r = await edit(null); eq(r.trailer_swap.new_status, null); eq(r.trailer_swap.to, null); eq(r.trailer_swap.old_left.map((x) => x.plate).join(), 'TQ-AN 1525');
+  // Anhänger selbst umgetragen → kein trailer_swap; nichts geändert an T2
+  eq((await U.fleet.get(`/api/vehicles/${T2}`)).data.vehicle.trailer_plate, 'TQ-AN2525', 'T2 unverändert');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("const sw = r && r.trailer_swap;") && app.includes("t('trailer_swap_also')") && app.includes("t('trailer_swap_old')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].trailer_swap_also.includes('{list}') && STRINGS[l].trailer_swap_unknown.includes('{p}') && STRINGS[l].trailer_swap_locked && STRINGS[l].trailer_swap_inactive && STRINGS[l].trailer_swap_old.includes('{list}') && STRINGS[l].help_fleet_s.split('|').some((p) => /anderes Anhänger-Kennzeichen|інший номер причепа|different trailer plate/.test(p)), `${l}: Text/Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1525'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

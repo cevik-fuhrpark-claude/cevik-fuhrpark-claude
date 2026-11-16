@@ -301,7 +301,7 @@ async function handleApi(request, env, ctx, url) {
     }
     return json({ vehicles: list });
   }
-  if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request)), 201);
+  if (path === '/api/vehicles' && m === 'POST') return json(await veh.upsertVehicle(env, user, await readJson(request), envName), 201);
   if (path === '/api/vehicles/import' && m === 'POST') {
     await rateLimit(env, url.searchParams.get('dry_run') === '1' ? 'preview' : 'import', user.id);
     const text = await request.text();

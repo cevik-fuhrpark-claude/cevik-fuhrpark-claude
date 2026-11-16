@@ -100,6 +100,15 @@ async function saveVehicleForm(form, edit = false) {
       (r.drivers_other_site || []).length ? t('veh_site_drivers').replace('{list}', () => r.drivers_other_site.map((x) => `${x.name} (${x.site})`).join(', ')) : ''].filter(Boolean);
     if (sh.length) setTimeout(() => toast(sh.join(' · '), true), (d && d.length ? 6000 : 400) + (tr && tr.length ? 6000 : 0));
   }
+
+  const sw = r && r.trailer_swap;
+  if (sw) {
+    const ts = [sw.new_status === 'unknown' ? t('trailer_swap_unknown').replace('{p}', () => sw.to) : sw.new_status === 'inactive' ? t('trailer_swap_inactive').replace('{p}', () => sw.to) : '',
+      sw.new_trailer && sw.new_trailer.locked ? t('trailer_swap_locked').replace('{p}', () => sw.new_trailer.plate) : '',
+      (sw.also_on || []).length ? t('trailer_swap_also').replace('{p}', () => sw.to).replace('{list}', () => sw.also_on.map((x) => x.plate).join(', ')) : '',
+      (sw.old_left || []).length ? t('trailer_swap_old').replace('{list}', () => sw.old_left.map((x) => x.plate).join(', ')) : ''].filter(Boolean);
+    if (ts.length) setTimeout(() => toast(ts.join(' · '), true), (d && d.length ? 6000 : 400) + (tr && tr.length ? 6000 : 0) + (r.site_changed ? 6000 : 0));
+  }
   return r;
 }
 
