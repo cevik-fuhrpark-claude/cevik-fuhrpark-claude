@@ -1164,6 +1164,65 @@ const HY_KINDS = [['brake', /\b(?:argelak|tormuz|tormoz)\S*\s+(?:\S+\s+)?(?:ch[e
 
 const HY_NEG = /\bch(?:i|en|em|enk|es)\s+(?:hos|kat|kotr|payt|tsakv|chakv|bakhv|vnasv|ayrv|ijel|ynk|jard|viravor)\S*|\b(?:kotrv|payt|tsakv|chakv|vnasv|jard)\S*\s+che\b|\bchkotrv\S*/g;
 function hyKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n։՝]+/)) { if (!/[ա-ֆԱ-Ֆ]/.test(raw)) continue; const p = hyLat(raw).replace(HY_NEG, ' '); if (!HY_OK.test(p)) for (const [n, rx, ex] of HY_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
-async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+
+
+const GR_MAP = { α: 'a', β: 'v', γ: 'g', δ: 'd', ε: 'e', ζ: 'z', η: 'i', θ: 'th', ι: 'i', κ: 'k', λ: 'l', μ: 'm', ν: 'n', ξ: 'x', ο: 'o', π: 'p', ρ: 'r', σ: 's', ς: 's', τ: 't', υ: 'y', φ: 'f', χ: 'ch', ψ: 'ps', ω: 'o' };
+const grLat = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ου/g, 'u').replace(/αυ/g, 'av').replace(/ευ/g, 'ev').replace(/[α-ω]/g, (c) => GR_MAP[c] ?? c);
+const grCo = (n, f) => new RegExp(`^(?=.*\\b(?:${n}))(?=.*(?:${f}))`);
+const GR_NW = 'den\\s+(?:\\S+\\s+)?(?:dulev|leiturg)|chalas';
+const GR_OK = /\b(?:episkev|ftiax|ftiach|allax|allach)|\bxana\s+(?:\S+\s+)?(?:dulev|leiturg)|\bdulev\S*\s+(?:\S+\s+)?(?:kanonik|xana)|\bola\s+(?:\S+\s+)?(?:kala|entax|ok)\b|\bkanena\s+provlim|\bden\s+(?:yparchei|echei|echo)\s+(?:\S+\s+)?provlim/;
+const GR_KINDS = [['brake', grCo('fren', `den\\s+(?:\\S+\\s+)?(?:pian|krat|stamat)|adyna|${GR_NW}`), /\bch(?:e)?irofren/],
+  ['brake', /\bpiesi\s+(?:tu\s+)?aer\S*\s+(?:\S+\s+)?(?:peft|epese|chan)|\b(?:peft|epese)\S*\s+(?:i\s+)?piesi\s+(?:tu\s+)?aer/],
+  ['parkbrake', grCo('che?irofren', `den\\s+(?:\\S+\\s+)?(?:krat|pian|xekol|lyn|kateva)|kollis|${GR_NW}`)],
+  ['flat', grCo('lastich|elastik|rod(?:a|es)\\b', 'eskase|skas|trypi|xefusk|pagktser|pagkts'), /\b(?:paximad|mpulon)/],
+  ['tyre', grCo('lastich|elastik', 'fagom|fagothik|gyalis|fthar')],
+  ['steer', grCo('timon', `vary|sklir|tremei|tremun|paizei|tzogk|den\\s+(?:\\S+\\s+)?gyriz|${GR_NW}`)],
+  ['steer', /\b(?:travaei|travai|pigainei|fevgei)\s+(?:\S+\s+)?(?:dexia|aristera)/],
+  ['leak', grCo('lad|petrel|ntizel|diizel|antipsyktik|kavsim|adblu|ygr', 'trech|stazei|stazun|diarro|chyn'), /\b(?:amortis|aeranart|fusk)/],
+  ['leak', /\bdiarro/],
+  ['fire', /\b(?:fotia|flog|kaigetai|kaigontai|pyrkagi|kapn)/, /\b(?:pyrosvest|exatmis|eksatmis|kapniz)/],
+  ['acc', /\b(?:atychim|trochai|trakar|sygkrus|chtypis(?:a|ame|e)\b|epesa\s+pano)/, /\b(?:petr|chalaz)/],
+  ['injury', /\b(?:travmat|aimorag|kopika|traumat)/],
+  ['nostart', grCo('kinitir|michan|motor|amaxi|forti|tirakt', 'den\\s+(?:\\S+\\s+)?(?:xekin|anav)|esvise|svinei')],
+  ['nostart', /\bden\s+(?:\S+\s+)?pairn\S*\s+(?:\S+\s+)?mpros/],
+  ['engine', grCo('kinitir|motor|michan', 'zestain|thoryv|chtypa|den\\s+(?:\\S+\\s+)?trav|adyna|chanei\\s+(?:\\S+\\s+)?dynam|kovei'), /\bden\s+(?:\S+\s+)?pairn|\bsvin|\besvise/],
+  ['engine', /\b(?:ypertherm|turmpin\S*\s+(?:\S+\s+)?(?:sfyr|chalas))|^(?=.*\b(?:exatmis|eksatmis))(?=.*\bkapn)/],
+  ['mirror', grCo('kathreft|kathrept', `espase|spas|ragis|epese|kopike|den\\s+(?:\\S+\\s+)?(?:kuniet|rythmiz)|${GR_NW}`)],
+  ['lights', grCo('fota\\b|fanar|lamp|flas\\b|provole|stop\\b', `den\\s+(?:\\S+\\s+)?anav|kaike|kammen|espase|${GR_NW}`), /\balarm|\b(?:lampaki|lychnia)\s+(?:tu\s+)?(?:kinitir|ladiu|mpatari)/],
+  ['warnlight', grCo('lamp|endeix|lychni|tsek|check', 'anap|anav'), /\bden\s+(?:\S+\s+)?anav|\bkaik|\bfota\b|\bfanar/],
+  ['warnlight', /\bvgazei\s+(?:\S+\s+)?(?:lathos|sfalma|minyma)|\b(?:lathos|sfalma)\s+(?:\S+\s+)?(?:othon|tamplo|kontrol)/, /\b(?:tachograf|psygei|frigo|psyktik|thermo\s*king|termokin|thermokin|carrier|kamer|radar|aisthitir|sensor)/],
+  ['glass', grCo('parmpriz|parbriz|tzam', 'ragis|espase|spas|petr'), /\bden\s+(?:\S+\s+)?(?:kateva|aneva)/],
+  ['window', grCo('tzam|parathyr', 'den\\s+(?:\\S+\\s+)?(?:kateva|aneva|anoig|klein)|kollis')],
+  ['batt', grCo('mpatari|batari|syssorevt', `adeias|epese|pesmen|den\\s+(?:\\S+\\s+)?fortiz|teleiose|${GR_NW}`), /\b(?:lampaki|lychnia)\s+(?:tis\s+)?mpatari/],
+  ['tacho', grCo('tachograf', `den\\s+(?:\\S+\\s+)?(?:diava|dechet)|sfalma|lathos|kollis|${GR_NW}`)],
+  ['tacho', grCo('karta\\s+(?:tu\\s+)?odig', `echasa|chathik|espase|den\\s+(?:\\S+\\s+)?(?:diava|dechet)|${GR_NW}`)],
+  ['fuelcard', grCo('karta\\s+(?:\\S+\\s+)?(?:kavsim|petrel|ntizel)', `den\\s+(?:\\S+\\s+)?(?:pern|dechet)|mplok|echasa|chathik|${GR_NW}`)],
+  ['lost', grCo('kleidi|adeia\\s+kykloforias|chartia|eggraf|engraf', 'echasa|chathik|chamen|den\\s+(?:\\S+\\s+)?vrisk|klep'), /\bkarta/],
+  ['lost', /\bkleidosa\s+(?:\S+\s+){0,3}kleidi/],
+  ['coupling', grCo('pemptos\\s+troch|pempto\\s+troch|sela\\b|imirymulk|rymulk|karots|kotsadur', 'den\\s+(?:\\S+\\s+)?(?:kumpon|kleidon|xekleid|anoig|pian|kathet)|xezevg')],
+  ['dryfuel', grCo('petrel|kavsim|ntizel|diizel|venzin|ntepozit|rezerv', 'teleios|emeina\\s+(?:\\S+\\s+)?(?:choris|apo)|adei'), /\b(?:karta|adeia\s+kykloforias)/],
+  ['reefer', grCo('psygei|psyktik|frigo|termokin|thermokin|carrier', `den\\s+(?:\\S+\\s+)?(?:krya|kryon|pagon|psych|anav|xekin)|sfalma|alarm|zestain|${GR_NW}`)],
+  ['susp', grCo('aeranart|anartis|fusk|amortis|sust|elatir|mpalon', `espase|spas|skas|trypi|chan\\S*\\s+(?:\\S+\\s+)?aer|xefusk|kathise|stazei|trech|den\\s+(?:\\S+\\s+)?(?:sikon|aneva)|${GR_NW}`), /\b(?:lastich|elastik)/],
+  ['gear', grCo('tachytit|sasman|kivotio|ntempragiaz|symplekt', `den\\s+(?:\\S+\\s+)?(?:mpain|allaz|pian)|kollis|vgainei|petag|glistr|myriz|${GR_NW}`)],
+  ['climate', grCo('kalorifer|thermansi|klimatis|erkontision|aircondition|webasto|vebasto|avtonom|anemistir', `den\\s+(?:\\S+\\s+)?(?:zestain|kryon|anav|pairn|vgaz)|${GR_NW}`), /\bkathism/],
+  ['cabkit', /^(?=.*\b(?:thermansi|zestama)\s+(?:\S+\s+)?kathism)(?=.*(?:\bden\b|chalas))/],
+  ['tarp', grCo('musam|tent(?:a|es)\\b|kurtin', 'skis|trypi|xekremast|xelyth|chalas|espase')],
+  ['exhaust', grCo('exatmis|eksatmis', 'epese|kremet|espase|trypi|thoryv|sfyr|xekollise|xekremast|chalas'), /\bkapn/],
+  ['visib', grCo('yalokatharist|ygalokatharist|katharistir|sfoggar|vroxopaid', `den\\s+(?:\\S+\\s+)?(?:katharizei|kuniet)|espase|${GR_NW}`)],
+  ['visib', /\bden\s+(?:\S+\s+)?vgazei\s+nero/],
+  ['seat', grCo('zoni|zones', `den\\s+(?:\\S+\\s+)?(?:kumpon|kleidon|tylig|mazev)|kollis|espase|skis|${GR_NW}`)],
+  ['seat', grCo('kathism', `espase|spas|den\\s+(?:\\S+\\s+)?(?:rythmiz|aneva|kateva|kleidon)|skis|${GR_NW}`), /\b(?:thermansi|zestama)/],
+  ['wheel', grCo('paximad|mpulon|zant', 'chalar|xevid|leip|epese|kopike|espase|ragis')],
+  ['stuck', /\b(?:kollis|vuliax|spinar|glistr)\S*\s+(?:\S+\s+){0,3}(?:lasp|chion|ammo|chomat|lakk)|\b(?:lasp|chion|ammo|chomat)\S*\s+(?:\S+\s+){0,3}(?:kollis|vuliax|spinar)|\bvuliax/],
+  ['numplate', grCo('pinakid', 'epese|chathik|echasa|espase|xekollise|den\\s+(?:\\S+\\s+)?(?:fainet|diavaz)|leipei|klap')],
+  ['adas', grCo('kamer|radar|aisthitir|sensor', `den\\s+(?:\\S+\\s+)?(?:deichn|vlep)|sfalma|${GR_NW}`)],
+  ['door', grCo('port(?:a|es|as|aki)\\b|ydravlik|anypsotik', `den\\s+(?:\\S+\\s+)?(?:klein|anoig|kleidon|xekleid|aneva|kateva)|kollis|espase|${GR_NW}`), /\b(?:tzam|parathyr)/]];
+
+const GR_NEG = /\bden\s+(?:\S+\s+)?(?:espase|ragise|eskase|trypise|trech|staz|kaigetai|chtypis|trakar|epese|chalase|chalarose|skistike|travmatist|pire\s+fotia|epiase\s+fotia)\S*|\bden\s+(?:einai|ine)\s+(?:\S+\s+)?(?:spasmen|ragismen|fagomen|chalasmen|trypim|travmatism)\S*|\bchoris\s+(?:\S+\s+)?(?:diarro|zimi|atychim|provlim)\S*/g;
+function grKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n\u00b7\u0387\u037e]+/)) { if (!/[\u0370-\u03ff\u1f00-\u1fff]/.test(raw)) continue; const p = grLat(raw).replace(GR_NEG, ' '); if (!GR_OK.test(p)) for (const [n, rx, ex] of GR_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+async function foreignKinds(v) { const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
