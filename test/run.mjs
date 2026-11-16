@@ -42855,6 +42855,51 @@ await test('Backlog 1513 (Blickwinkel „Disposition braucht kurzfristig einen f
   }
 });
 
+await test('Backlog 1514 (Blickwinkel „Leitung ordnet einen Springer mit Führerschein C1 einem 18-t-Lkw bzw. einem Sattelzug zu“): Zuordnung und Fahrzeugakte nennen `license_mismatch`, wenn die Klassen laut Fahrerakte nicht zur Gesamtmasse bzw. zum Gespann passen (C1/C/C1E/CE nach FeV § 6) – nur Hinweis, Zuordnung bleibt; ohne Klassen, alte Klassen oder ohne Masse kein Hinweis; nur Inhaber/Leitung; Texte und Hilfe DE/UK/EN', async () => {
+  const { licenseSet, licenseNeed, licenseFits } = await import('../src/vehicles.js');
+  const fit = (lc, truck, tr = null) => licenseFits(licenseSet(lc), (licenseNeed(truck, tr) || {}).need);
+  const T18 = { kind: 'lkw', zgm_class: 'ueber_12' }; const T75 = { kind: 'lkw', zgm_class: '3_5_7_5' }; const AH = { zgm_class: 'ueber_10' };
+  eq(fit('B, BE, C1, C1E', T18), false, 'C1 für 18 t'); eq(fit('C1', T75), true, 'C1 für 7,5 t'); eq(fit('CE', T18), true, 'CE schließt C ein');
+  eq(fit('C', T18, AH), false, 'Sattelzug mit C'); eq(fit('C, CE', T18, AH), true); eq(fit('c1e', T75, AH), true, 'C1E (Kleinschreibung) für C1-Gespann');
+  eq(fit('C1', T75, AH), false, 'C1-Gespann ohne E'); eq(fit('B', { kind: 'lkw', zgm_kg: 7490 }), false, 'nur Masse in kg (7,49 t) → C1 nötig');
+  eq(fit('B', { kind: 'lkw', zgm_class: 'bis_3_5' }), true, 'bis 3,5 t kein Hinweis'); eq(fit('B', { kind: 'lkw' }), true, 'ohne Masse ungeklärt');
+  eq(fit('3', T18), true, 'alte Klasse 3 → ungeklärt'); eq(fit('Code 95', T18), true, 'keine Klasse erkennbar → ungeklärt'); eq(fit('B', { kind: 'anhaenger', zgm_class: 'ueber_10' }), true, 'Anhänger selbst nicht');
+  eq(fit('C', T18, { zgm_class: 'bis_3_5' }), true, 'Anhänger bis 3,5 t ohne Masse: über 750 kg ungeklärt');
+  eq(JSON.stringify(licenseNeed(T18, AH)), JSON.stringify({ need: 'CE', why: 'trailer' }));
+  // API
+  const { e, U, V1 } = await freshWorld();
+  eq((await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_class: 'ueber_12', spec_source: 'Test: Fahrzeugschein F.2' })).status, 200);
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Springer C1', user_id: U.driver.id }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const doc = await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2033-01-31', evidence: 'Original gesehen', license_classes: 'B, BE, C1, C1E' }); eq(doc.status, 201, JSON.stringify(doc.data));
+  const as = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }); eq(as.status, 201, 'Zuordnung wird gespeichert');
+  eq(JSON.stringify(as.data.license_mismatch), JSON.stringify({ need: 'C', why: 'over_7_5', classes: 'B, BE, C1, C1E' }), 'Hinweis in der Antwort');
+  const akte = async (c) => (await c.get(`/api/vehicles/${V1}`)).data.drivers.find((x) => x.user_id === U.driver.id);
+  eq((await akte(U.fleet)).license_mismatch.need, 'C', 'Fahrzeugakte (Leitung)');
+  ok(!('drivers' in ((await U.ws.get(`/api/vehicles/${V1}`)).data || {})) || !(await U.ws.get(`/api/vehicles/${V1}`)).data.drivers.length, 'Werkstatt sieht keine Zuordnungen');
+  // neuer Nachweis mit CE ersetzt den alten → kein Hinweis mehr
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2033-01-31', evidence: 'neuer Führerschein', license_classes: 'B, BE, C1, C1E, C, CE' })).status, 201);
+  ok(!(await akte(U.fleet)).license_mismatch, 'passender neuer Nachweis → kein Hinweis');
+  // anderes Konto ohne Klassen → kein Hinweis
+  const a2 = await U.fleet.post(`/api/vehicles/${encodeURIComponent('VIN:WDB9630051L917317')}/drivers`, { user_id: U.driver.id }); eq(a2.status, 201); ok(!a2.data.license_mismatch, 'ohne Masse am Fahrzeug kein Hinweis');
+  // Sattelzug: Zugmaschine über 12 t + Auflieger über 10 t → CE; Fahrer mit nur C bekommt den Hinweis
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WSM00000015140991', plate: 'TT-AH 1514', kind: 'anhaenger', site: 'Dortmund' })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340315140990', plate: 'TT-SZ 1514', trailer_plate: 'TT-AH 1514', site: 'Dortmund' })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${encodeURIComponent('VIN:WDB96340315140990')}/spec`, { zgm_class: 'ueber_12', spec_source: 'F.2' })).status, 200);
+  eq((await U.fleet.post(`/api/vehicles/${encodeURIComponent('VIN:WSM00000015140991')}/spec`, { zgm_class: 'ueber_10', spec_source: 'F.2' })).status, 200);
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', valid_until: '2033-01-31', evidence: 'dritter Nachweis', license_classes: 'B, C' })).status, 201);
+  const a3 = await U.fleet.post(`/api/vehicles/${encodeURIComponent('VIN:WDB96340315140990')}/drivers`, { user_id: U.driver.id }); eq(a3.status, 201);
+  eq(JSON.stringify(a3.data.license_mismatch), JSON.stringify({ need: 'CE', why: 'trailer', classes: 'B, C' }), 'Sattelzug mit C → CE nötig');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-licmm') && app.includes("if (r.license_mismatch) toast(`${licText(r.license_mismatch)}. ${t('lic_mm_hint')}`, true);"), 'Chip in der Akte, Hinweis nach dem Zuordnen (vor allen anderen)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['lic_mm', 'lic_mm_hint', 'lic_need_C1', 'lic_need_C', 'lic_need_C1E', 'lic_need_CE', 'lic_why_over_3_5', 'lic_why_over_7_5', 'lic_why_trailer']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].lic_mm.includes('{have}') && STRINGS[l].lic_mm.includes('{need}') && STRINGS[l].lic_mm.includes('{why}'), `${l}.lic_mm Platzhalter`);
+    ok(STRINGS[l].help_drivers_s.split('|').some((x) => x.includes('C1E') && x.includes('750')), `${l}: Hilfe erklärt den Abgleich`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

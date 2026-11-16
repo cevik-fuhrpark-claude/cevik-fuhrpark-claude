@@ -232,8 +232,12 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   for (const o of odoRows) delete o.drop_at;
   const odometer = odoRows.slice(0, cap || 20);
   const drivers = isManager(user) || user.role === 'dispatch'
-    ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id FROM driver_vehicles d JOIN users u ON u.id=d.user_id
-        WHERE d.vehicle_id=? AND d.environment=? ORDER BY d.valid_from DESC`).bind(vehicleId, envName).all()).results
+    ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id,
+        -- Backlog 1514: Klassen des gültigen Führerschein-Nachweises (nur laufende Zuordnungen, nur für Inhaber/Leitung ausgewertet; keine Zusatzabfrage)
+        CASE WHEN ?3 = 1 AND (d.valid_to IS NULL OR d.valid_to > ?4) THEN (SELECT x.license_classes FROM drivers dr JOIN driver_documents x ON x.driver_id=dr.id WHERE dr.user_id=u.id AND dr.environment=?2
+          AND x.kind='fuehrerschein' AND x.superseded=0 AND x.cancelled_at IS NULL AND x.license_classes IS NOT NULL ORDER BY x.created_at DESC LIMIT 1) END AS _lc
+        FROM driver_vehicles d JOIN users u ON u.id=d.user_id
+        WHERE d.vehicle_id=?1 AND d.environment=?2 ORDER BY d.valid_from DESC`).bind(vehicleId, envName, isManager(user) && !tl ? 1 : 0, nowIso()).all()).results
       // Nachweistext der Zuordnung (frei, z. B. „Personalakte 12“) nur für Inhaber/Leitung – Disposition sieht Name und Zeitraum (23.10.2026,
       // Teilagent „Disposition erster Tag“: Zeitleiste zeigte ihn, die Akte nicht)
       .map((r) => (isManager(user) ? r : { ...r, evidence: null }))
@@ -241,12 +245,15 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Kopplung Lkw ↔ Anhänger laut Stammliste (Spalte „Anhänger Kennzeichen“ des Lkw)
   // locked: Sicherheitssperre eines offenen Vorgangs des gekoppelten Fahrzeugs in dieser Umgebung (nur Information)
   const all = tl ? [] : (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, v.trailer_plate, EXISTS (SELECT 1 FROM cases c WHERE c.vehicle_id=v.id AND c.environment=? AND c.safety_lock=1
-    AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked, v.eval_excluded FROM vehicles v WHERE v.active=1`).bind(envName).all()).results;
+    AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')) AS locked, v.eval_excluded, v.zgm_class, v.zgm_kg FROM vehicles v WHERE v.active=1`).bind(envName).all()).results;
   // ruhende Doppel nur, wenn es kein bewertetes Fahrzeug mit dem Kennzeichen gibt (18.10.2026)
   const preferEval = (xs) => (xs.some((x) => !x.eval_excluded) ? xs.filter((x) => !x.eval_excluded) : xs);
   const coupled = v.kind === 'anhaenger'
     ? preferEval(all.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(v.plate))).map((x) => ({ id: x.id, plate: x.plate, kind: 'lkw', locked: !!x.locked }))
     : preferEval(all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate))).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger', locked: !!x.locked }));
+  // Backlog 1514: laufende Zuordnungen, deren Führerscheinklassen laut Fahrerakte nicht passen (nur Inhaber/Leitung – sie sehen die Fahrerakte)
+  { const trRow = v.kind !== 'anhaenger' && coupled[0] ? all.find((x) => x.id === coupled[0].id) : null; const need = licenseNeed(v, trRow);
+    for (const d of drivers) { const lc = d._lc; delete d._lc; const set = need && lc ? licenseSet(lc) : null; if (set && !licenseFits(set, need.need)) d.license_mismatch = { ...need, classes: String(lc).trim() }; } }
   const documents = VEHICLE_DOC_READ.includes(user.role)
     ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.doc_valid_until, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
@@ -792,6 +799,51 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
     ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}) };
 }
 
+// Backlog 1514 (Blickwinkel „Disposition/Leitung ordnet einen Springer mit Führerschein C1 einem 18-t-Lkw bzw. einem Sattelzug zu“): Abgleich der
+// Führerscheinklassen laut Fahrerakte (Feld „Klassen“ des gültigen Führerschein-Nachweises) mit der Gewichtsklasse des Fahrzeugs (FeV § 6) –
+// nur Hinweis, nie Sperre; ohne eingetragene Klassen, mit alten Klassen (1–5) oder ohne Gesamtmasse/Gewichtsklasse kein Hinweis (ungeklärt).
+// C1: über 3,5 bis 7,5 t; C: über 3,5 t; Anhänger über 750 kg zGM (Anhänger-Klasse über 3,5 t bzw. Masse > 750 kg) → C1E/CE bzw. CE.
+const LIC_MODERN = new Set(['AM', 'A1', 'A2', 'A', 'B', 'B96', 'BE', 'C1', 'C1E', 'C', 'CE', 'D1', 'D1E', 'D', 'DE', 'L', 'T']);
+const LIC_OLD = new Set(['1', '1A', '1B', '2', '3', '4', '5']);
+export function licenseSet(text) {
+  const toks = String(text || '').toUpperCase().normalize('NFKC').split(/[^A-Z0-9]+/).filter(Boolean);
+  if (toks.some((x) => LIC_OLD.has(x))) return null; // alte Klassen (z. B. „3“): Umfang hängt vom Ausstellungsdatum ab – ungeklärt
+  const s = new Set(toks.filter((x) => LIC_MODERN.has(x)));
+  return s.size ? s : null;
+}
+export function licenseNeed(truck, trailer) {
+  if (!truck || truck.kind === 'anhaenger') return null;
+  const kg = Number(truck.zgm_kg) || 0;
+  const base = ['7_5_12', 'ueber_12'].includes(truck.zgm_class) || (!truck.zgm_class && kg > 7500) ? 'C'
+    : truck.zgm_class === '3_5_7_5' || (!truck.zgm_class && kg > 3500) ? 'C1' : null;
+  if (!base) return null;
+  const heavyTr = !!trailer && (['3_5_10', 'ueber_10'].includes(trailer.zgm_class) || Number(trailer.zgm_kg) > 750);
+  return { need: heavyTr ? (base === 'C' ? 'CE' : 'C1E') : base, why: heavyTr ? 'trailer' : base === 'C' ? 'over_7_5' : 'over_3_5' };
+}
+export function licenseFits(set, need) {
+  if (!set || !need) return true;
+  const has = (...k) => k.some((x) => set.has(x));
+  return need === 'CE' ? has('CE') : need === 'C1E' ? has('C1E', 'CE') : need === 'C' ? has('C', 'CE') : has('C1', 'C1E', 'C', 'CE');
+}
+// je Konto (user_id) der Hinweis { need, why, classes } oder nichts; eine Abfrage (Fahrzeug, gekoppelter Anhänger, Klassen der Konten)
+export async function licenseMismatches(env, envName, vehicleId, userIds) {
+  const ids = [...new Set(userIds.filter(Boolean))].slice(0, 90);
+  if (!ids.length) return new Map();
+  const r = await env.DB.prepare(`SELECT v.kind, v.zgm_class, v.zgm_kg, v.trailer_plate,
+      (SELECT json_group_array(json_object('plate', t.plate, 'c', t.zgm_class, 'kg', t.zgm_kg, 'x', t.eval_excluded)) FROM vehicles t WHERE v.trailer_plate IS NOT NULL AND t.kind='anhaenger' AND t.active=1) AS trs,
+      (SELECT json_group_array(json_object('u', d.user_id, 'lc', x.license_classes, 'at', x.created_at)) FROM drivers d JOIN driver_documents x ON x.driver_id=d.id
+        WHERE d.user_id IN (SELECT value FROM json_each(?2)) AND d.environment=?3 AND x.kind='fuehrerschein' AND x.superseded=0 AND x.cancelled_at IS NULL AND x.license_classes IS NOT NULL) AS lcs
+    FROM vehicles v WHERE v.id=?1`).bind(vehicleId, JSON.stringify(ids), envName).first();
+  const out = new Map();
+  if (!r) return out;
+  const trs = JSON.parse(r.trs || '[]').filter((t) => r.trailer_plate && samePlate(t.plate, r.trailer_plate)).sort((a, b) => (a.x || 0) - (b.x || 0));
+  const need = licenseNeed(r, trs[0] ? { zgm_class: trs[0].c, zgm_kg: trs[0].kg } : null);
+  if (!need) return out;
+  const latest = new Map();
+  for (const x of JSON.parse(r.lcs || '[]')) { const p = latest.get(x.u); if (!p || String(x.at) > String(p.at)) latest.set(x.u, x); }
+  for (const [u, x] of latest) { const set = licenseSet(x.lc); if (set && !licenseFits(set, need.need)) out.set(u, { ...need, classes: String(x.lc).trim() }); }
+  return out;
+}
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   // rec_active: Fahrerakte des Kontos (0 = ausgeschieden → Warnhinweis, Backlog 250; Sperre erst nach Antwort auf „Ausgeschiedene Fahrer“)
@@ -838,7 +890,8 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   // weil der Verbotszeitraum (Abgabe des Führerscheins) nicht im Schreiben steht; nur Inhaber/Fuhrparkleitung (sehen die Bußgelder ohnehin)
   const bans = (await env.DB.prepare(`SELECT fine_no, driving_ban_months AS months FROM fines WHERE environment=? AND driver_id=? AND driving_ban_months IS NOT NULL
     AND status NOT IN ('eingestellt','erledigt') ORDER BY offense_at DESC`).bind(envName, driver.id).all()).results;
-  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}),
+  const lic = (await licenseMismatches(env, envName, vehicleId, [driver.id])).get(driver.id); // Backlog 1514: nur Hinweis
+  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}), ...(lic ? { license_mismatch: lic } : {}),
     ...(bans.length ? { driving_ban_fines: bans } : {}), ...(vehicleOthers.length ? { vehicle_other_drivers: vehicleOthers } : {}) };
 }
 
