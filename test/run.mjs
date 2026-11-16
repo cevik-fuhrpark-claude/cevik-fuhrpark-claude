@@ -43091,6 +43091,56 @@ await test('Backlog 1520 (Blickwinkel „Zugmaschine steht in der Werkstatt – 
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1520'), 'API.md');
 });
 
+await test('Backlog 1521 (Backlog 195, Blickwinkel „Werkstatt verschiebt den UVV-Termin der Zugmaschine – SP/UVV des fest gekoppelten Aufliegers war für denselben Tag geplant“): Verschieben/Entfernen eines Termins ab heute liefert `left_on_previous` (Prüftermine von Fahrzeug + Gespann am bisherigen Tag, eigenes Fahrzeug zuerst) – nichts wird mitverschoben; auch Vorgangsbefehl set_planned_date; Oberfläche und Hilfe DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const t1 = await U.own.post('/api/vehicles', { plate: 'TQ-AD 1521', vin: 'WDB96340310991521', site: 'Dortmund', trailer_plate: 'TQ-AN 1521' }); eq(t1.status, 201, JSON.stringify(t1.data));
+  const a1 = await U.own.post('/api/vehicles', { plate: 'TQ-AN 1521', vin: 'WDB96340310991522', site: 'Dortmund', kind: 'anhaenger' }); eq(a1.status, 201, JSON.stringify(a1.data));
+  const T = t1.data.id; const A = a1.data.id;
+  const rule = async (vid, kind, due, plan) => { const x = await U.fleet.post(`/api/vehicles/${vid}/maintenance`, { kind, next_due_date: due, evidence: 'Test 1521' }); eq(x.status, 201, JSON.stringify(x.data));
+    if (plan) eq((await U.fleet.post(`/api/maintenance/${x.data.id}/plan`, { planned_date: plan })).status, 200); return x.data.id; };
+  const uvv = await rule(T, 'UVV', day(40), day(10));
+  const tacho = await rule(T, 'Tachograph', day(50), day(10));
+  await rule(T, 'Bremsen', day(60), day(11)); // anderer Tag → nie
+  const aUvv = await rule(A, 'UVV', day(40), day(10));
+  await rule(A, 'Feuerlöscher', day(45), day(10));
+  const strip = (r) => JSON.stringify(r.data.left_on_previous && { date: r.data.left_on_previous.date, items: r.data.left_on_previous.items.map(({ id, ...x }) => x) });
+  let r = await U.ws.post(`/api/maintenance/${uvv}/plan`, { planned_date: day(12) }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(strip(r), JSON.stringify({ date: day(10), items: [{ kind: 'Tachograph' }, { kind: 'Feuerlöscher', plate: 'TQ-AN 1521', vehicle_id: A }, { kind: 'UVV', plate: 'TQ-AN 1521', vehicle_id: A }] }), 'bisheriger Tag nennt Fahrzeug + Gespann');
+  ok(r.data.left_on_previous.items.every((x) => x.id), 'mit Eintrags-ID');
+  eq((await U.fleet.get(`/api/vehicles/${A}`)).data.maintenance.find((m) => m.id === aUvv).planned_date, day(10), 'Anhänger nicht mitverschoben');
+  // Termin entfernen meldet ebenfalls; Neusetzen ohne bisherigen Termin bzw. gleicher Termin nicht
+  r = await U.fleet.post(`/api/maintenance/${tacho}/plan`, { planned_date: null }); eq(r.status, 200);
+  eq(JSON.stringify(r.data.left_on_previous.items.map((x) => x.kind)), JSON.stringify(['Feuerlöscher', 'UVV']), 'Termin entfernt');
+  r = await U.fleet.post(`/api/maintenance/${tacho}/plan`, { planned_date: day(10) }); eq(r.data.left_on_previous, undefined, 'vorher kein Termin');
+  r = await U.fleet.post(`/api/maintenance/${tacho}/plan`, { planned_date: day(10), planned_note: 'Abgabe 7 Uhr' }); eq(r.data.left_on_previous, undefined, 'nur Hinweis geändert');
+  // vom Anhänger aus: Zugmaschine wird mit Kennzeichen genannt, eigene zuerst
+  r = await U.fleet.post(`/api/maintenance/${aUvv}/plan`, { planned_date: day(13) });
+  eq(strip(r), JSON.stringify({ date: day(10), items: [{ kind: 'Feuerlöscher' }, { kind: 'Tachograph', plate: 'TQ-AD 1521', vehicle_id: T }] }), 'vom Anhänger aus');
+  // bisheriger Termin vor heute: kein Hinweis
+  const old = await rule(T, 'Inspektion', day(30), day(-2));
+  await rule(A, 'Hydraulik/Aufbau', day(30), day(-2));
+  r = await U.fleet.post(`/api/maintenance/${old}/plan`, { planned_date: day(3) }); eq(r.status, 200); eq(r.data.left_on_previous, undefined, 'bisheriger Termin verstrichen');
+  // HU/SP-Weg (…/husp/HU/plan) läuft über dieselbe Funktion
+  r = await U.own.post(`/api/vehicles/${T}/husp/HU/plan`, { planned_date: day(10) }); eq(r.status, 200, JSON.stringify(r.data));
+  r = await U.own.post(`/api/vehicles/${T}/husp/HU/plan`, { planned_date: day(20) }); eq(r.status, 200);
+  ok(r.data.left_on_previous && r.data.left_on_previous.items.some((x) => x.kind === 'Tachograph' && !x.plate), 'HU verschoben ' + JSON.stringify(r.data.left_on_previous));
+  // Vorgang: Werkstatttermin verschoben → Prüftermine am bisherigen Tag genannt, nichts mitverschoben
+  const id = await newCase({ vehicle_id: T, description: 'Spiegel rechts abgebrochen' }, U.fleet);
+  r = await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(10) }, 'Spiegel tauschen'); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.left_on_previous, undefined, 'neuer Termin ohne bisherigen');
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  r = await cmd(U.ws, id, 'set_planned_date', { planned_date: day(14) }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(strip(r), JSON.stringify({ date: day(10), items: [{ kind: 'Tachograph' }, { kind: 'Feuerlöscher', plate: 'TQ-AN 1521', vehicle_id: A }] }), 'Vorgang verschoben');
+  eq((await U.fleet.get(`/api/vehicles/${T}`)).data.maintenance.find((m) => m.id === tacho).planned_date, day(10), 'Tacho bleibt');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('plan_left_prev').replace('{d}'") && app.includes('r.left_on_previous.items.map('), 'Oberfläche (über alsoDueTxt in allen Termin-Formularen)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_left_prev.includes('{d}') && STRINGS[l].plan_left_prev.includes('{list}'), `${l}.plan_left_prev`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dates_s.split('|').some((p) => /bisherigen Tag|попередню дату|previous day/.test(p)), `${l}: Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1521'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

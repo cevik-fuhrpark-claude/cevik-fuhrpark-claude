@@ -1229,6 +1229,7 @@ Object.assign(FIELD_NAMES.uk, { 'Titel': 'Назва' }); Object.assign(FIELD_NA
 // Backlog 605: gekoppeltes Fahrzeug im Sperr-Hinweis (Hinweisliste)
 // Backlog 606: Kostenbericht – Schnellwahl Vormonat (Monatsprüfung)
 // Backlog 607: geplanter Prüftermin nach Fristende
+// Backlog 1521: Termin verschoben/entfernt – am bisherigen Tag bleibt weiter eingeplant (Fahrzeug + Gespann), nur Hinweis
 // Backlog 608: Werkstattplan – Termine des gekoppelten Fahrzeugs
 // Backlog 611 (Blickwinkel „Jahresplanung 2027“): Fahrerliste „Fristen bis“
 // Backlog 612: Prüftermine mit „Fällig bis“ nach Monat gruppiert

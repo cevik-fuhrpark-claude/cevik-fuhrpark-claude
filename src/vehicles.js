@@ -1228,7 +1228,33 @@ export async function planMaintenance(env, user, ruleId, body) {
   await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d, ...(note !== oldNote ? { note_from: oldNote, note_to: note } : {}) });
   // Backlog 607: Termin nach Fristende wird gespeichert (die Werkstatt hat ggf. nichts früher frei), aber gemeldet – nichts wird verschoben
   const also = d && !afterDue.in_past ? await alsoDueAt(env, r, d) : [];
-  return { ok: true, planned_date: d, ...noteOut, ...afterDue, ...(also.length ? { also_due: also } : {}) };
+  // Backlog 1521: Termin verschoben/entfernt – was am bisherigen Tag (Fahrzeug + Gespann) weiter eingeplant ist, nennen
+  const prev = r.planned_date && r.planned_date !== d && r.planned_date >= berlinDate() ? r.planned_date : null;
+  const left = prev ? await leftOnDay(env, r, prev) : [];
+  return { ok: true, planned_date: d, ...noteOut, ...afterDue, ...(also.length ? { also_due: also } : {}),
+    ...(left.length ? { left_on_previous: { date: prev, items: left } } : {}) };
+}
+
+// Backlog 1521 (Backlog 195, Blickwinkel „Werkstatt verschiebt den UVV-Termin der Zugmaschine – SP des fest gekoppelten Aufliegers war für
+// denselben Tag geplant (Gespann sollte gemeinsam kommen)“): weitere Prüftermin-Einträge desselben und des gekoppelten Fahrzeugs (laut Stammliste,
+// in Betrieb, nicht ruhend), deren geplanter Werkstatttermin auf dem bisherigen Tag liegt. Nur Hinweis – dort wird nichts mitverschoben (ein
+// gemeinsamer Termin kann bewusst getrennt werden). Erledigte Rückrufe zählen nicht. Höchstens 6, eigenes Fahrzeug zuerst.
+export async function leftOnDay(env, r, day) {
+  const vrows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, active, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles
+      WHERE id=?1 OR (active=1 AND id<>?1 AND kind IN ('lkw','anhaenger')) ORDER BY COALESCE(eval_excluded,0), created_at`).bind(r.vehicle_id).all()).results;
+  const self = vrows.find((x) => x.id === r.vehicle_id);
+  if (!self || !self.active) return [];
+  const pool = vrows.filter((x) => x.id !== self.id);
+  const cand = self.kind === 'anhaenger'
+    ? pool.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(self.plate))
+    : self.trailer_plate ? pool.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === normPlate(self.trailer_plate)) : [];
+  const partner = self.eval_excluded ? null : cand.find((x) => !x.eval_excluded) || null;
+  const vids = [self.id, ...(partner ? [partner.id] : [])];
+  const rows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, title, last_done_date FROM maintenance_rules
+      WHERE vehicle_id IN (SELECT value FROM json_each(?1)) AND planned_date=?2 AND id<>?3 ORDER BY kind, id`).bind(JSON.stringify(vids), day, r.id || '').all()).results;
+  return rows.filter((m) => !(ONE_TIME_KINDS.includes(m.kind) && m.last_done_date))
+    .sort((a, b) => (a.vehicle_id === self.id ? 0 : 1) - (b.vehicle_id === self.id ? 0 : 1)).slice(0, 6)
+    .map((m) => ({ id: m.id, kind: m.kind, ...(m.title ? { title: m.title } : {}), ...(m.vehicle_id !== self.id ? { plate: partner.plate, vehicle_id: m.vehicle_id } : {}) }));
 }
 
 // Backlog 1518 (Backlog 195, Blickwinkel „Leitung legt den HU-Termin der Zugmaschine fest – UVV der Zugmaschine bzw. SP des fest gekoppelten

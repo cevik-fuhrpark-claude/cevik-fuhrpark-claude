@@ -2340,7 +2340,14 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     const { alsoDueAt } = await import('./vehicles.js'); // Art des eigenen Prüftermins liest alsoDueAt selbst mit
     also_due = await alsoDueAt(env, { id: c.maintenance_rule_id || '', vehicle_id: c.vehicle_id }, set.planned_date);
   }
-  return { ok: true, version, status: toStatus, ...(also_due.length ? { also_due } : {}), ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}),
+  // Backlog 1521: Werkstatttermin verschoben/entfernt – Prüftermine (Fahrzeug + Gespann) am bisherigen Tag bleiben stehen; nur Hinweis
+  let left_on_previous = null;
+  if (action === 'set_planned_date' && c.vehicle_id && c.planned_date && c.planned_date >= berlinDate() && (set.planned_date ?? null) !== c.planned_date) {
+    const { leftOnDay } = await import('./vehicles.js');
+    const items = await leftOnDay(env, { id: c.maintenance_rule_id || '', vehicle_id: c.vehicle_id }, c.planned_date);
+    if (items.length) left_on_previous = { date: c.planned_date, items };
+  }
+  return { ok: true, version, status: toStatus, ...(also_due.length ? { also_due } : {}), ...(left_on_previous ? { left_on_previous } : {}), ...(cost_limit_exceeded ? { cost_limit_exceeded: true } : {}), ...(cost_limit_cleared ? { cost_limit_cleared: true } : {}), ...(noWorkshopUser && !externalWs ? { no_workshop_user: true } : {}), ...(noWorkshopUser && externalWs ? { external_workshop: true } : {}), ...(noRecipients ? { no_recipients: true } : {}),
     // Backlog 887: km laut Rechnung nicht übernommen (Rücksprung/später kleinerer Stand) bzw. nur Testumgebung – Antwort wie bei der Kontrolle
     ...(action === 'add_external_cost' && payload && payload.km_rejected ? { km_rejected: payload.km_rejected } : {}), ...(action === 'add_external_cost' && payload && payload.km_test_only ? { km_test_only: true } : {}) };
 }
