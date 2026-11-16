@@ -43649,6 +43649,21 @@ await test('Backlog 1535 (Blickwinkel „Hitzewelle im Sommer“, Backlog 195): 
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-hitze.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
+await test('Backlog 1536 (Folge aus 1535, Blickwinkel „Hitzewelle im Sommer“ auf Englisch/Ukrainisch/Russisch): „the radiator fan does not come on“, „fridge unit not keeping the load cold“, „AC is out of gas“, „немає фреону“, „кондиционер нужно заправить“, „retarder temperature warning“, „transmission too hot“, „температура масла в коробке высокая“, „rear right outer tyre on the trailer burst“ → passender Hinweis; „retarder/gearbox overheating“, „ретардер/коробка перегрівається“ nur Bremse/Getriebe statt Motor (ohne Motor-/Kühlwort); Verneinung/Reparaturvermerk ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('\nconst HEAT_KINDS'), app.indexOf('\n', app.indexOf('\nfunction heatKinds') + 2));
+  const { heatKinds, heatNoEngine } = new Function(src + '\nreturn { heatKinds, heatNoEngine };')();
+  const CASES = [['the radiator fan does not come on', 'engine'], ['cooling fan isn’t working', 'engine'], ['fridge unit not keeping the load cold', 'reefer'], ['AC is out of gas', 'climate'], ['у кондиціонері немає фреону', 'climate'], ['нет фреона в кондиционере', 'climate'], ['кондиционер нужно заправить', 'climate'],
+    ['retarder overheating', 'brake'], ['retarder temperature warning', 'brake'], ['ретардер перегрівається', 'brake'], ['ретардер перегревается', 'brake'], ['gearbox overheating', 'gear'], ['transmission too hot', 'gear'], ['коробка перегрівається', 'gear'], ['коробка передач перегревается', 'gear'], ['температура масла в коробке высокая', 'gear'],
+    ['rear right outer tyre on the trailer burst', 'flat']];
+  for (const [x, k] of CASES) eq([...heatKinds(x)].join(','), k, x);
+  for (const x of ['engine is not overheating', 'gearbox is not overheating', 'retarder not overheating', 'фреон заправили, кондиціонер працює', 'AC regassed, out of gas before', 'ретардер не перегрівається', 'коробка не перегревается', 'tyre on the trailer did not burst']) eq([...heatKinds(x)].join(','), '', 'ohne Hinweis: ' + x);
+  for (const x of ['retarder overheating', 'gearbox overheating', 'ретардер перегрівається', 'коробка передач перегревается', 'transmission overheats']) ok(heatNoEngine(x), 'kein Motor-Hinweis: ' + x);
+  for (const x of ['retarder overheating, coolant boiling', 'gearbox and engine overheating', 'коробка перегрівається, двигун теж', 'engine overheating']) ok(!heatNoEngine(x), 'Motor-Hinweis bleibt: ' + x);
+  ok(app.includes("$('#engine').hidden ||= heatNoEngine(dfx); for (const k of heatKinds(dfx)) $('#' + k).hidden = false; for (const k of fkSet)"), 'im Meldeformular vor fremden Sprachen und Geräusch-Hinweis');
+  ok(readFileSync(new URL('../scripts/ui-meldung-hitze.py', import.meta.url), 'utf8').includes('ретардер перегрівається'), 'UI-Prüfung deckt UK/RU/EN ab');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
