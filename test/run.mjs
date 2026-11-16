@@ -19475,7 +19475,7 @@ await test('Backlog 221 (Teilagent „Kraftstoffdiebstahl am Rastplatz“): Vers
   ok(/^const THEFT_HINT = \//m.test(app), 'THEFT_HINT auf Modulebene (eine Erkennung für Meldeformular und Versicherungsfall)');
   eq((app.match(/const THEFT_HINT = /g) || []).length, 1, 'nur eine Definition');
   ok(app.includes("claimSection(d.claim, d.insurance_contracts, d.files || [], c.description, c, "), 'Beschreibung wird übergeben');
-  ok(app.includes("const theftNoRef = (THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || '')) && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
+  ok(app.includes("const theftNoRef = (THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || '') || fkRef.has('theft')) && !(cl && cl.police_ref);") && app.includes('id="cptheft"'), 'Hinweis nur ohne Aktenzeichen');
   const m = app.match(/const THEFT_HINT = \/(.+)\/i;/); const re = new RegExp(m[1], 'i');
   ok(re.test('Diesel am Rastplatz abgezapft') && re.test('Tankdeckel aufgebrochen') && !re.test('Leistungseinbruch am Berg'), 'Erkennung');
   const { STRINGS } = await import('../public/i18n.js');
@@ -27090,7 +27090,7 @@ await test('Backlog 659–661 (Blickwinkel „Vandalismus über Nacht – Reifen
   ok(app.includes("const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv) || THEFT3_HINT.test(dv); $('#theft').hidden = !theft; $('#vandal').hidden = theft || hitrun || !(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv)) || TYRE3_HINT.test(dv);"), 'nicht zusätzlich zu Diebstahl/Unfallflucht');
   ok(app.indexOf("$('#vandal').hidden") < app.indexOf("bindFormDraft('new'"), 'Prüfung im Listener vor bindFormDraft');
   ok(/const HINT_ORDER = \['fire', 'acc', 'wild', 'hitrun', 'vandal',/.test(app), 'Reihenfolge direkt nach Unfallflucht');
-  ok(app.includes("const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);") && app.includes('data-claimvandal'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt');
+  ok(app.includes("const vandalNoRef = !theftNoRef && !hitrunNoRef && (VANDAL_HINT.test(desc || '') || fkRef.has('vandal')) && !(cl && cl.police_ref);") && app.includes('data-claimvandal'), 'Versicherungs-Hinweis ohne Aktenzeichen, nicht doppelt');
   // Server speichert die Beschreibung unverändert; Versicherungsfall mit Anzeige bleibt möglich
   const c = await newCase({ description: 'Vandalismus: zwei Reifen zerstochen, Graffiti am Auflieger' });
   eq((await U.fleet.put(`/api/cases/${c}/claim`, { insurer: 'Kasko AG', reported_on: bDayOff(0), evidence: 'Schadenmeldung', police_station: 'PP Dortmund', police_ref: 'AZ 659/26' })).status, 200);
@@ -27959,7 +27959,7 @@ await test('Backlog 763 (Folge aus 761): ältere Teilmuster Klima (EN) und Beleu
 await test('Backlog 762 (Folge aus 761): Hinweise an die Leitung im Versicherungsabschnitt des Vorgangs (Diebstahl ohne Aktenzeichen, Glas/Fehlbetankung ohne Versicherungsfall …) lesen die Meldung über recurFix – „бокове скло розбили знову, хоча замінили“, „пломба зірвана знову, хоча замінили“ zeigen den Hinweis, „…, замінили“ weiter nicht', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const f = app.slice(app.indexOf('function claimSection('), app.indexOf('const theftNoRef', app.indexOf('function claimSection(')));
+  const f = app.slice(app.indexOf('function claimSection('), app.indexOf('const fkRef', app.indexOf('function claimSection('))); // Backlog 1541: fkRef nutzt bereits das bereinigte desc
   ok(/\n  desc = recurFix\(desc\);\n/.test(f), 'claimSection setzt desc = recurFix(desc) vor den Hinweisen');
   ok(!/\bdesc\b/.test(f.replace(/^function claimSection\([^)]*\) \{/, '').replace(/\/\/[^\n]*/g, '').replace('desc = recurFix(desc);', '')), 'desc vorher nicht anderweitig benutzt');
   const g = (n) => { const m = app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;(?: \\/\\/.*)?$', 'm')); ok(m, n + ' auf Modulebene'); return new RegExp(m[1], 'i'); };
@@ -38662,7 +38662,7 @@ await test('Backlog 1377 (Sonde, Blickwinkel „Fahrer meldet Diebstahl/Einbruch
   const rx = (n) => new RegExp(app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1], 'i');
   const recurFix = new Function(app.slice(app.indexOf('const FIX_WORD'), app.indexOf("}).join('');", app.indexOf('const recurFix')) + 12) + '; return recurFix;')();
   const t2 = rx('THEFT2_HINT'), v2 = rx('VANDAL2_HINT'), theft = (x) => t2.test(recurFix(x).toLowerCase()), vand = (x) => v2.test(recurFix(x).toLowerCase());
-  ok(app.includes('const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv) || THEFT3_HINT.test(dv);') && app.includes('!(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv))') && app.includes("(THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || ''))"), 'Formular und Vorgang prüfen die neuen Muster');
+  ok(app.includes('const theft = THEFT_HINT.test(dv) || THEFT2_HINT.test(dv) || THEFT3_HINT.test(dv);') && app.includes('!(VANDAL_HINT.test(dv) || VANDAL2_HINT.test(dv))') && app.includes("(THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || '') || fkRef.has('theft'))"), 'Formular und Vorgang prüfen die neuen Muster');
   for (const x of ['someone drilled the fuel tank', 'drilled a hole in the diesel tank', 'fuel tank was drilled', 'thieves cut the curtain and took boxes', 'burglars broke the side window', 'padlock cut off the rear doors', 'rear door lock forced', 'the seal on the doors was cut', 'rear doors were forced open', 'Tank angebohrt', 'Loch in den Tank gebohrt', 'Vorhängeschloss an der Hecktür aufgeschnitten', 'Schloss abgeflext']) ok(theft(x), 'Diebstahl/Einbruch: ' + x);
   for (const x of ['door lock broken', 'the lock on the rear doors is stiff', 'padlock missing', 'thieves were seen in the car park but nothing happened', 'we cut the curtain to unload', 'lock cut off, already replaced', 'tank cap stuck']) ok(!theft(x), 'kein Diebstahl-Hinweis (neues Muster): ' + x);
   for (const x of ['stones thrown at the truck', 'rocks were thrown at the cab', 'kids threw stones', 'Steine auf den Lkw geworfen', 'mit Steinen beworfen']) ok(vand(x), 'Vandalismus: ' + x);
@@ -43700,7 +43700,7 @@ await test('Backlog 1538 (Blickwinkel „Fahrer schreibt Hindi/Punjabi in latein
   eq([...hiKinds('brake kaam nahi kar raha, tel tapak raha hai')].sort().join(','), 'brake,leak', 'zwei Sätze, zwei Hinweise');
   eq([...hiKinds('ब्रेक काम नहीं कर रहा। tyre phat gaya')].join(','), 'flat', 'Devanagari-Satzzeichen „।“ trennt Sätze');
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Hindi-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1538"); const i2 = t.indexOf("\nawait test('Backlog 1539") + 1, i3 = t.indexOf("\nawait test('Backlog 1540") + 1; const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10), i2) + t.slice(t.indexOf('\nawait test(', i2 + 10), i3) + t.slice(t.indexOf('\nawait test(', i3 + 10)); // 1539/1540: weitere Hinglish-Beispiele
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1538"); let rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); for (const n of ['1539', '1540', '1541']) { const j = rest.indexOf("\nawait test('Backlog " + n) + 1; rest = rest.slice(0, j) + rest.slice(rest.indexOf('\nawait test(', j + 10)); } // 1539–1541: weitere Hinglish-Beispiele
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (hiKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Hindi-Tabelle');
@@ -43771,6 +43771,22 @@ await test('Backlog 1540 (Blickwinkel „Fahrer meldet Diebstahl, Aufbruch oder 
   const src = app.slice(app.indexOf('\nconst hiFold'), app.indexOf('\nfunction hiKinds')); ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind');
   for (const l of ['de', 'uk', 'en']) { const { STRINGS } = await import('../public/i18n.js'); ok(STRINGS[l].help_report_s.includes('battery chura li') && STRINGS[l].help_report_s.includes('diesel gayab hai'), 'Hilfe nennt Diebstahl-Beispiele: ' + l); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-hinglish-diebstahl.py'), 'UI-Prüfung in pruefen.sh');
+});
+
+await test('Backlog 1541 (Folge aus 1540): Vorgangsansicht – Hinweis „Diebstahl/Vandalismus ohne Aktenzeichen“ im Versicherungsabschnitt auch bei fremdsprachigen Meldetexten (foreignKinds, nur ohne Aktenzeichen und ohne deutschen/englischen Treffer)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), sch = readFileSync(new URL('../public/app-schaden.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('\nasync function claimSection'), app.indexOf('\n}\n', app.indexOf('\nasync function claimSection')));
+  ok(/const fkRef = !\(cl && cl\.police_ref\) && .*await foreignKinds\(desc\)\.catch\(\(\) => new Set\(\)\) : new Set\(\);/.test(fn), 'foreignKinds nur ohne Aktenzeichen, Fehler → leere Menge');
+  ok(fn.includes("|| fkRef.has('theft')) && !(cl && cl.police_ref)") && fn.includes("(VANDAL_HINT.test(desc || '') || fkRef.has('vandal'))"), 'Diebstahl- und Vandalismus-Hinweis nutzen die Sprachtabellen');
+  ok(fn.indexOf('const fkRef') < fn.indexOf('const theftNoRef'), 'Reihenfolge');
+  ok(/^import \{[^}]*\bforeignKinds\b/m.test(sch) && sch.includes('const fkRef'), 'app-schaden.js importiert foreignKinds (lädt app-sprachen.js bei Bedarf)');
+  const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const rx = (n) => { const m = app.match(new RegExp('^const ' + n + ' = (/.+/[a-z]*);', 'm')); ok(m, n); return new Function('return ' + m[1])(); };
+  const THEFT_HINT = rx('THEFT_HINT'), THEFT2_HINT = rx('THEFT2_HINT'), VANDAL_HINT = rx('VANDAL_HINT');
+  const { foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')();
+  for (const [x, k] of [['raat ko parking mein battery chura li', 'theft'], ['kisi ne tirpal kaat diya', 'vandal']]) { ok(!THEFT_HINT.test(x) && !THEFT2_HINT.test(x) && !VANDAL_HINT.test(x), 'Start-Modul erkennt es nicht: ' + x); ok((await fk(x)).has(k), 'Sprachtabelle: ' + x + ' → ' + k); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-anzeige-fremdsprache.py'), 'UI-Prüfung in pruefen.sh');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

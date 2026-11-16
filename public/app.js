@@ -6041,11 +6041,13 @@ async function claimSection(cl, contracts, files = [], desc = '', c = null, coup
   // Backlog 287: offener Versicherungsfall ohne Schadenzeitpunkt am Vorgang (wie Datenqualität `claim_no_occurred`) – Hinweis mit Knopfname
   const noOcc = !!(cl && c && (c.origin === 'meldung' || (c.origin === 'kontrolle' && c.check_item && !c.parent_case_id)) && !c.occurred_at && ['gemeldet', 'in_pruefung'].includes(cl.status));
   // Meldung nennt Diebstahl/Einbruch, aber kein Aktenzeichen erfasst (Backlog 221): nur Hinweis, keine Frist, kein Befund
-  const theftNoRef = (THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || '')) && !(cl && cl.police_ref);
+  // Backlog 1541: fremdsprachige Meldetexte (Hinglish „battery chura li“, „kisi ne tirpal kaat diya“) über die Sprachtabellen – nur ohne Aktenzeichen und ohne deutschen/englischen Treffer
+  const fkRef = !(cl && cl.police_ref) && /\p{L}/u.test(desc || '') && !THEFT_HINT.test(desc || '') && !THEFT2_HINT.test(desc || '') && !VANDAL_HINT.test(desc || '') ? await foreignKinds(desc).catch(() => new Set()) : new Set();
+  const theftNoRef = (THEFT_HINT.test(desc || '') || THEFT2_HINT.test(desc || '') || fkRef.has('theft')) && !(cl && cl.police_ref);
   // Backlog 654: Meldung nennt Unfallflucht/Parkschaden, kein Aktenzeichen – Anzeige eintragen, Unfallgegner bleibt leer (nur Hinweis, keine Frist)
   const hitrunNoRef = !theftNoRef && (HITRUN_HINT.test(desc || '') || HITRUN2_HINT.test(desc || '') || HITRUN3_HINT.test(desc || '') || HITRUN4_HINT.test(desc || '')) && !(cl && cl.police_ref);
   // Backlog 660: Meldung nennt Vandalismus/mutwillige Beschädigung, kein Aktenzeichen – Anzeige eintragen, Deckung laut Vertrag prüfen (nur Hinweis, keine Frist)
-  const vandalNoRef = !theftNoRef && !hitrunNoRef && VANDAL_HINT.test(desc || '') && !(cl && cl.police_ref);
+  const vandalNoRef = !theftNoRef && !hitrunNoRef && (VANDAL_HINT.test(desc || '') || fkRef.has('vandal')) && !(cl && cl.police_ref);
   // Backlog 669: Anprall an Brücke/Unterführung/Dach ohne Aktenzeichen – Hinweis an die Leitung (Anzeige eintragen, Forderung des Eigentümers und eigener Schaden laut Vertrag; nichts angenommen)
   const bridgeNoRef = !theftNoRef && !hitrunNoRef && !vandalNoRef && BRIDGE_HINT.test(desc || '') && !(cl && cl.police_ref);
   // Backlog 675: Personen im Laderaum ohne Aktenzeichen – Hinweis an die Leitung (Anzeige eintragen, Plane/Siegel/Ladung laut Vertrag klären; nichts angenommen)
