@@ -42900,6 +42900,40 @@ await test('Backlog 1514 (Blickwinkel „Leitung ordnet einen Springer mit Führ
   }
 });
 
+await test('Backlog 1515 (Blickwinkel „Leitung ordnet einen Fahrer zu, dessen Führerschein, Fahrerkarte oder Code 95 laut Fahrerakte abgelaufen ist“): Zuordnung und Fahrzeugakte nennen `doc_expired` (aktueller Nachweis je Art mit „gültig bis“ vor heute) – nur Hinweis, Zuordnung bleibt; neuer gültiger Nachweis oder Storno beendet den Hinweis; ohne Ablaufdatum kein Hinweis; nur Inhaber/Leitung; Texte und Hilfe DE/UK/EN', async () => {
+  const { docsExpired } = await import('../src/vehicles.js');
+  eq(JSON.stringify(docsExpired(JSON.stringify([{ k: 'code95', v: '2020-01-01' }, { k: 'fuehrerschein', v: '2019-05-05' }, { k: 'sonstiges', v: '2019-01-01' }]))), JSON.stringify([{ kind: 'fuehrerschein', valid_until: '2019-05-05' }, { kind: 'code95', valid_until: '2020-01-01' }]), 'Reihenfolge Führerschein, Fahrerkarte, Code 95; andere Arten ignoriert');
+  eq(docsExpired(null).length, 0); eq(docsExpired('[]').length, 0);
+  const { U, V1 } = await freshWorld();
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 1515', user_id: U.driver.id }); eq(dr.status, 201, JSON.stringify(dr.data));
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fuehrerschein', evidence: 'Original gesehen', license_classes: 'B, C, CE' })).status, 201, 'Führerschein ohne Ablaufdatum');
+  const card = await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fahrerkarte', valid_until: '2020-03-31', evidence: 'Kopie' }); eq(card.status, 201, JSON.stringify(card.data));
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'code95', valid_until: '2033-12-31', evidence: 'Bescheinigung' })).status, 201);
+  const as = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }); eq(as.status, 201, 'Zuordnung wird trotzdem gespeichert');
+  eq(JSON.stringify(as.data.doc_expired), JSON.stringify([{ kind: 'fahrerkarte', valid_until: '2020-03-31' }]), 'nur die abgelaufene Fahrerkarte');
+  const akte = async (c) => ((await c.get(`/api/vehicles/${V1}`)).data.drivers || []).find((x) => x.user_id === U.driver.id);
+  eq(JSON.stringify((await akte(U.fleet)).doc_expired), JSON.stringify([{ kind: 'fahrerkarte', valid_until: '2020-03-31' }]), 'Fahrzeugakte (Leitung)');
+  const wsv = await akte(U.ws); ok(!wsv || !wsv.doc_expired, 'Werkstatt sieht den Hinweis nicht');
+  // neue gültige Fahrerkarte löst die alte ab → kein Hinweis
+  const card2 = await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fahrerkarte', valid_until: '2033-06-30', evidence: 'neue Karte' }); eq(card2.status, 201);
+  ok(!(await akte(U.fleet)).doc_expired, 'neuer gültiger Nachweis → kein Hinweis');
+  // Storno der neuen Karte → alte gilt wieder → Hinweis kehrt zurück
+  const cx = await U.fleet.post(`/api/drivers/${dr.data.id}/documents/${card2.data.id}/cancel`, { reason: 'falsch erfasst' }); eq(cx.status, 200, JSON.stringify(cx.data));
+  eq(((await akte(U.fleet)).doc_expired || [])[0]?.kind, 'fahrerkarte', 'nach Storno gilt die abgelaufene Karte wieder');
+  // beendete Zuordnung: kein Hinweis mehr in der Akte
+  const asg = (await akte(U.fleet)).id; eq((await U.fleet.req('DELETE', `/api/assignments/${asg}`)).status, 200);
+  ok(!(await akte(U.fleet)).doc_expired, 'beendete Zuordnung ohne Hinweis');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-docexp') && app.includes("if (r.doc_expired && r.doc_expired.length) { const x = dxText(r.doc_expired); toast(`${x.charAt(0).toUpperCase()}${x.slice(1)}. ${t('drv_doc_exp_hint')}`, true); } /* Backlog 1515 */ else if (r.license_mismatch)"), 'Hinweis in der Akte, Toast nach dem Zuordnen (vor allen anderen)');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['drv_doc_exp', 'drv_doc_exp_until', 'drv_doc_exp_hint', 'dk2_fuehrerschein', 'dk2_fahrerkarte', 'dk2_code95']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].drv_doc_exp.includes('{list}') && STRINGS[l].drv_doc_exp_until.includes('{date}'), `${l}: Platzhalter`);
+    ok(STRINGS[l].help_drivers_s.split('|').some((x) => /Code 95|код 95/i.test(x) && /Zuordn|призначен|assign/.test(x) && /abgelaufen|прострочен|expired/.test(x)), `${l}: Hilfe erklärt den Hinweis`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -116,6 +116,7 @@ UI-Verträge gesammelt beenden bzw. Vertragsende eintragen (Versichererwechsel)|
 UI-Kommentar an deaktivierten Melder: Kästchen ausgegraut, Hinweis niemand benachrichtigt|ui-kommentar-melder.py|/tmp/cfp-kommentar-melder.log
 UI-Fahrer zuordnen mit ausgeschiedener Fahrerakte: Auswahl und Warnhinweis|ui-zuordnung-akte-ausgeschieden.py|/tmp/cfp-zuordnung-akte.log
 UI-Führerscheinklasse beim Zuordnen: C1/C1E-Fahrer am Sattelzug → Hinweis „nötig: CE“ nach dem Zuordnen und Chip in der Akte, Zuordnung bleibt, DE/UK/EN 820/390/1366 (Backlog 1514)|ui-fuehrerscheinklasse.py|/tmp/cfp-fuehrerscheinklasse.log
+UI-Abgelaufener Nachweis beim Zuordnen: Fahrerkarte laut Fahrerakte abgelaufen → Hinweis nach dem Zuordnen und in der Akte, Zuordnung bleibt, DE/UK/EN 820/390/1366 (Backlog 1515)|ui-nachweis-abgelaufen.py|/tmp/cfp-nachweis-abgelaufen.log
 UI-Werkstattplan: Auftrag nach Fristende und mehrfach verschoben|ui-plan-verschoben.py|/tmp/cfp-plan-verschoben.log
 UI-Werkstattplan: Dringlichkeit, Sperre und Fahrbereitschaft als Text (Aushang/Druck)|ui-plan-aushang.py|/tmp/cfp-plan-aushang.log
 UI-Startseite: Navigationslinks nicht im Ausdruck (Disposition)|ui-startseite-druck.py|/tmp/cfp-startseite-druck.log

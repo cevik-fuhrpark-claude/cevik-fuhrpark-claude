@@ -235,9 +235,11 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     ? (await env.DB.prepare(`SELECT d.id, d.valid_from, d.valid_to, d.evidence, u.display_name, u.id AS user_id,
         -- Backlog 1514: Klassen des gültigen Führerschein-Nachweises (nur laufende Zuordnungen, nur für Inhaber/Leitung ausgewertet; keine Zusatzabfrage)
         CASE WHEN ?3 = 1 AND (d.valid_to IS NULL OR d.valid_to > ?4) THEN (SELECT x.license_classes FROM drivers dr JOIN driver_documents x ON x.driver_id=dr.id WHERE dr.user_id=u.id AND dr.environment=?2
-          AND x.kind='fuehrerschein' AND x.superseded=0 AND x.cancelled_at IS NULL AND x.license_classes IS NOT NULL ORDER BY x.created_at DESC LIMIT 1) END AS _lc
+          AND x.kind='fuehrerschein' AND x.superseded=0 AND x.cancelled_at IS NULL AND x.license_classes IS NOT NULL ORDER BY x.created_at DESC LIMIT 1) END AS _lc,
+        -- Backlog 1515: abgelaufene Führerschein-/Fahrerkarten-/Code-95-Nachweise laut Fahrerakte (gleiche Bedingungen wie _lc)
+        CASE WHEN ?3 = 1 AND (d.valid_to IS NULL OR d.valid_to > ?4) THEN (${DOC_EXPIRED_SQL('u.id', '?2', '?5')}) END AS _dx
         FROM driver_vehicles d JOIN users u ON u.id=d.user_id
-        WHERE d.vehicle_id=?1 AND d.environment=?2 ORDER BY d.valid_from DESC`).bind(vehicleId, envName, isManager(user) && !tl ? 1 : 0, nowIso()).all()).results
+        WHERE d.vehicle_id=?1 AND d.environment=?2 ORDER BY d.valid_from DESC`).bind(vehicleId, envName, isManager(user) && !tl ? 1 : 0, nowIso(), berlinDate()).all()).results
       // Nachweistext der Zuordnung (frei, z. B. „Personalakte 12“) nur für Inhaber/Leitung – Disposition sieht Name und Zeitraum (23.10.2026,
       // Teilagent „Disposition erster Tag“: Zeitleiste zeigte ihn, die Akte nicht)
       .map((r) => (isManager(user) ? r : { ...r, evidence: null }))
@@ -253,7 +255,8 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
     : preferEval(all.filter((x) => x.kind === 'anhaenger' && v.trailer_plate && normPlate(x.plate) === normPlate(v.trailer_plate))).map((x) => ({ id: x.id, plate: x.plate, kind: 'anhaenger', locked: !!x.locked }));
   // Backlog 1514: laufende Zuordnungen, deren Führerscheinklassen laut Fahrerakte nicht passen (nur Inhaber/Leitung – sie sehen die Fahrerakte)
   { const trRow = v.kind !== 'anhaenger' && coupled[0] ? all.find((x) => x.id === coupled[0].id) : null; const need = licenseNeed(v, trRow);
-    for (const d of drivers) { const lc = d._lc; delete d._lc; const set = need && lc ? licenseSet(lc) : null; if (set && !licenseFits(set, need.need)) d.license_mismatch = { ...need, classes: String(lc).trim() }; } }
+    for (const d of drivers) { const lc = d._lc; delete d._lc; const set = need && lc ? licenseSet(lc) : null; if (set && !licenseFits(set, need.need)) d.license_mismatch = { ...need, classes: String(lc).trim() };
+      const dx = docsExpired(d._dx); delete d._dx; if (dx.length) d.doc_expired = dx; } }
   const documents = VEHICLE_DOC_READ.includes(user.role)
     ? (await env.DB.prepare(`SELECT f.id, f.filename, f.content_type, f.size, f.doc_kind, f.doc_note, f.doc_valid_until, f.created_at, u.display_name AS uploaded_by_name FROM files f JOIN users u ON u.id=f.uploaded_by
         WHERE f.vehicle_id=? AND f.case_id IS NULL AND f.environment=? ORDER BY f.created_at DESC`).bind(vehicleId, envName).all()).results
@@ -844,10 +847,24 @@ export async function licenseMismatches(env, envName, vehicleId, userIds) {
   for (const [u, x] of latest) { const set = licenseSet(x.lc); if (set && !licenseFits(set, need.need)) out.set(u, { ...need, classes: String(x.lc).trim() }); }
   return out;
 }
+// Backlog 1515 (Blickwinkel „Leitung ordnet einen Fahrer zu, dessen Führerschein, Fahrerkarte oder Code 95 laut Fahrerakte abgelaufen ist“):
+// der Fuhrparkagent meldete das nur in der Fahrerakte („nicht einsetzen“), die Zuordnung und die Fahrzeugakte schwiegen. Nur Hinweis, nie Sperre;
+// gewertet wird nur der aktuelle Nachweis je Art (superseded=0, nicht storniert) mit „gültig bis“ vor heute (Berliner Tag) – ohne Nachweis
+// bzw. ohne Ablaufdatum kein Hinweis (ungeklärt, die Fahrerakte zeigt das ohnehin).
+export const DOC_EXPIRED_KINDS = ['fuehrerschein', 'fahrerkarte', 'code95'];
+export const DOC_EXPIRED_SQL = (userCol, envCol, todayCol) => `SELECT json_group_array(json_object('k', x.kind, 'v', x.valid_until)) FROM drivers dr JOIN driver_documents x ON x.driver_id=dr.id
+  WHERE dr.user_id=${userCol} AND dr.environment=${envCol} AND x.kind IN ('fuehrerschein','fahrerkarte','code95') AND x.superseded=0 AND x.cancelled_at IS NULL
+    AND x.valid_until IS NOT NULL AND x.valid_until < ${todayCol}`;
+export function docsExpired(json) {
+  const by = new Map();
+  for (const x of JSON.parse(json || '[]')) if (DOC_EXPIRED_KINDS.includes(x.k) && x.v && (!by.has(x.k) || x.v > by.get(x.k))) by.set(x.k, x.v);
+  return DOC_EXPIRED_KINDS.filter((k) => by.has(k)).map((k) => ({ kind: k, valid_until: by.get(k) }));
+}
 export async function assignDriver(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
   // rec_active: Fahrerakte des Kontos (0 = ausgeschieden → Warnhinweis, Backlog 250; Sperre erst nach Antwort auf „Ausgeschiedene Fahrer“)
-  const driver = await env.DB.prepare(`SELECT id, display_name, (SELECT d.active FROM drivers d WHERE d.user_id=users.id) AS rec_active FROM users WHERE id=? AND role='driver' AND environment=? AND active=1`).bind(str(body.user_id, { key: 'user_id', required: true, max: 40, field: 'Fahrer' }), envName).first();
+  const driver = await env.DB.prepare(`SELECT id, display_name, (SELECT d.active FROM drivers d WHERE d.user_id=users.id) AS rec_active, (${DOC_EXPIRED_SQL('users.id', '?2', '?3')}) AS dx
+    FROM users WHERE id=?1 AND role='driver' AND environment=?2 AND active=1`).bind(str(body.user_id, { key: 'user_id', required: true, max: 40, field: 'Fahrer' }), envName, berlinDate()).first();
   if (!driver) throw bad('validation', 'Fahrer nicht gefunden (gleiche Umgebung erforderlich).');
   const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
@@ -891,7 +908,8 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   const bans = (await env.DB.prepare(`SELECT fine_no, driving_ban_months AS months FROM fines WHERE environment=? AND driver_id=? AND driving_ban_months IS NOT NULL
     AND status NOT IN ('eingestellt','erledigt') ORDER BY offense_at DESC`).bind(envName, driver.id).all()).results;
   const lic = (await licenseMismatches(env, envName, vehicleId, [driver.id])).get(driver.id); // Backlog 1514: nur Hinweis
-  return { id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}), ...(lic ? { license_mismatch: lic } : {}),
+  const dx = docsExpired(driver.dx); // Backlog 1515: nur Hinweis
+  return { ...(dx.length ? { doc_expired: dx } : {}), id, ended_previous: endPrev ? open.map((o) => o.plate) : [], other_open: endPrev ? [] : open.map((o) => o.plate), ...(driver.rec_active === 0 ? { driver_record_left: true } : {}), ...(lic ? { license_mismatch: lic } : {}),
     ...(bans.length ? { driving_ban_fines: bans } : {}), ...(vehicleOthers.length ? { vehicle_other_drivers: vehicleOthers } : {}) };
 }
 
