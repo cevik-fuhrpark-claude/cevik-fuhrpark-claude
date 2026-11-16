@@ -4041,15 +4041,18 @@ function myPlanned(v) {
 const vehSeenKey = () => `cfp_vseen_${S.me.id}_${S.me.environment}`;
 function vehSeenSave(cur) { try { localStorage.setItem(vehSeenKey(), JSON.stringify(cur)); } catch {} }
 function vehChangeNote(mv) {
-  const cur = mv.map((v) => ({ id: v.id, plate: v.plate }));
+
+  const cur = mv.map((v) => ({ id: v.id, plate: v.plate, tp: v.trailer_plate || '' }));
   S.vcur = cur;
   let seen = null; try { seen = JSON.parse(localStorage.getItem(vehSeenKey()) || 'null'); } catch {}
   if (!Array.isArray(seen)) { vehSeenSave(cur); return ''; }
   const ids = new Set(seen.map((x) => x && x.id));
   const added = mv.filter((v) => !ids.has(v.id));
   const gone = seen.filter((x) => x && x.id && !mv.some((v) => v.id === x.id));
-  if (!added.length && !gone.length) { vehSeenSave(cur); return ''; }
-  return `<section class="panel warn" role="note" id="vchange"><h2 style="margin-top:0">${esc(t('drv_vchange_title'))}</h2>${added.length ? `<p data-vchnew>${esc(t('drv_vchange_new'))} ${added.map((v) => `<b style="white-space:nowrap">${esc(v.plate)}</b>${v.valid_from ? ` <span class="small muted" style="white-space:nowrap">(${esc(t('drv_assigned_since'))} ${fmtD(v.valid_from)})</span>` : ''}`).join(', ')}</p>` : ''}${gone.length ? `<p data-vchgone>${esc(t('drv_vchange_gone'))} ${gone.map((x) => `<b style="white-space:nowrap">${esc(x.plate || '')}</b>`).join(', ')}</p>` : ''}<p class="small">${esc(t('drv_vchange_hint').replace('{c}', t('nav_cases')))}</p><div class="actions"><button class="btn secondary" id="vchangeok">${esc(t('drv_vchange_ok'))}</button></div></section>`;
+  const tpN = (x) => String(x || '').toUpperCase().replace(/[\s\-–.]+/g, '');
+  const trl = mv.map((v) => { const o = seen.find((x) => x && x.id === v.id); return o && typeof o.tp === 'string' && tpN(o.tp) !== tpN(v.trailer_plate) ? { plate: v.plate, from: o.tp, to: v.trailer_plate || '' } : null; }).filter(Boolean);
+  if (!added.length && !gone.length && !trl.length) { vehSeenSave(cur); return ''; }
+  return `<section class="panel warn" role="note" id="vchange"><h2 style="margin-top:0">${esc(t('drv_vchange_title'))}</h2>${added.length ? `<p data-vchnew>${esc(t('drv_vchange_new'))} ${added.map((v) => `<b style="white-space:nowrap">${esc(v.plate)}</b>${v.valid_from ? ` <span class="small muted" style="white-space:nowrap">(${esc(t('drv_assigned_since'))} ${fmtD(v.valid_from)})</span>` : ''}`).join(', ')}</p>` : ''}${gone.length ? `<p data-vchgone>${esc(t('drv_vchange_gone'))} ${gone.map((x) => `<b style="white-space:nowrap">${esc(x.plate || '')}</b>`).join(', ')}</p>` : ''}${trl.map((r) => `<p data-vchtrl>${esc(t('drv_vchange_trl')).replace('{p}', () => `<b style="white-space:nowrap">${esc(r.plate)}</b>`).replace('{a}', () => `<b style="white-space:nowrap">${esc(r.from || t('drv_vchange_none'))}</b>`).replace('{b}', () => `<b style="white-space:nowrap">${esc(r.to || t('drv_vchange_none'))}</b>`)}</p>`).join('')}${trl.some((r) => r.to) ? `<p class="small" data-vchtrlhint>${esc(t('drv_vchange_trl_hint'))}</p>` : ''}${added.length || gone.length ? `<p class="small">${esc(t('drv_vchange_hint').replace('{c}', t('nav_cases')))}</p>` : ''}<div class="actions"><button class="btn secondary" id="vchangeok">${esc(t('drv_vchange_ok'))}</button></div></section>`;
 }
 
 function myVehCached() { try { const c = JSON.parse(localStorage.getItem(`cfp_myveh_${S.me.id}_${S.me.environment}`) || 'null'); return c && Array.isArray(c.vehicles) ? c.vehicles : null; } catch { return null; } }
