@@ -1280,6 +1280,72 @@ function hiKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
+
+
+const tlFold = (s) => ' ' + String(s || '').toLowerCase().replace(/[’'`´-]/g, ' ').replace(/\b(?:ung|iyong|yong)\b/g, 'yung').replace(/\b(?:hnd|hinde|hnde)\b/g, 'hindi')
+  .replace(/\bwla\b/g, 'wala').replace(/\bwlang\b/g, 'walang').replace(/\s+/g, ' ') + ' ';
+const TL_MARK = /\b(?:ang|ng|nang|yung|ay|hindi|ayaw|wala|walang|mga|po|ako|ko|kami|namin|natin|kasi|naman|lang|rin|din|sira|nasira|sa|na|may)\b/;
+const TL_D = 'sira|nasira|nasisira|(?:hindi|di)\\s+(?:na\\s+|po\\s+)?gumagana|ayaw\\s+(?:na\\s+)?gumana|may\\s+(?:problema|diperensya|deperensya|depekto|aberya)|pumapalya|palyado|nagloloko|naglo\\s+loko';
+const TL_BRK = 'basag|nabasag|biyak|nabiyak|bitak|may\\s+lamat|lamat|crack|cracked|baluktot|nabali|bali|putol|naputol';
+const tlCo = (n, d) => new RegExp(`^(?=.*\\b(?:${n}))(?=.*\\b(?:${d.split('@').join(TL_D).split('#').join(TL_BRK)})(?![a-z]))`);
+const TL_OK = /\b(?:okay|ok|ayos|maayos|naayos|inayos|napalitan|pinalitan|pinaltan|nagawa|ginawa|na\s+fix|na\s+repair|nirepair|fixed|gumagana|umaandar|lumalamig)\s+na\b|\b(?:ayos|okay|ok)\s+lang\b|\bwalang\s+(?:naging\s+)?(?:problema|diperensya|aberya)\b|\bmaayos\s+(?:naman\s+)?(?:ang|lahat|na)\b/;
+const TL_NEG = /\b(?:hindi|di)\s+(?:naman\s+|na\s+|po\s+|pa\s+)?(?:tumutulo|tumatagas|nasira|sira|basag|nabasag|nabangga|nabunggo|naaksidente|nasunog|nasusunog|umuusok|flat|na\s+flat|butas|nabutas|pumutok|nasugatan|nasaktan|ninakaw|nanakaw|nawala|nalaglag|nahulog|natanggal|punit|napunit|kumalas)\b|\bwala(?:ng)?\s+(?:naman\s+|namang\s+|pong\s+|po\s+)?(?:tagas|tulo|leak|aksidente|disgrasya|sunog|apoy|usok|sira|nasira|problema|diperensya|damage|gasgas|sugat|nasugatan|nasaktan|ninakaw|nanakaw|nawala|nabangga|basag|lamat|crack)\b/g;
+const TL_KINDS = [['brake', tlCo('preno|brake', '@|walang\\s+preno|mahina|ayaw\\s+(?:kumapit|kumagat)|(?:hindi|di)\\s+(?:kumakapit|kumakagat)|malambot|lumalambot|naiipit|naipit|nagla\\s*lock|nag\\s+lock'), /hand\s*brake|handbreak|parking\s+brake|ilaw|light/],
+  ['brake', tlCo('air\\s+pressure|presyon\\s+ng\\s+hangin|hangin\\s+ng\\s+preno', 'bumababa|mababa|nawawala|bumagsak|bagsak|hindi\\s+(?:umaakyat|tumataas)|ayaw\\s+(?:umakyat|tumaas)')],
+  ['parkbrake', tlCo('hand\\s*brake|handbreak|parking\\s+brake', '@|ayaw\\s+(?:bumitaw|matanggal|maalis)|(?:hindi|di)\\s+(?:bumibitaw|mabitawan|maalis|matanggal|kumakapit)|ayaw\\s+kumapit|naiipit|naipit|stuck')],
+  ['parkbrake', /\bkusang\s+(?:umandar|gumulong|umatras|tumakbo)|\bgumulong\s+(?:nang\s+|ng\s+)?(?:mag\s*isa|kusa)/],
+  ['flat', tlCo('gulong|goma|tyre|tire|tayr', 'flat|butas|nabutas|pumutok|putok|sumabog|nawalan\\s+ng\\s+hangin|walang\\s+hangin|kulang\\s+(?:sa\\s+)?hangin|impis|naimpis|puncture|na\\s+puncture'), /air\s*bag|airbag|trapal|tarp|nut|turnilyo|bolt|tornilyo/],
+  ['tyre', tlCo('gulong|goma|tyre|tire|tayr', 'kalbo|upod|pudpod|manipis|may\\s+hiwa|hiwa|laslas|may\\s+umbok|umbok|bukol|may\\s+bukol'), /flat|butas|pumutok|putok|hangin|puncture/],
+  ['steer', tlCo('manibela|steering|direksyon|direksiyon', '@|matigas|mabigat|umuuga|nanginginig|maluwag|lumuluwag|may\\s+laro|kumakabig|humihila')],
+  ['steer', tlCo('truck|trak|sasakyan|unit', '(?:humihila|kumakabig|kinakabig|lumilihis)\\s+(?:\\S+\\s+){0,2}?(?:pa\\s*)?(?:kanan|kaliwa)')],
+  ['leak', tlCo('langis|oil|diesel|krudo|coolant|adblue|hydraulic|haydroliko|gasolina|tubig\\s+ng\\s+radiator', 'tumutulo|tulo|tumatagas|tagas|may\\s+tagas|leak|leaking|nag\\s*le\\s*leak|naglileak|tumatapon'), /ubos|naubos|naubusan|card|ilaw|light/],
+  ['leak', /\bmay\s+(?:tumutulo|tumatagas|tagas|leak)\b/, /ubos|naubos|naubusan|card|ilaw|light|bubong|kisame|ulan/],
+  ['fire', /\b(?:nasusunog|nasunog|may\s+sunog|nagliliyab|nagliyab|may\s+apoy|nag\s*apoy|umaapoy)\b/, /clutch|klats|klach|fuse|piyus|bumbilya|pagkain|kanin|ulam/],
+  ['fire', tlCo('cabin|kabina|makina|engine|truck|trak|wire|wiring|kable|baterya|battery|upuan|seat|dashboard', 'usok|umuusok|nag\\s*uusok|umuusok'), /tambutso|tambucho|muffler|exhaust|silencer|maitim|itim|puti|asul/],
+  ['acc', /\b(?:nabangga|bumangga|nakabangga|binangga|nabunggo|bumunggo|nakabunggo|naaksidente|aksidente|disgrasya|nadisgrasya|sumalpok|sinalpok|natamaan\s+ako|tumama\s+ako|nasagi|nakasagi)\b/],
+  ['injury', /\b(?:nasugatan|sugatan|may\s+sugat|nasaktan|duguan|dumudugo|ambulansya|ambulance)\b/],
+  ['nostart', /\b(?:ayaw|hindi|di)\s+(?:na\s+|po\s+)?(?:mag\s*start|mag\s+istart|magstart|umandar|umaandar|mag\s*andar|mapaandar|paandarin|ma\s*start|nag\s*s?start|nagsisistart|nagistart)\b|\b(?:makina|engine|truck|trak)\S*\s+(?:\S+\s+)?(?:namamatay|namatay)\b|\b(?:namamatay|namatay)\s+(?:\S+\s+)?(?:ang\s+|yung\s+)?(?:makina|engine|truck|trak)\b/, /reefer|refer|thermo|carrier|unit|aircon|air\s*con|\bac\b|heater|webasto|freezer|chiller/],
+  ['engine', tlCo('makina|engine|motor|makena', 'mainit|umiinit|nag\\s*overheat|overheat|nag\\s*iinit|kakaibang\\s+tunog|maingay|may\\s+tunog|kumakalampag|kalampag|(?:mahina|walang)\\s+(?:ang\\s+)?(?:hatak|lakas|power)|nanghihina|@|nagvi\\s*vibrate|kumakadyot|limp\\s+mode'), /usok|umuusok|ilaw|light|start|umandar|umaandar|namamatay|namatay/],
+  ['engine', tlCo('tambutso|tambucho|muffler|exhaust|silencer', '(?:maitim|itim|puti|asul|makapal)\\s+na\\s+usok|usok\\s+(?:na\\s+)?(?:maitim|itim|puti|asul)')],
+  ['engine', tlCo('turbo', '@|sumisipol|sipol|may\\s+tunog|maingay'), /usok/],
+  ['engine', tlCo('temperatura|temperature|temp', 'tumataas|mataas|umaakyat'), /reefer|refer|unit|freezer|chiller|aircon/],
+  ['mirror', tlCo('side\\s+mirror|salamin\\s+sa\\s+(?:gilid|tagiliran)|rear\\s*view|mirror|espeho|espejo', '@|#|nalaglag|natanggal|maluwag|lumuluwag|umuuga|gumagalaw'), /heater|heating|init/],
+  ['glass', tlCo('windshield|windscreen|salamin\\s+sa\\s+harap|harapang\\s+salamin|salamin|bintana', '#|tinamaan\\s+ng\\s+bato|natamaan\\s+ng\\s+bato'), /side|mirror|gilid|tagiliran|espeho|espejo|rear\s*view|ayaw|tumaas|bumaba/],
+  ['window', tlCo('bintana|window', '(?:ayaw|hindi|di)\\s+(?:\\S+\\s+)?(?:tumaas|bumaba|umakyat|sumara|magsara|isara|bumukas|mabuksan|maisara|maitaas|maibaba|tumataas|bumababa)')],
+  ['lights', tlCo('ilaw|headlight|head\\s+light|signal\\s*light|signal|tail\\s*light|brake\\s*light|bumbilya|fog\\s*light|park\\s*light|hazard|blinker|indicator', '@|#|patay|walang\\s+ilaw|pundido|napundi|pundi|(?:hindi|di)\\s+(?:umiilaw|nagsisindi|sumisindi)|ayaw\\s+(?:umilaw|magsindi|sumindi)'), /check\s+engine|dashboard|warning|\babs\b|\bebs\b|ilaw\s+ng\s+(?:langis|baterya|makina|battery|oil)|oil\s+light|battery\s+light|nakailaw|naka\s+ilaw|umiilaw\s+(?:ang|yung)/],
+  ['warnlight', tlCo('check\\s+engine|warning|\\babs|\\bebs|ilaw\\s+ng\\s+(?:langis|baterya|makina|battery|oil)|oil\\s+light|battery\\s+light|engine\\s+light', 'nakailaw|naka\\s+ilaw|umiilaw|lumabas|may\\s+lumabas|nagpapakita|nag\\s*bi\\s*blink|kumikislap|naka\\s+on|bukas|lumitaw')],
+  ['warnlight', tlCo('dashboard|screen|display|monitor', '(?:may\\s+)?(?:error|warning|mensahe|lumabas|lumitaw)')],
+  ['batt', tlCo('baterya|battery|batirya|bateri', 'lowbat|low\\s*bat|low\\s+battery|deadbat|patay|namatay|drained|walang\\s+(?:karga|charge|kuryente)|ayaw\\s+mag\\s*charge|(?:hindi|di)\\s+nag\\s*cha?\\s*charge|lumobo|lobo|mahina|@'), /ilaw|light|indicator|nakaw|ninakaw|ninakawan|nanakaw|magnanakaw/],
+  ['tacho', tlCo('tachograph|tacho|takograp|tako', '@|#|error|ayaw\\s+(?:bumasa|basahin)|(?:hindi|di)\\s+(?:mabasa|nababasa|bumabasa)'), /fuel|diesel|krudo|gas\b|atm|bangko/],
+  ['tacho', tlCo('driver\\s*card|card\\s+ng\\s+driver|driver\\s+kard|card|kard', '@|#|error|ayaw\\s+(?:bumasa|basahin)|(?:hindi|di)\\s+(?:mabasa|nababasa)|nawala|naiwala|ninakaw|nanakaw'), /fuel|diesel|krudo|gas\b|atm|bangko|shell|dkv|uta\b|credit|debit/],
+  ['fuelcard', tlCo('(?:fuel|diesel|krudo|gas|dkv|shell|uta)\\s*card', 'block|na\\s+block|naka\\s+block|blocked|reject|na\\s+reject|declined|na\\s+decline|ayaw\\s+(?:tanggapin|gumana)|(?:hindi|di)\\s+tinanggap|nawala|naiwala|ninakaw|nanakaw|@')],
+  ['theft', /\b(?:ninakaw|ninakawan|nanakaw|nanakawan|nagnakaw|magnanakaw|pinagnakawan)\b|\b(?:sinipsip|sumipsip|hinigop|humigop)\s+(?:\S+\s+){0,2}?(?:diesel|krudo|gasolina)\b|\bpinasok\s+(?:ng\s+(?:magnanakaw|kung\s+sino)\s+)?(?:ang\s+|yung\s+)?(?:cabin|kabina|truck|trak|trailer|sasakyan)\b/, /card|kard|susi|\bkey\b|plaka|plate|(?:hindi|di|wala|walang)\s+(?:\S+\s+)?(?:ninakaw|nanakaw|nagnakaw)/],
+  ['vandal', /\b(?:sinira|ginasgas|ginasgasan|ginuhitan|hiniwa|nilaslas|pinunit|binasag|binutas|tinusok|sinulatan|vinandal)\s+(?:\S+\s+){0,4}?(?:ng|nang)\s+(?:kung\s+sino|ibang\s+tao|di\s+kilala|hindi\s+kilala|mga\s+bata|vandal)|\b(?:kung\s+sino|may\s+tao)\s+(?:ang\s+)?(?:\S+\s+)?(?:sumira|gumasgas|naglaslas|bumasag|bumutas|pumunit|nagsulat|nag\s*vandal)|\bvinandal\b|\bna\s+vandal\b/],
+  ['cabkit', tlCo('(?:seat|upuan|mirror|salamin)\\s+(?:heater|heating)|heater\\s+(?:ng|sa)\\s+(?:upuan|seat|mirror|salamin)', '@|(?:hindi|di)\\s+umiinit|ayaw\\s+uminit|walang\\s+init')],
+  ['lost', tlCo('susi|\\bkey|papeles|rehistro|registration|or\\s*cr|dokumento|libreta', 'nawala|naiwala|nawawala|(?:hindi|di)\\s+(?:ko\\s+|namin\\s+)?(?:makita|mahanap)|ninakaw|nanakaw'), /card|kard/],
+  ['coupling', tlCo('trailer|treyler|trailler', 'kumalas|nakalas|natanggal\\s+sa\\s+(?:truck|trak|ulo|tractor)|humiwalay|nahiwalay|ayaw\\s+(?:kumabit|mag\\s*lock|ikabit|maikabit)|(?:hindi|di)\\s+(?:makabit|maikabit|nakakabit|nagla\\s*lock|naka\\s+lock|kumakabit)')],
+  ['coupling', tlCo('kingpin|king\\s+pin|fifth\\s+wheel|5th\\s+wheel|sadel|saddle|kupling|coupling', '@|#|ayaw\\s+(?:mag\\s*lock|sumara|magsara)|(?:hindi|di)\\s+(?:nagla\\s*lock|naka\\s+lock|ma\\s*lock|mai\\s*lock|sumasara|nagsasara)|naipit|stuck')],
+  ['dryfuel', /\bnaubusan\s+(?:ako\s+|kami\s+|po\s+)?(?:ng\s+)?(?:diesel|krudo|gasolina|fuel|gas)\b|\b(?:diesel|krudo|fuel|gasolina)\S*\s+(?:\S+\s+)?(?:ubos|naubos|wala\s+na)\b|\b(?:ubos|naubos)\s+(?:na\s+)?(?:ang\s+|yung\s+)?(?:diesel|krudo|fuel|gasolina)\b|\bwalang\s+(?:laman\s+(?:ang\s+)?tangke|diesel|krudo)\b/, /adblue|card|kard|reefer|refer|nakaw|ninakaw|sinipsip/],
+  ['reefer', tlCo('reefer|refer|thermo\\s*king|carrier|cooling\\s+unit|freezer|chiller|\\bunit', '@|(?:hindi|di)\\s+(?:na\\s+)?(?:lumalamig|malamig|nagpapalamig)|ayaw\\s+(?:lumamig|magpalamig)|tumataas\\s+ang\\s+temp\\S*|alarm|ayaw\\s+mag\\s*start|(?:hindi|di)\\s+nag\\s*start|error'), /cabin|kabina|aircon|air\s*con/],
+  ['climate', tlCo('aircon|air\\s*con|\\bac|heater|hiter|webasto|blower|bentilador', '@|(?:hindi|di)\\s+(?:na\\s+)?(?:lumalamig|malamig|umiinit|mainit)|ayaw\\s+(?:lumamig|uminit)|mainit\\s+(?:ang\\s+)?hangin|walang\\s+(?:lamig|init|hangin)'), /reefer|refer|\bunit|freezer|chiller|(?:seat|upuan|mirror|salamin)\s+(?:heater|heating)|heater\s+(?:ng|sa)\s+(?:upuan|seat|mirror|salamin)|makina|engine/],
+  ['tarp', tlCo('trapal|tarpaulin|tarp|lona|kurtina|curtain', 'sinira|punit|napunit|pinunit|butas|nabutas|binutas|hiwa|hiniwa|laslas|nilaslas|natanggal|nilipad|tinangay|@|#')],
+  ['exhaust', tlCo('tambutso|tambucho|muffler|exhaust|silencer', 'nalaglag|nahulog|natanggal|nakabitin|lumalawit|butas|maingay|@|#'), /usok/],
+  ['visib', tlCo('wiper|panlinis\\s+ng\\s+salamin', '@|#|walang\\s+tubig|ayaw\\s+mag\\s*spray|(?:hindi|di)\\s+(?:nag\\s*spray|gumagalaw)')],
+  ['seat', tlCo('seat\\s*belt|seatbelt|sinturon|upuan|\\bseat', '@|#|ayaw\\s+(?:kumabit|mag\\s*lock|maikabit|ma\\s*lock)|(?:hindi|di)\\s+(?:kumakabit|nagla\\s*lock|ma\\s*lock)|napunit|punit|naipit|bumababa|lumulubog|maluwag'), /heater|heating|init|nasunog|nasusunog|usok/],
+  ['door', tlCo('pinto|pintuan|door|kandado|\\block|seradura|hawakan', '@|#|ayaw\\s+(?:magsara|sumara|isara|mabuksan|bumukas|mag\\s*lock)|(?:hindi|di)\\s+(?:magsara|sumasara|maisara|mabuksan|bumubukas|nagsasara|nagla\\s*lock|ma\\s*lock)|bumukas\\s+(?:habang|nang)|naipit|stuck'), /bintana|window|seat|belt|kumalas|card|kard|fifth|5th|kingpin|king\s+pin|sadel|saddle|kupling|coupling|ninakaw|nanakaw|sinira\s+(?:\S+\s+){0,4}?(?:ng|nang)\s+kung/],
+  ['stuck', tlCo('putik|niyebe|snow|yelo|buhangin|lusak', 'na\\s*stuck|naipit|lubog|nalubog|baon|nabaon|nabalaho|balaho|nasadlak|stuck'), /traffic|trapik/],
+  ['numplate', tlCo('plaka|plate\\s*number|number\\s*plate|\\bplate', 'nalaglag|nahulog|natanggal|nawala|ninakaw|nanakaw|(?:hindi|di)\\s+mabasa|#'), /ilaw|light/],
+  ['gear', tlCo('gear|kambyo|kambiyo|transmission|gearbox|clutch|klats|klach', '@|ayaw\\s+(?:pumasok|kumambyo|mag\\s*shift)|(?:hindi|di)\\s+(?:pumapasok|makambyo|maipasok)|dumudulas|nag\\s*slip|slip|nasunog|sunog|matigas|naipit|stuck'), /ilaw|light/],
+  ['wheel', tlCo('\\bnut|turnilyo|tornilyo|bolt|\\blug|tuerka', 'maluwag|lumuwag|natanggal|nawala|nahulog|kulang'), /preno|brake|seat|upuan|salamin|mirror|plaka|plate/],
+  ['wheel', tlCo('bearing|\\bhub|\\brim|\\baro', 'mainit|maingay|may\\s+tunog|@|#')],
+  ['susp', tlCo('air\\s*bag|airbag|suspension|suspensyon|shock|bellows|leaf\\s+spring|muelye|muwelye|\\bspring', 'pumutok|putok|sumabog|tumatagas|tagas|leak|lumubog|bumaba|walang\\s+hangin|nawalan\\s+ng\\s+hangin|maluwag|@|#'), /manibela|steering|upuan|seat/],
+  ['adas', tlCo('sensor|radar|camera|kamera|cruise|lane\\s+assist|emergency\\s+brake', '@|error|ayaw\\s+gumana'), /reefer|refer|tacho|tako|dashcam/],
+  ['adas', /\bkusang\s+(?:nag\s*)?(?:preno|brake|nagpreno|pumreno)\b/]];
+function tlKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+|\s(?:at|pero|tapos|saka|tsaka|kaso)\s/)) { if (!/[a-z]/i.test(raw)) continue; const f = tlFold(raw); if (!TL_MARK.test(f)) continue; const p = f.replace(TL_NEG, ' '); if (!TL_OK.test(p)) for (const [n, rx, ex] of TL_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
+
+
+
+
 const FK_NEG = new RegExp('(?:^|[^\\p{L}])(?:' + [
   'kaza\\s+(?:olmad[ıi]|yok|yapmad[ıi][mk]?)', '(?:yang[ıi]n|duman|h[ıi]rs[ıi]zl[ıi]k|soygun)\\s+(?:yok|[çc][ıi]kmad[ıi]|olmad[ıi])', 'hi[çc]bir\\s+[şs]ey\\s+[çc]al[ıi]nmad[ıi]',
   '(?:nie\\s+by[łl]o|bez|brak)\\s+(?:wypadku|kolizji|st[łl]uczki|po[żz]aru|ognia|dymu|kradzie[żz]y|w[łl]amania)', 'nic\\s+nie\\s+(?:zosta[łl]o\\s+)?(?:skradzione|ukradzione|ukradli|zgin[ęe][łl]o)',
@@ -1292,9 +1358,10 @@ const FK_NEG = new RegExp('(?:^|[^\\p{L}])(?:' + [
   '(?:nebuvo|be|nėra|nera)\\s+(?:jokios\\s+|jokio\\s+)?(?:avarij\\p{L}*|eismo\\s+įvyki\\p{L}*|susidūrim\\p{L}*|susidurim\\p{L}*|gaisr\\p{L}*|dūm\\p{L}*|vagyst\\p{L}*)',
   '(?:nuk\\s+(?:ka|pati|kishte|ndodhi|pat)(?:\\s+pasur)?|pa)\\s+(?:asnj[ëe]\\s+|nj[ëe]\\s+)?(?:aksident\\p{L}*|zjarr\\p{L}*|tym\\p{L}*|vjedhje\\p{L}*)',
   '(?:ei\\s+olnud|pole\\s+olnud|ei\\s+ole|pole|polnud|ilma)\\s+(?:mingit\\s+)?(?:õnnetus\\p{L}*|onnetus\\p{L}*|avarii\\p{L}*|kokkupõrge\\p{L}*|tulekahju\\p{L}*|tuld|suitsu\\p{L}*|vargus\\p{L}*)',
-  '(?:koi\\s+)?(?:accident|exident|aksident|eksident|takkar|takar|chori|aag|ag)\\s+(?:bhi\\s+)?(?:nahi|nahin|nhi|nai)\\s+(?:hua|hui|huva|lagi|hai|tha|thi|ho)', '(?:kuch\\s+(?:bhi\\s+)?)?(?:gayab|gaib|chori)\\s+(?:nahi|nahin|nhi|nai)\\s+(?:hua|hui|huva|hai|tha|thi|ho|kiya)', 'kuch\\s+(?:bhi\\s+)?(?:nahi|nahin|nhi|nai)\\s+(?:chura\\p{L}*|gaya|gayab)'
+  '(?:koi\\s+)?(?:accident|exident|aksident|eksident|takkar|takar|chori|aag|ag)\\s+(?:bhi\\s+)?(?:nahi|nahin|nhi|nai)\\s+(?:hua|hui|huva|lagi|hai|tha|thi|ho)', '(?:kuch\\s+(?:bhi\\s+)?)?(?:gayab|gaib|chori)\\s+(?:nahi|nahin|nhi|nai)\\s+(?:hua|hui|huva|hai|tha|thi|ho|kiya)', 'kuch\\s+(?:bhi\\s+)?(?:nahi|nahin|nhi|nai)\\s+(?:chura\\p{L}*|gaya|gayab)',
+  '(?:wala(?:ng)?|hindi|di)\\s+(?:naman\\s+|namang\\s+|pong\\s+|po\\s+)?(?:aksidente|naaksidente|disgrasya|nadisgrasya|nabangga|nabunggo|sunog|nasunog|apoy|usok|umuusok|nakaw|ninakaw|nanakaw|nagnakaw)\\p{L}*'
 ].join('|') + ')(?!\\p{L})', 'giu');
 const fkNeg = (v) => String(v || '').replace(FK_NEG, ' ok ');
-async function foreignKinds(v0) { const v = fkNeg(v0); const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v), ...hiKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+async function foreignKinds(v0) { const v = fkNeg(v0); const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v), ...hiKinds(v), ...tlKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };

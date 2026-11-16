@@ -43711,7 +43711,7 @@ await test('Backlog 1538 (Blickwinkel „Fahrer schreibt Hindi/Punjabi in latein
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(ids.length, 38, '38 Hinweisarten (Backlog 1539: theft, cabkit; 1540: vandal)');
   eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
-  ok(app.includes('...grKinds(v), ...hiKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...grKinds(v), ...hiKinds(v)'), 'in foreignKinds aufgenommen'); // Backlog 1543: danach ...tlKinds(v)
   ok(!main.includes('const HI_KINDS') && lang.includes('const HI_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['brake kaam nahi kar raha', 'tyre phat gaya', 'gaadi start nahi ho rahi', 'aag lag gayi', 'tel tapak raha hai', 'accident ho gaya', 'check engine light jal rahi hai', 'reefer thanda nahi kar raha']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
@@ -43823,6 +43823,53 @@ await test('Backlog 1542 (Blickwinkel „Fahrer speichert sein Passwort im Passw
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-passwortmanager.py'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tagalog/Taglish“, Backlog 195): „sira ang preno“, „flat ang gulong“, „ayaw mag-start ng makina“, „nasusunog ang truck“, „tumutulo ang langis“, „nabangga ako“, „hindi lumalamig ang reefer“, „ninakaw ang diesel“ u. a. → dieselben Hinweise (TL_KINDS über tlFold, Hauptwort und Befund in beliebiger Reihenfolge); Reparaturvermerk („naayos na“, „napalitan na“), Verneinung („walang tagas“, „hindi tumutulo“, „walang aksidente“ – vorher Albanisch-Treffer) und Alltagssätze ohne; „walang preno“/„patay ang ilaw“ sind Mängel; Auspuffrauch Motor; englische/deutsche/andere Sätze unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { tlKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { tlKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...tlKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [["sira ang preno", "brake"], ["yung preno sira", "brake"], ["walang preno", "brake"], ["ayaw kumapit ng preno", "brake"], ["mahina ang preno", "brake"], ["may problema sa preno", "brake"], ["bumababa ang air pressure", "brake"],
+    ["ayaw bumitaw ng handbrake", "parkbrake"], ["kusang gumulong ang truck", "parkbrake"], ["flat ang gulong", "flat"], ["butas ang gulong", "flat"], ["pumutok ang gulong", "flat"], ["na-flat yung gulong sa likod", "flat"], ["sir, flat po yung gulong sa harap", "flat"],
+    ["kalbo na ang gulong", "tyre"], ["matigas ang manibela", "steer"], ["umuuga ang manibela", "steer"], ["tumutulo ang langis", "leak"], ["may tagas ng diesel", "leak"], ["may leak ng langis", "leak"], ["tumutulo ang coolant", "leak"], ["may tumutulo sa ilalim ng truck", "leak"],
+    ["nasusunog ang truck", "fire"], ["umuusok ang makina", "fire"], ["may usok sa cabin", "fire"], ["mabaho parang nasusunog na wire", "fire"], ["nabangga ako", "acc"], ["nabangga ko yung poste", "acc"], ["naaksidente ako", "acc"], ["nabangga ako sa likod ng kotse pero walang nasaktan", "acc"],
+    ["nasugatan ako", "injury"], ["ayaw mag start ng makina", "nostart"], ["hindi umaandar ang truck", "nostart"], ["ayaw umandar ng truck", "nostart"], ["nag overheat ang makina", "engine"], ["mainit ang makina", "engine"], ["may kakaibang tunog ang makina", "engine"],
+    ["mahina ang hatak ng makina", "engine"], ["umuusok ang tambutso ng maitim na usok", "engine"], ["basag ang side mirror", "mirror"], ["sira yung salamin sa gilid", "mirror"], ["basag ang windshield", "glass"], ["may lamat ang windshield", "glass"], ["ayaw tumaas ng bintana", "window"],
+    ["patay ang ilaw", "lights"], ["pundido ang headlight", "lights"], ["hindi gumagana ang signal light", "lights"], ["walang ilaw ang trailer", "lights"], ["ayaw umilaw ng headlight sa kanan", "lights"], ["nakailaw ang check engine", "warnlight"], ["error sa dashboard", "warnlight"],
+    ["lowbat ang baterya", "batt"], ["patay ang baterya", "batt"], ["sira ang tachograph", "tacho"], ["hindi mabasa ang driver card", "tacho"], ["na-block ang fuel card", "fuelcard"], ["nawala ang susi", "lost"], ["hindi ko mahanap ang susi", "lost"],
+    ["kumalas ang trailer", "coupling"], ["yung trailer hindi ma-lock sa fifth wheel", "coupling"], ["naubusan ako ng diesel", "dryfuel"], ["ubos na ang diesel", "dryfuel"], ["hindi lumalamig ang reefer", "reefer"], ["sira ang reefer unit", "reefer"],
+    ["hindi lumalamig ang aircon", "climate"], ["sira ang heater", "climate"], ["boss sira po ang aircon ng truck", "climate"], ["hindi umiinit ang seat heater", "cabkit"], ["punit ang trapal", "tarp"], ["nalaglag ang tambutso", "exhaust"], ["ayaw gumana ng wiper", "visib"],
+    ["ayaw kumabit ng seatbelt", "seat"], ["ayaw magsara ng pinto", "door"], ["hindi mabuksan ang pinto", "door"], ["yung pinto ng trailer ayaw magsara", "door"], ["na-stuck sa putik ang truck", "stuck"], ["nalaglag ang plaka", "numplate"], ["ayaw pumasok ng gear", "gear"],
+    ["dumudulas ang clutch", "gear"], ["nasunog ang clutch", "gear"], ["maluwag ang mga nut ng gulong", "wheel"], ["mainit ang bearing ng gulong", "wheel"], ["pumutok ang air bag ng suspension", "susp"], ["sira ang sensor ng radar", "adas"], ["kusang nagpreno ang truck", "adas"],
+    ["ninakaw ang diesel", "theft"], ["ninakawan kami ng baterya", "theft"], ["may nagnakaw ng radyo", "theft"], ["may sumipsip ng diesel sa tangke", "theft"], ["ginasgas ng kung sino ang pinto", "vandal"]];
+  for (const [x, k] of CASES) { eq([...tlKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x);
+    ok([...await others(x)].every((o) => o === k), 'übrige Tabellen höchstens derselbe Hinweis: ' + x); }
+  eq([...tlKinds('sinira ng kung sino ang trapal')].sort().join(','), 'tarp,vandal', 'Vandalismus + Plane');
+  eq([...tlKinds('sira ang preno, tumutulo ang langis')].sort().join(','), 'brake,leak', 'zwei Satzteile, zwei Hinweise');
+  eq([...tlKinds('naayos na ang preno pero patay ang ilaw')].sort().join(','), 'lights', '„pero“ trennt Satzteile: Reparaturvermerk gilt nur für die Bremse');
+  const NO = ["okay na ang preno", "naayos na ang preno", "napalitan na ang gulong", "okay na yung gulong, napalitan na", "naayos na ng mekaniko ang preno", "gumagana na ang aircon", "walang tagas", "hindi tumutulo ang langis",
+    "walang aksidente", "hindi nabangga", "walang sunog", "walang nasugatan", "walang nasira", "ayos lang lahat", "maayos naman ang lahat", "salamat po", "pauwi na ako", "nasa parking na ako", "kumain na ako", "mainit ang panahon ngayon",
+    "malamig sa labas", "traffic sa highway", "nasa ospital ang anak ko", "naiwan ko ang susi sa loob ng truck"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Tagalog-Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1543"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (tlKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Tagalog-Tabelle');
+  const src = app.slice(app.indexOf('\nconst tlFold'), app.indexOf('\nfunction tlKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|tlCo|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...hiKinds(v), ...tlKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const TL_KINDS') && lang.includes('const TL_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['sira ang preno', 'flat ang gulong', 'ayaw mag-start ng makina', 'nasusunog ang truck', 'tumutulo ang langis', 'nabangga ako', 'nakailaw ang check engine', 'hindi lumalamig ang reefer']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['naayos na', 'napalitan na', 'ayos lang lahat', 'walang tagas', 'walang aksidente']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('walang preno') && [...await fk('walang preno')].join() === 'brake', 'Hilfe „walang preno“ = Bremse: ' + l);
+    ok(STRINGS[l].help_report_s.includes('maitim na usok sa tambutso') && [...await fk('maitim na usok sa tambutso')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-taglish.py'), 'UI-Prüfung in pruefen.sh');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
