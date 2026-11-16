@@ -8743,7 +8743,7 @@ await test('Fahrzeugliste: Suche findet Hersteller/Modell, Liste zeigt beides; P
   const fs = await import('node:fs');
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
-  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '') + ' ' + (v.former_plates || []).join(' ') + ' ' + vEquip(v).map((k) => t('eq_' + k)).join(' ')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell (seit Backlog 1513 auch Ausstattung)');
+  ok(app.includes("(v.manufacturer || '') + ' ' + (v.model || '') + ' ' + (v.former_plates || []).join(' ') + ' ' + vEquip(v).map((k) => t('eq_' + k)).join(' ') + ' ' + (v.drivers_now || []).join(' ')).toLowerCase())}\"") , 'Suchtext enthält Hersteller und Modell (seit Backlog 1513 auch Ausstattung, seit 1528 Fahrer)');
   ok(app.includes("esc([v.manufacturer, v.model, v.build_year].filter(Boolean).join(' '))"), 'Liste zeigt Hersteller, Modell, Baujahr');
   eq((i18n.match(/veh_search_ph: '/g) || []).length, 3, 'Platzhalter DE/UK/EN');
   ok(app.includes("t('veh_search_ph')"), 'Platzhalter genutzt');
@@ -42846,7 +42846,7 @@ await test('Backlog 1513 (Blickwinkel „Disposition braucht kurzfristig einen f
   ok(app.includes('<select id="veq"') && app.includes("S.vehEq = veq.value; viewVehicles();"), 'Auswahl „Ausstattung“ (kein <form>, lädt sofort)');
   ok(app.includes("const base = preEq.filter((v) => !eqSel || vEquip(v).includes(eqSel));"), 'Auswahl wirkt vor den Verfügbarkeits-Knöpfen');
   ok(app.includes("eqSel ? `${t('eq_label')} ${t('eq_' + eqSel)}` : ''"), 'Druckkopf nennt die Ausstattung');
-  ok(app.includes('data-eqhint') && app.includes("vEquip(v).map((k) => t('eq_' + k)).join(' ')).toLowerCase()"), 'Hinweis und Suche („kühlung“ findet das Gespann)');
+  ok(app.includes('data-eqhint') && app.includes("vEquip(v).map((k) => t('eq_' + k)).join(' ') + ' ' + (v.drivers_now || []).join(' ')).toLowerCase()"), 'Hinweis und Suche („kühlung“ findet das Gespann; seit 1528 auch Fahrer)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['eq_label', 'eq_taillift', 'eq_crane', 'eq_reefer']) ok(STRINGS[l][k], `${l}.${k}`);
@@ -43339,6 +43339,60 @@ await test('Backlog 1527 (Blickwinkel „Lkw und Auflieger werden umgemeldet –
   for (const l of ['de', 'uk', 'en']) {
     ok(['{a}', '{b}'].every((x) => STRINGS[l].drv_vchange_plate.includes(x) && STRINGS[l].drv_vchange_trl_same.includes(x)) && STRINGS[l].drv_vchange_trl_same.includes('{p}') && STRINGS[l].drv_vchange_plate_hint, `${l}: Texte`);
     ok(STRINGS[l].help_myveh_s.split('|').some((p) => /Ummeldung|перереєстрація|re-registration/.test(p)), `${l}: Hilfe`);
+  }
+});
+
+await test('Backlog 1528 (Blickwinkel „Disposition fragt: Wer fährt heute den Lkw? Welche Lkw haben keinen festen Fahrer?“): Fahrzeugliste nennt die zurzeit zugeordneten Fahrer (`drivers_now`, nur Inhaber/Leitung/Disposition, nur diese Umgebung, beendete Zuordnungen nicht); Werkstatt, Lesezugriff, Fahrer und Integrations-API ohne Namen; CSV-Spalte; Knopf „Ohne Fahrer“ (nur Lkw in Betrieb, nicht ruhend), Suche, Hinweis und Hilfe (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const x = await U.own.post('/api/users', { username: 'w.dispo1528', display_name: 'Dispo', role: 'dispatch', environment: 'test' });
+  const dispo = new Client(worker, e, 'w.dispo1528'); await dispo.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const y = await U.own.post('/api/users', { username: 'w.fahrer2', display_name: 'Anna Zweit', role: 'driver', environment: 'test' });
+  const d2 = new Client(worker, e, 'w.fahrer2'); await d2.post('/api/invite/accept', { token: y.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  // Fahrer der Betriebsumgebung: dessen Zuordnung darf in der Test-Liste nicht erscheinen
+  const z = await U.own.post('/api/users', { username: 'w.fahrerprod', display_name: 'Prod Fahrer', role: 'driver', environment: 'production' }); eq(z.status, 201, JSON.stringify(z.data));
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340310152801', plate: 'TT-AH 1528', kind: 'anhaenger', site: 'Dortmund' })).status, 201, 'Anhänger');
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: y.data.id })).status, 201, 'Zweifahrerbetrieb');
+  e.DB.db.prepare("INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at,environment) VALUES ('dv-p1528',?,?,'2026-01-01T00:00:00.000Z',NULL,'Test',?,'2026-01-01T00:00:00.000Z','production')").run(z.data.id, V2, U.fleet.id);
+  const list = async (c) => { const r = await c.get('/api/vehicles'); eq(r.status, 200); return new Map(r.data.vehicles.map((v) => [v.id, v])); };
+  let m = await list(U.fleet);
+  eq(JSON.stringify(m.get(V1).drivers_now), JSON.stringify(['Anna Zweit', 'Fahrer W']), 'alphabetisch, beide Fahrer');
+  eq(JSON.stringify(m.get(V2).drivers_now), '[]', 'ohne Fahrer (Zuordnung der Betriebsumgebung zählt nicht)');
+  m = await list(dispo); eq(m.get(V1).drivers_now.length, 2, 'Disposition sieht die Namen');
+  for (const c of [U.ws, U.viewer, U.driver]) for (const v of (await list(c)).values()) ok(!('drivers_now' in v) && !('dnow' in v), `${c.name}: keine Namen`);
+  // Zuordnung beenden → verschwindet
+  const as = (await U.fleet.get(`/api/vehicles/${V1}`)).data.drivers.find((d) => d.user_id === y.data.id && !d.valid_to);
+  eq((await U.fleet.req('DELETE', `/api/assignments/${as.id}`)).status, 200, 'Zuordnung beendet');
+  m = await list(U.fleet); eq(JSON.stringify(m.get(V1).drivers_now), JSON.stringify(['Fahrer W']), 'beendete Zuordnung nicht mehr');
+  // CSV: letzte Spalte für Leitung/Disposition, nicht für Werkstatt
+  const csv = async (c, q = '&drivers=1') => { const r = await c.req('GET', '/api/vehicles?format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^\uFEFF/, '').split('\r\n'); };
+  let rows = await csv(U.fleet); ok(rows[0].endsWith(';Fahrer (aktuell zugeordnet)'), rows[0].slice(-80));
+  ok(rows.find((r) => r.startsWith('SZ-YC 5513;')).endsWith(';Fahrer W'), 'CSV-Zeile mit Fahrer');
+  rows = await csv(dispo); ok(rows[0].endsWith(';Fahrer (aktuell zugeordnet)'), 'Disposition-CSV');
+  rows = await csv(U.ws); ok(!rows[0].includes('Fahrer (aktuell'), 'Werkstatt-CSV ohne Fahrerspalte');
+  rows = await csv(U.fleet, ''); ok(!rows[0].includes('Fahrer (aktuell') && rows[0].endsWith(';Art nächste Prüfung'), 'ohne drivers=1 unverändert (bestehende Auswertungen)');
+  // Integrations-API (Datensparsamkeit): keine Namen
+  const { vehiclesCsv } = await import('../src/vehicles.js'); const app0 = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!vehiclesCsv([{ plate: 'A', kind: 'lkw' }], (v) => v ?? '', { withDrivers: true }).includes('Fahrer (aktuell'), 'ohne Feld keine Spalte');
+  ok(app0.includes("(isMgr() || S.me.role === 'dispatch' ? '&drivers=1' : '')"), 'Oberfläche fordert die Spalte nur für Rollen mit Namen an');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/integration.js', import.meta.url), 'utf8');
+  ok(!src.includes('drivers_now'), 'Integrations-API gibt drivers_now nicht aus (feste Feldliste)');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const vNoDrv = new Function(line('const vNoDrv = (v) =>') + '; return vNoDrv;')();
+  eq(vNoDrv({ kind: 'lkw', drivers_now: [] }), true); eq(vNoDrv({ kind: 'lkw', drivers_now: ['A'] }), false); eq(vNoDrv({ kind: 'anhaenger', drivers_now: [] }), false, 'Anhänger zählt nicht');
+  eq(vNoDrv({ kind: 'lkw', drivers_now: [], eval_excluded: 1 }), false, 'ruhend nicht'); eq(vNoDrv({ kind: 'lkw' }), false, 'ohne Feld (Werkstatt) nie „ohne Fahrer“');
+  ok(app.includes("...(nND || av === 'no_driver' ? [['no_driver', t('av_no_driver'), nND]] : [])"), 'Knopf „Ohne Fahrer (n)“');
+  ok(app.includes("av === 'no_driver' ? !inact && vNoDrv(v)") && app.includes('const nND = inact ? 0 : base.filter(vNoDrv).length;'), 'Filter, nicht in „außer Betrieb“');
+  ok(app.includes('<span data-drvnow title=') && app.includes('data-nodrvhint'), 'Zeile, Hinweis');
+  ok(app.includes("'coupled_locked', 'no_driver', 'with_notes'"), 'Sprung #/vehicles?f=no_driver');
+  ok(app.includes("isMgr() || S.me.role === 'dispatch' ? t('veh_search_ph_drv')"), 'Platzhalter nennt Fahrer nur bei Rollen mit Namen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['av_no_driver', 'av_no_driver_t', 'drv_now_title', 'veh_search_ph_drv']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_dispo_s.split('|').some((p) => p.includes('👤') && p.includes(STRINGS[l].av_no_driver)), `${l}: Hilfe Disposition`);
   }
 });
 

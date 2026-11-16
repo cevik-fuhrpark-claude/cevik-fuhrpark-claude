@@ -297,7 +297,7 @@ async function handleApi(request, env, ctx, url) {
       const ids = url.searchParams.get('ids');
       const rows = ids === null ? [...list].sort((a, b) => plateCmp(a.plate, b.plate)) /* wie die Liste (Umlaute nicht ans Ende) */ : (() => { const pos = new Map(ids.split(',').slice(0, 2000).map((x, i) => [x, i]));
         return list.filter((v) => pos.has(v.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id)); })();
-      return new Response(veh.vehiclesCsv(rows, maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${envName}_${berlinDate()}.csv"` } });
+      return new Response(veh.vehiclesCsv(rows, maint.csvCell, { withDrivers: url.searchParams.get('drivers') === '1' }), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrzeuge_${envName}_${berlinDate()}.csv"` } });
     }
     return json({ vehicles: list });
   }

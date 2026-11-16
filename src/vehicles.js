@@ -78,12 +78,18 @@ export async function listVehicles(env, user, envName, query = {}) {
       -- offene Befunde des Fuhrparkagenten (Umgebung der Person) über idx_findings_vehicle; nur Inhaber/Fuhrparkleitung bekommen die Zahlen
       (SELECT COUNT(*) || '|' || COALESCE(SUM(f.severity='kritisch'), 0) FROM agent_findings f WHERE f.vehicle_id=v.id AND f.environment=? AND f.status='offen') AS af,
       -- frühere Kennzeichen (Backlog 256): Suche nach dem alten Kennzeichen findet das Fahrzeug
-      (SELECT group_concat(p.plate, '|') FROM (SELECT plate FROM vehicle_plates p WHERE p.vehicle_id=v.id ORDER BY p.valid_until DESC LIMIT 10) p) AS fp
-    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, envName, active).all()).results;
+      (SELECT group_concat(p.plate, '|') FROM (SELECT plate FROM vehicle_plates p WHERE p.vehicle_id=v.id ORDER BY p.valid_until DESC LIMIT 10) p) AS fp,
+      -- Backlog 1528 (Blickwinkel „Disposition fragt: Wer fährt heute den Lkw? Welche Lkw haben keinen festen Fahrer?“): laufende Zuordnungen
+      -- dieser Umgebung (Namen; über idx_dv_vehicle_env) – ausgegeben nur an Inhaber/Leitung/Disposition (gleiche Sichtbarkeit wie die Fahrzeugakte)
+      (SELECT json_group_array(u.display_name) FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=v.id AND d.environment=? AND (d.valid_to IS NULL OR d.valid_to > ?)) AS dnow
+    FROM vehicles v WHERE v.active=? ORDER BY v.plate`).bind(envName, envName, envName, envName, envName, today, today, envName, addMonths(today, -12), envName, envName, today, envName, envName, nowIso(), active).all()).results;
+  const seesDrivers = isManager(user) || user.role === 'dispatch';
   // letzte Abfahrtskontrolle je Fahrzeug – nur Information (ohne Einsatzplan keine Pflichtbewertung)
   for (const v of rows) { { const nd = v.next_due ? String(v.next_due) : null; const i = nd ? nd.indexOf('|') : -1; v.next_due = nd ? (i < 0 ? nd : nd.slice(0, i)) : null; v.next_due_kind = nd && i >= 0 ? nd.slice(i + 1) : null; }
     const [at, result, by] = v.last_check ? v.last_check.split('|') : [null, null, null]; v.last_check_at = at; v.last_check_result = result; v._lcBy = by || null; delete v.last_check;
     v.former_plates = v.fp ? [...new Set(String(v.fp).split('|').filter((x) => x && x !== v.plate))] : []; delete v.fp;
+    if (seesDrivers) { let dn = []; try { dn = JSON.parse(v.dnow || '[]'); } catch {} v.drivers_now = [...new Set(dn.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de')); }
+    delete v.dnow;
     v.equipment = equipmentOf(v.eqk); delete v.eqk;
     // nächster geplanter Prüftermin ab heute + Prüfart(en) an diesem Tag
     const [pd, pk] = v.planned_inspection ? v.planned_inspection.split('|') : [null, null]; v.planned_inspection_date = pd; v.planned_inspection_kind = pk || null; delete v.planned_inspection;
@@ -528,7 +534,7 @@ export async function vehicleTimeline(env, user, envName, vehicleId, query = {})
 const AV_DE = { gesperrt: 'gesperrt', werkstatt: 'in Werkstatt', meldung_offen: 'Meldung offen', einsatzbereit_lt_system: 'keine offenen Meldungen' };
 const FAILED_DE = { erhebliche_maengel: 'erhebliche Mängel', gefaehrliche_maengel: 'gefährliche Mängel', verkehrsunsicher: 'verkehrsunsicher' };
 const failedCell = (fi, csvCell) => (fi ? csvCell(`${fi.kind} ${fi.done_date || ''} ${FAILED_DE[fi.result] || fi.result || ''}`.replace(/\s+/g, ' ').trim()) : '');
-export function vehiclesCsv(list, csvCell) {
+export function vehiclesCsv(list, csvCell, opts = {}) {
   const head = ['Kennzeichen', 'FIN', 'Fahrzeugart', 'Standort', 'Hersteller', 'Modell', 'Baujahr', 'Anhänger', 'Status Stammliste', 'Verfügbarkeit laut System', 'Offene Vorgänge', 'Letzter km-Stand', 'Nächste Prüfung', 'Letzte Abfahrtskontrolle', 'Ergebnis Abfahrtskontrolle', 'Gekoppeltes Fahrzeug', 'Zustand gekoppeltes Fahrzeug', 'Nächste km-Fälligkeit', 'Art km-Fälligkeit', 'Rest-km', 'Offene Rückrufe'];
   // Inhaber/Fuhrparkleitung: offene Agentenbefunde (Anzahl, davon kritisch) – nur wenn die Liste die Felder trägt (gleiche Sichtbarkeit wie die Liste)
   const withAF = list.some((v) => 'agent_findings_open' in v);
@@ -541,6 +547,10 @@ export function vehiclesCsv(list, csvCell) {
   head.push('Geplanter Werkstatttermin', 'Geplante Prüfung', 'Art geplante Prüfung', 'Teile erwartet am', 'Aktive Hinweise');
   // Backlog 561: Art der nächsten Prüfung/Wartung (Spalte „Nächste Prüfung“) – am Ende, Spaltenpositionen bleiben
   head.push('Art nächste Prüfung');
+  // Backlog 1528: aktuell zugeordnete Fahrer – nur auf Anfrage (`drivers=1`, Oberfläche) und nur, wenn die Liste das Feld trägt
+  // (Inhaber/Leitung/Disposition); am Ende, bestehende Spaltenpositionen und Auswertungen ohne den Parameter bleiben unverändert
+  const withDrv = !!opts.withDrivers && list.some((v) => 'drivers_now' in v);
+  if (withDrv) head.push('Fahrer (aktuell zugeordnet)');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -552,7 +562,7 @@ export function vehiclesCsv(list, csvCell) {
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
     v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : []),
     v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv', failedCell(v.failed_inspection, csvCell), failedCell(v.coupled && v.coupled.failed_inspection, csvCell),
-    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0, csvCell(v.next_due ? v.next_due_kind : '')].join(';'));
+    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0, csvCell(v.next_due ? v.next_due_kind : ''), ...(withDrv ? [csvCell((v.drivers_now || []).join(', '))] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 

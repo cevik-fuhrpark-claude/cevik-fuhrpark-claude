@@ -1375,6 +1375,9 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1486 (Blickwinkel „Leitung prüft montags die Kosten der Vorwoche je Fahrzeug“): Kosten einer Kalenderwoche je Fahrzeug
 // Backlog 1510 (Blickwinkel „Fahrer ruft an – Disposition erfasst die Meldung stellvertretend“): Namensvermerk der meldenden Person
 // Backlog 1513 (Blickwinkel „Disposition braucht kurzfristig einen freien Lkw mit Ladebordwand bzw. einen Kühlauflieger“): Ausstattungsfilter der Fahrzeugliste
+ // Backlog 1528
+ // Backlog 1528
+ // Backlog 1528
 // Backlog 1514 (Blickwinkel „Leitung ordnet einen Springer mit Führerschein C1 einem 18-t-Lkw bzw. einem Sattelzug zu“): Führerscheinklasse passt nicht
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
