@@ -42982,6 +42982,45 @@ await test('Backlog 1517 (Gegenrichtung zu 1514, Blickwinkel „Leitung trägt e
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_drivers_s.split('|').some((x) => x.includes('C1E') && /Fahrerakte zeigt|Картка водія показує|driver file shows/.test(x)), `${l}: Hilfe nennt die Fahrerakte`);
 });
 
+await test('Backlog 1518 (Backlog 195, Blickwinkel „Leitung legt den Werkstatttermin der Zugmaschine fest – weitere Prüfungen der Zugmaschine bzw. des fest gekoppelten Anhängers sind bis dahin ebenfalls fällig und haben keinen Termin“): Planen liefert `also_due` (Termin + Vorwarnzeit, ohne eigenen Termin, früheste zuerst, Gespann mit Kennzeichen) – nur Hinweis; Oberfläche DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const t1 = await U.own.post('/api/vehicles', { plate: 'TQ-AD 1518', vin: 'WDB96340310991518', site: 'Dortmund', trailer_plate: 'TQ-AN 1518' }); eq(t1.status, 201, JSON.stringify(t1.data));
+  const a1 = await U.own.post('/api/vehicles', { plate: 'TQ-AN 1518', vin: 'WDB96340310991519', site: 'Dortmund', kind: 'anhaenger' }); eq(a1.status, 201, JSON.stringify(a1.data));
+  const T = t1.data.id; const A = a1.data.id;
+  const rule = async (vid, kind, due, extra = {}) => { const x = await U.fleet.post(`/api/vehicles/${vid}/maintenance`, { kind, next_due_date: due, evidence: 'Test 1518', ...extra }); eq(x.status, 201, JSON.stringify(x.data)); return x.data.id; };
+  const insp = await rule(T, 'Inspektion', day(90));
+  await rule(T, 'UVV', day(20));
+  await rule(T, 'Bremsen', day(60)); // nach Termin + 30 Tage → kein Hinweis
+  const tacho = await rule(T, 'Tachograph', day(15));
+  eq((await U.fleet.post(`/api/maintenance/${tacho}/plan`, { planned_date: day(12) })).status, 200); // hat schon einen Termin → kein Hinweis
+  await rule(A, 'Feuerlöscher', day(35));
+  await rule(A, 'UVV', day(-5)); // überfällig ohne Termin
+  let x = await U.ws.post(`/api/maintenance/${insp}/plan`, { planned_date: day(10) }); eq(x.status, 200, JSON.stringify(x.data));
+  eq(JSON.stringify(x.data.also_due), JSON.stringify([{ kind: 'UVV', due: day(-5), plate: 'TQ-AN 1518', vehicle_id: A }, { kind: 'UVV', due: day(20) }, { kind: 'Feuerlöscher', due: day(35), plate: 'TQ-AN 1518', vehicle_id: A }]), 'Hinweis nennt die fälligen ohne Termin');
+  eq((await U.fleet.get(`/api/maintenance`)).data.rows.filter((r) => [T, A].includes(r.vehicle_id) && r.planned_date).length, 2, 'nichts zusätzlich geplant');
+  // vom Anhänger aus: Zugmaschine wird genannt; die eben geplante Inspektion nicht mehr
+  const aUvv = (await U.fleet.get(`/api/vehicles/${A}`)).data.maintenance.find((m) => m.kind === 'UVV').id;
+  x = await U.fleet.post(`/api/maintenance/${aUvv}/plan`, { planned_date: day(2) }); eq(x.status, 200);
+  eq(JSON.stringify(x.data.also_due), JSON.stringify([{ kind: 'UVV', due: day(20), plate: 'TQ-AD 1518', vehicle_id: T }]), 'Termin + 30 Tage = day(32): Feuerlöscher (35) nicht, Zugmaschinen-UVV ja');
+  // HU-Termin über die HU/SP-Karte meldet ebenfalls
+  x = await U.own.post(`/api/vehicles/${T}/husp/HU/plan`, { planned_date: day(25) }); eq(x.status, 200, JSON.stringify(x.data));
+  ok((x.data.also_due || []).some((y) => y.kind === 'UVV' && !y.plate) && (x.data.also_due || []).some((y) => y.kind === 'Feuerlöscher'), 'HU-Termin ' + JSON.stringify(x.data.also_due));
+  // Termin in der Vergangenheit bzw. Termin entfernen: kein Hinweis
+  eq((await U.fleet.post(`/api/maintenance/${insp}/plan`, { planned_date: day(-1) })).data.also_due, undefined, 'Termin vor heute');
+  eq((await U.fleet.post(`/api/maintenance/${insp}/plan`, { planned_date: null })).data.also_due, undefined, 'Termin entfernt');
+  // Vorwarnzeit 0: nur bis zum Termin selbst
+  eq((await U.own.put('/api/settings', { maintenance_warn_days: '0' })).status, 200);
+  x = await U.fleet.post(`/api/maintenance/${insp}/plan`, { planned_date: day(19) });
+  eq(JSON.stringify((x.data.also_due || []).map((y) => y.kind)), JSON.stringify([]), 'Vorwarnzeit 0: UVV am Tag 20 liegt nach dem Termin');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("t('plan_also_due').replace('{list}'") && app.includes("else if (ad) toast(t('plan_also_saved') + ad, true)"), 'Oberfläche zeigt den Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].plan_also_due.includes('{list}') && STRINGS[l].plan_also_saved, `${l}.plan_also_due`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_dates_s.split('|').some((p) => /1518|Werkstattbesuch|візит|workshop visit/.test(p)), `${l}: Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1518'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

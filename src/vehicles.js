@@ -1227,7 +1227,51 @@ export async function planMaintenance(env, user, ruleId, body) {
   }
   await audit(env, user.id, 'maintenance.plan', r.vehicle_id, { kind: r.kind, planned_date: d, ...(note !== oldNote ? { note_from: oldNote, note_to: note } : {}) });
   // Backlog 607: Termin nach Fristende wird gespeichert (die Werkstatt hat ggf. nichts früher frei), aber gemeldet – nichts wird verschoben
-  return { ok: true, planned_date: d, ...noteOut, ...afterDue };
+  const also = d && !afterDue.in_past ? await alsoDueAt(env, r, d) : [];
+  return { ok: true, planned_date: d, ...noteOut, ...afterDue, ...(also.length ? { also_due: also } : {}) };
+}
+
+// Backlog 1518 (Backlog 195, Blickwinkel „Leitung legt den HU-Termin der Zugmaschine fest – UVV der Zugmaschine bzw. SP des fest gekoppelten
+// Anhängers sind bis dahin ebenfalls fällig und haben keinen Termin“): weitere Prüfungen desselben und des gekoppelten Fahrzeugs (laut Stammliste,
+// nur in Betrieb und bewertet), deren Frist spätestens am Termin plus Vorwarnzeit (`maintenance_warn_days`, dieselbe Regel wie „bald fällig“) endet
+// bzw. schon verstrichen ist und die keinen Termin ab heute haben. Nur Hinweis zum gemeinsamen Werkstattbesuch – nichts wird geplant oder verschoben.
+// HU/SP nach der zentralen Regel (`huSpFor`, ungeklärt/nicht SP-pflichtig ohne Hinweis), übrige nach gespeicherter Fälligkeit; reine km-Fälligkeiten,
+// beendete Einträge und erledigte Rückrufe zählen nicht. Höchstens 6, früheste Frist zuerst.
+async function alsoDueAt(env, r, d) {
+  const today = berlinDate();
+  const self = await env.DB.prepare('SELECT id, plate, kind, trailer_plate, active, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles WHERE id=?').bind(r.vehicle_id).first();
+  if (!self || !self.active || self.eval_excluded) return [];
+  const pool = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles WHERE active=1 AND id<>? AND kind IN ('lkw','anhaenger') ORDER BY COALESCE(eval_excluded,0), created_at`).bind(self.id).all()).results;
+  const cand = self.kind === 'anhaenger'
+    ? pool.filter((x) => x.kind === 'lkw' && x.trailer_plate && normPlate(x.trailer_plate) === normPlate(self.plate))
+    : self.trailer_plate ? pool.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === normPlate(self.trailer_plate)) : [];
+  const partner = cand.find((x) => !x.eval_excluded) || null; // ruhende Doppel nie (aus allen Bewertungen ausgenommen)
+  const vids = [self.id, ...(partner ? [partner.id] : [])];
+  const plateOf = new Map([[self.id, self.plate], ...(partner ? [[partner.id, partner.plate]] : [])]);
+  const wd = maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value);
+  const limit = new Date(Date.parse(d + 'T12:00:00Z') + wd * 86400000).toISOString().slice(0, 10);
+  const rules = (await env.DB.prepare(`SELECT id, vehicle_id, kind, next_due_date, planned_date, last_done_date FROM maintenance_rules
+    WHERE vehicle_id IN (SELECT value FROM json_each(?)) AND kind NOT IN ('HU','SP') AND next_due_date IS NOT NULL AND id<>?`).bind(JSON.stringify(vids), r.id).all()).results;
+  const out = [];
+  for (const m of rules) {
+    if (ONE_TIME_KINDS.includes(m.kind) && m.last_done_date) continue;
+    if (m.planned_date && m.planned_date >= today) continue;
+    if (m.next_due_date <= limit) out.push({ vehicle_id: m.vehicle_id, kind: m.kind, due: m.next_due_date });
+  }
+  const hin = await loadHuSpInputs(env, vids);
+  for (const vid of vids) {
+    const x = hin.get(vid); if (!x) continue;
+    const h = huSpFor(x, today, wd);
+    for (const kind of ['HU', 'SP']) {
+      const y = kind === 'HU' ? h.hu : h.sp;
+      if (!y || !y.due || ['ungeklaert', 'nicht_sp_pflichtig'].includes(y.status)) continue;
+      if (vid === r.vehicle_id && kind === r.kind) continue;
+      if (y.planned_date && y.planned_date >= today) continue;
+      if (y.due <= limit) out.push({ vehicle_id: vid, kind, due: y.due });
+    }
+  }
+  return out.sort((a, b) => a.due.localeCompare(b.due) || (a.vehicle_id === r.vehicle_id ? -1 : 1)).slice(0, 6)
+    .map((x) => ({ kind: x.kind, due: x.due, ...(x.vehicle_id !== r.vehicle_id ? { plate: plateOf.get(x.vehicle_id), vehicle_id: x.vehicle_id } : {}) }));
 }
 
 // Sammeltermin (Backlog 235, Blickwinkel „Fuhrparkleitung plant die UVV aller Fahrzeuge an einem Tag“): denselben Termin für mehrere
