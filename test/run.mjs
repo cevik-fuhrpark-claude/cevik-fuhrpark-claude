@@ -43624,6 +43624,31 @@ await test('Backlog 1534 (Blickwinkel „Fahrer schreibt die Meldung auf Griechi
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-griechisch.py'), 'UI-Prüfung in pruefen.sh');
   const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
 });
+await test('Backlog 1535 (Blickwinkel „Hitzewelle im Sommer“, Backlog 195): „Motor wird bei der Hitze zu heiß“, „Motor heiß gelaufen“, „Lüfter vom Motor geht nicht an“ → Motor; „Kühlauflieger hält die Temperatur nicht“ → Kühlung; „Kältemittel leer“, „Klima muss neu befüllt werden“, „Kondenswasser tropft aus der Klima“ → Klima; „Retarder überhitzt“ → Bremse; „Getriebe überhitzt“, „Getriebeöltemperatur Warnung“ → Getriebe; „Reifen hinten rechts bei Hitze geplatzt“ → Reifenpanne; „Sonnenrollo kaputt“ → Fahrerhaus; Verneinung/Reparaturvermerk ohne Hinweis; „Motor ist nicht überhitzt“/„Motor wird nicht heiß“ ohne Motor-Hinweis', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('\nconst HEAT_KINDS'), app.indexOf('\n', app.indexOf('\nfunction heatKinds') + 2));
+  const heatKinds = new Function(src + '\nreturn heatKinds;')();
+  const CASES = [['Motor wird bei der Hitze zu heiß', 'engine'], ['Motor heiß gelaufen', 'engine'], ['Der Motor ist am Berg überhitzt', 'engine'], ['Motor überhitzt nicht immer, nur am Berg', 'engine'], ['Lüfter vom Motor geht nicht an', 'engine'], ['Motorlüfter läuft nicht', 'engine'],
+    ['Kühlauflieger hält die Temperatur nicht', 'reefer'], ['Kühlauflieger hält die Temperatur nicht mehr', 'reefer'], ['Kühlaggregat hält die Kälte nicht', 'reefer'],
+    ['Kältemittel leer', 'climate'], ['Klimaanlage hat kein Kältemittel mehr', 'climate'], ['Klima muss neu befüllt werden', 'climate'], ['Kondenswasser tropft aus der Klima', 'climate'],
+    ['Retarder überhitzt', 'brake'], ['Retarder Temperatur Warnung', 'brake'], ['Getriebeöltemperatur Warnung', 'gear'], ['Getriebe überhitzt', 'gear'], ['Getriebe wird heiß', 'gear'],
+    ['Reifen hinten rechts bei Hitze geplatzt', 'flat'], ['Reifen am Auflieger hinten rechts außen geplatzt', 'flat'], ['Sonnenrollo kaputt', 'cabkit'], ['Sonnenschutzrollo klemmt', 'cabkit']];
+  for (const [x, k] of CASES) eq([...heatKinds(x)].join(','), k, x);
+  const NO = ['Motor ist nicht zu heiß', 'Getriebe nicht überhitzt', 'Getriebe wird nicht heiß', 'Kältemittel nachgefüllt, Klima geht wieder', 'Klima wurde neu befüllt', 'Kühlauflieger hält die Temperatur gut', 'Retarder überhitzt, Werkstatt hat Retarder getauscht', 'Sonnenrollo repariert', 'Reifen hinten rechts bei Hitze nicht geplatzt', 'Reifen hinten rechts bei Hitze geplatzt, neuer Reifen montiert', 'Wir haben kein Kältemittel im Lager', 'Motorraum heiß', 'Retarder überhitzt nicht', 'Getriebe überhitzt nicht mehr', 'Fahrer hat Kreislaufprobleme wegen der Hitze'];
+  for (const x of NO) eq([...heatKinds(x)].join(','), '', 'ohne Hinweis: ' + x);
+  eq([...heatKinds('Getriebe überhitzt. Sonnenrollo kaputt')].sort().join(','), 'cabkit,gear', 'je Satz geprüft');
+  ok(!/heatKinds\(dv\)/.test(app) && app.includes("for (const k of heatKinds(dfx)) $('#' + k).hidden = false;"), 'auf noFixed-Text (dfx) angewendet');
+  ok(main.includes('HEAT_KINDS'), 'deutsche Tabelle im Start-Modul (sofort sichtbar, ohne Nachladen)');
+  const eSrc = app.slice(app.indexOf('\nconst ENGINE_HINT'), app.indexOf('\n', app.indexOf('\nconst ENGINE_HINT') + 2));
+  const E = new Function(eSrc + '\nreturn ENGINE_HINT;')();
+  for (const x of ['Motor ist nicht überhitzt', 'Motor wird nicht heiß', 'motor wird nie heiss']) ok(!E.test(x), 'Motor-Hinweis nicht bei Verneinung: ' + x);
+  for (const x of ['Motor überhitzt', 'Motor ist überhitzt', 'Motor wird immer heiß', 'Motor wird zu heiß']) ok(E.test(x), 'Motor-Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['Motor wird bei der Hitze zu heiß', 'Kühlauflieger hält die Temperatur nicht', 'Kältemittel leer', 'Retarder überhitzt', 'Getriebe überhitzt', 'Reifen hinten rechts bei Hitze geplatzt']) ok(STRINGS[l].help_report_s.includes(x) && heatKinds(x).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-hitze.py'), 'UI-Prüfung in pruefen.sh');
+  const pct = Buffer.byteLength(main) / Buffer.byteLength(app) * 100; ok(pct <= 45.0, 'Start-Modul ' + pct.toFixed(3) + ' % (≤ 45,00 %)');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
