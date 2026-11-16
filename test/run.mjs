@@ -42925,12 +42925,41 @@ await test('Backlog 1515 (Blickwinkel „Leitung ordnet einen Fahrer zu, dessen 
   ok(!(await akte(U.fleet)).doc_expired, 'beendete Zuordnung ohne Hinweis');
   // Oberfläche
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes('data-docexp') && app.includes("if (r.doc_expired && r.doc_expired.length) { const x = dxText(r.doc_expired); toast(`${x.charAt(0).toUpperCase()}${x.slice(1)}. ${t('drv_doc_exp_hint')}`, true); } /* Backlog 1515 */ else if (r.license_mismatch)"), 'Hinweis in der Akte, Toast nach dem Zuordnen (vor allen anderen)');
+  ok(app.includes('data-docexp') && app.includes("if (r.doc_expired && r.doc_expired.length) { const x = dxText(r.doc_expired); toast(`${x.charAt(0).toUpperCase()}${x.slice(1)}. ${t('drv_doc_exp_hint')}`, true); } /* Backlog 1515 */ else if (r.license_check_issue)"), 'Hinweis in der Akte, Toast nach dem Zuordnen (vor allen anderen)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['drv_doc_exp', 'drv_doc_exp_until', 'drv_doc_exp_hint', 'dk2_fuehrerschein', 'dk2_fahrerkarte', 'dk2_code95']) ok(STRINGS[l][k], `${l}.${k}`);
     ok(STRINGS[l].drv_doc_exp.includes('{list}') && STRINGS[l].drv_doc_exp_until.includes('{date}'), `${l}: Platzhalter`);
     ok(STRINGS[l].help_drivers_s.split('|').some((x) => /Code 95|код 95/i.test(x) && /Zuordn|призначен|assign/.test(x) && /abgelaufen|прострочен|expired/.test(x)), `${l}: Hilfe erklärt den Hinweis`);
+  }
+});
+
+await test('Backlog 1516 (Folge aus 1515, Blickwinkel „letzte Führerscheinkontrolle ergab Mängel bzw. Führerschein nicht vorgelegt“): Zuordnung und Fahrzeugakte nennen `license_check_issue` {result, checked_on} der jüngsten nicht stornierten Kontrolle, solange sie nicht „in Ordnung“ ist – nur Hinweis, Zuordnung bleibt; neue Kontrolle „in Ordnung“ beendet ihn, Storno lässt die vorige wieder gelten; nur Inhaber/Leitung; Texte und Hilfe DE/UK/EN', async () => {
+  const { licCheckIssue } = await import('../src/vehicles.js');
+  eq(licCheckIssue(null), null); eq(licCheckIssue(JSON.stringify({ r: 'in_ordnung', on: '2026-01-10' })), null);
+  eq(JSON.stringify(licCheckIssue(JSON.stringify({ r: 'maengel', on: '2026-01-10' }))), JSON.stringify({ result: 'maengel', checked_on: '2026-01-10' }));
+  const { U, V1 } = await freshWorld();
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 1516', user_id: U.driver.id }); eq(dr.status, 201, JSON.stringify(dr.data));
+  const as0 = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }); eq(as0.status, 201); ok(!as0.data.license_check_issue, 'ohne Kontrolle kein Hinweis');
+  eq((await U.fleet.req('DELETE', `/api/assignments/${as0.data.id}`)).status, 200);
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/license-checks`, { checked_on: '2026-01-10', result: 'nicht_vorgelegt', note: 'Fahrer hatte ihn nicht dabei' })).status, 201);
+  const as = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id }); eq(as.status, 201, 'Zuordnung wird trotzdem gespeichert');
+  eq(JSON.stringify(as.data.license_check_issue), JSON.stringify({ result: 'nicht_vorgelegt', checked_on: '2026-01-10' }), 'Hinweis in der Antwort');
+  const akte = async (c) => ((await c.get(`/api/vehicles/${V1}`)).data.drivers || []).find((x) => x.user_id === U.driver.id && !x.valid_to);
+  eq((await akte(U.fleet)).license_check_issue.result, 'nicht_vorgelegt', 'Fahrzeugakte (Leitung)');
+  const wsv = await akte(U.ws); ok(!wsv || !wsv.license_check_issue, 'Werkstatt sieht den Hinweis nicht');
+  const ok2 = await U.fleet.post(`/api/drivers/${dr.data.id}/license-checks`, { checked_on: '2026-02-10', result: 'in_ordnung' }); eq(ok2.status, 201);
+  ok(!(await akte(U.fleet)).license_check_issue, 'neue Kontrolle „in Ordnung“ → kein Hinweis');
+  eq((await U.fleet.post(`/api/drivers/${dr.data.id}/license-checks/${ok2.data.id}/cancel`, { reason: 'falscher Fahrer' })).status, 200);
+  eq(((await akte(U.fleet)).license_check_issue || {}).result, 'nicht_vorgelegt', 'Storno → vorige Kontrolle gilt wieder');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-lcissue') && app.includes("/* Backlog 1515 */ else if (r.license_check_issue) toast(`${lkText(r.license_check_issue)}. ${t('drv_lc_issue_hint')}`, true); /* Backlog 1516 */ else if (r.license_mismatch)"), 'Hinweis in der Akte, Toast nach dem Zuordnen');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['drv_lc_issue', 'drv_lc_issue_hint', 'lcr_maengel', 'lcr_nicht_vorgelegt']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].drv_lc_issue.includes('{date}') && STRINGS[l].drv_lc_issue.includes('{result}'), `${l}: Platzhalter`);
+    ok(STRINGS[l].help_drivers_s.split('|').some((x) => x.includes(STRINGS[l].lcr_nicht_vorgelegt) && /Code 95|код 95/i.test(x)), `${l}: Hilfe erklärt den Hinweis`);
   }
 });
 

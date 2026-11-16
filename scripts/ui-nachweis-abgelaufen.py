@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (16.11.2026, Backlog 1515, Blickwinkel „Leitung ordnet einen Fahrer zu, dessen Fahrerkarte laut Fahrerakte abgelaufen ist“):
 # Fahrzeugakte → „Fahrer zuordnen“: Fahrerkarte laut Fahrerakte gültig bis 31.03.2020 → Hinweis nach dem Zuordnen, Zuordnung gespeichert,
-# Hinweiskasten bei der Zuordnung in der Akte ([data-docexp]).
+# Hinweiskasten bei der Zuordnung in der Akte ([data-docexp]); Backlog 1516: letzte Führerscheinkontrolle „Mängel“ → zweiter Kasten [data-lcissue].
 # Tablet 820 px (DE), Handy 390 px (UK), PC 1366 px (EN); kein Querscrollen, keine Skriptfehler. Frischer Dev-Server nötig. Screenshots: CFP_SHOTS=<Ordner>.
 import os, urllib.parse
 from playwright.sync_api import sync_playwright
@@ -8,6 +8,7 @@ B = os.environ.get('CFP_URL', 'http://localhost:8787'); PW = 'Sicheres-Passwort-
 JS = """async ([m, path, body]) => { const r = await fetch(path, { method: m, headers: { 'content-type': 'application/json', 'x-cfp': '1' }, body: body ? JSON.stringify(body) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 WARN = {'de': 'Fahrerkarte (gültig bis 31.03.2020)', 'uk': 'Картка водія (тахограф) (дійсний до 31.03.2020)', 'en': 'Driver card (tachograph) (valid until 31/03/2020)'}
+LC = {'de': 'Mängel', 'uk': 'недоліки', 'en': 'issues'}
 fails = []
 def check(c, m):
     print(('  ✔ ' if c else '  ✘ ') + m)
@@ -27,6 +28,7 @@ with sync_playwright() as p:
         u = api('POST', '/api/users', {'username': f'na.{lang}{pid}', 'display_name': name, 'role': 'driver', 'environment': env}); uid = u['d']['id']
         rec = api('POST', '/api/drivers', {'display_name': name, 'user_id': uid}); check(rec['s'] == 201, f'{lang}: Fahrerakte')
         check(api('POST', f"/api/drivers/{rec['d']['id']}/documents", {'kind': 'fahrerkarte', 'valid_until': '2020-03-31', 'evidence': 'Kopie'})['s'] == 201, f'{lang}: abgelaufene Fahrerkarte')
+        check(api('POST', f"/api/drivers/{rec['d']['id']}/license-checks", {'checked_on': '2026-01-10', 'result': 'maengel', 'note': 'Klasse CE fehlt'})['s'] == 201, f'{lang}: Kontrolle mit Mängeln')
         ctx = br.new_context(viewport={'width': w, 'height': 1000}); q = ctx.new_page(); errs = []; q.on('pageerror', lambda e: errs.append(str(e)))
         q.goto(B); q.evaluate(JS, ['POST', '/api/login', {'username': 'fk.inhaber', 'password': PW}]); q.evaluate(JS, ['PATCH', '/api/me', {'language': lang}]); q.evaluate("localStorage.setItem('cfp_lang', %r)" % lang)
         q.goto(B + '/#/vehicles/' + urllib.parse.quote(VID)); q.wait_for_selector(f'#drvsel option[value="{uid}"]', state='attached')
@@ -37,6 +39,8 @@ with sync_playwright() as p:
         q.wait_for_selector('[data-docexp]', timeout=10000)
         chip = q.locator('[data-docexp]').first
         check(WARN[lang] in chip.inner_text() and chip.is_visible(), f'{lang}: Chip in der Akte')
+        lc = q.locator('[data-lcissue]').first
+        check(lc.is_visible() and LC[lang] in lc.inner_text(), f'{lang}: Kontrolle-Hinweis in der Akte: {lc.inner_text()[:120]}')
         chip.scroll_into_view_if_needed()
         if SHOTS: q.screenshot(path=f'{SHOTS}/nachweis-abgelaufen-{lang}-{w}.png', full_page=False)
         check(q.evaluate('document.documentElement.scrollWidth') <= w, f'{lang}: kein Querscrollen')

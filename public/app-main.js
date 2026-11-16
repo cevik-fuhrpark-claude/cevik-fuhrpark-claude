@@ -5252,6 +5252,7 @@ const FB_HREF = { gesperrt: '#/vehicles?f=gesperrt', werkstatt: '#/vehicles?f=we
 async function viewVehicles(...a) { return (await lazyModule('fahrzeug')).viewVehicles(...a); }
 
 
+
 const coupledLockedText = (c) => `${t(c.kind === 'anhaenger' ? 'trailer' : 'truck')} ${c.plate}: ${t('locked')} – ${t('do_not_drive')}`;
 function coupledLockedChip(c) {
   if (!c || !c.locked) return '';
