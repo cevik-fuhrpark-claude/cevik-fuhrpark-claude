@@ -43178,6 +43178,30 @@ await test('Backlog 1522 (Folge aus 1521): `left_on_previous` nennt auch freigeg
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1522'), 'API.md');
 });
 
+await test('Backlog 1523 (Blickwinkel „Zugmaschine wird verkauft – der fest gekoppelte Auflieger bleibt in Betrieb“): Außer-Betrieb-Nahme einer Zugmaschine nennt den gekoppelten Anhänger, der in Betrieb bleibt – nicht, wenn eine andere Zugmaschine ihn führt, er fehlt oder ein Anhänger selbst abgemeldet wird; Oberfläche/Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const mk = async (b) => { const r = await U.own.post('/api/vehicles', { site: 'Dortmund', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const T1 = await mk({ plate: 'TQ-ZM 1523', vin: 'WDB96340310991531', trailer_plate: 'tq-an1523' });
+  const A1 = await mk({ plate: 'TQ-AN 1523', vin: 'WDB96340310991532', kind: 'anhaenger' });
+  const T2 = await mk({ plate: 'TQ-ZM 2523', vin: 'WDB96340310991533', trailer_plate: 'TQ-AN 2523' });
+  const T3 = await mk({ plate: 'TQ-ZM 3523', vin: 'WDB96340310991534', trailer_plate: 'TQ-AN 2523' });
+  await mk({ plate: 'TQ-AN 2523', vin: 'WDB96340310991535', kind: 'anhaenger' });
+  const T4 = await mk({ plate: 'TQ-ZM 4523', vin: 'WDB96340310991536', trailer_plate: 'TQ-AN 4523' });
+  const off = async (id) => { const r = await U.fleet.post(`/api/vehicles/${id}/active`, { active: false, reason: 'verkauft' }); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  eq(JSON.stringify((await off(T1)).coupled_trailer_left), JSON.stringify([{ id: A1, plate: 'TQ-AN 1523' }]), 'Anhänger bleibt in Betrieb (Kennzeichen-Schreibweise egal)');
+  eq((await off(T2)).coupled_trailer_left, undefined, 'andere Zugmaschine führt denselben Anhänger');
+  eq((await off(T4)).coupled_trailer_left, undefined, 'Anhänger nicht im Bestand');
+  const r1 = await off(A1); eq(r1.coupled_trailer_left, undefined, 'Anhänger selbst'); eq(r1.trailer_of_trucks, undefined, 'Zugmaschine schon außer Betrieb');
+  const on = await U.fleet.post(`/api/vehicles/${T1}/active`, { active: true }); eq(on.status, 200); eq(on.data.coupled_trailer_left, undefined, 'Wieder in Betrieb: kein Hinweis');
+  // jetzt ist T3 die einzige Zugmaschine mit TQ-AN 2523 → Hinweis
+  eq((await off(T3)).coupled_trailer_left.map((x) => x.plate).join(), 'TQ-AN 2523', 'letzte Zugmaschine des Anhängers');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(r.coupled_trailer_left || []).length ? t('trailer_left_deact')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].trailer_left_deact.includes('{list}') && STRINGS[l].help_fleet_s.split('|').some((p) => /fest gekoppelten Anhänger|жорстко зчеплений причіп|permanently coupled trailer/.test(p)), `${l}: Text/Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1523'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -741,7 +741,7 @@ export async function setVehicleEvaluation(env, user, envName, vehicleId, body) 
 
 export async function setVehicleActive(env, user, envName, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const v = await env.DB.prepare('SELECT id, plate, active, kind FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, active, kind, trailer_plate FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const active = flag(body.active, 'Aktiv');
   const reason = str(body.reason, { key: 'reason', required: !active, max: 300, field: 'Grund' });
@@ -800,8 +800,18 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   const trailerOf = !active && v.kind === 'anhaenger' && normPlate(v.plate)
     ? (await env.DB.prepare(`SELECT id, plate, trailer_plate FROM vehicles WHERE kind='lkw' AND active=1 AND trailer_plate IS NOT NULL`).all()).results
       .filter((x) => normPlate(x.trailer_plate) === normPlate(v.plate)).map((x) => ({ id: x.id, plate: x.plate })) : [];
+  // Backlog 1523 (Backlog 195, Blickwinkel „Zugmaschine wird verkauft – der fest gekoppelte Auflieger bleibt in Betrieb“): Zugmaschine außer
+  // Betrieb mit Anhängerkennzeichen in der Stammliste → den fest gekoppelten Anhänger nennen, der in Betrieb bleibt (Prüftermine, Agent-Befunde,
+  // Abfahrtskontrolle laufen für ihn weiter, ohne Zugmaschine). Nicht, wenn eine andere Zugmaschine in Betrieb dasselbe Anhängerkennzeichen führt.
+  // Nur Hinweis: der Anhänger wird nicht mit außer Betrieb genommen (wird oft mit einer anderen Zugmaschine weitergenutzt oder separat verkauft).
+  let trailerLeft = [];
+  if (!active && v.kind !== 'anhaenger' && normPlate(v.trailer_plate)) {
+    const k = normPlate(v.trailer_plate);
+    const rows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND id<>? AND (kind='anhaenger' OR trailer_plate IS NOT NULL)`).bind(vehicleId).all()).results;
+    if (!rows.some((y) => y.kind !== 'anhaenger' && normPlate(y.trailer_plate) === k)) trailerLeft = rows.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === k).map((x) => ({ id: x.id, plate: x.plate }));
+  }
   return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? {} : { open_items: hint.o, open_items_safety: hint.os, open_claims: hint.cl, active_notes: hint.n, active_warranties: hint.w }), ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
-    ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}) };
+    ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}), ...(trailerLeft.length ? { coupled_trailer_left: trailerLeft } : {}) };
 }
 
 // Backlog 1514 (Blickwinkel „Disposition/Leitung ordnet einen Springer mit Führerschein C1 einem 18-t-Lkw bzw. einem Sattelzug zu“): Abgleich der
