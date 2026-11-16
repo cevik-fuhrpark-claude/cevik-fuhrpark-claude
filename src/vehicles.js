@@ -36,6 +36,9 @@ async function platesInsert(env, list, actorId, source) {
 // Backlog 1513: Ausstattung aus Prüfarten (Reihenfolge fest; Kühlgerät/ATP/Temperaturschreiber = Kühlung)
 export const EQUIP_OF_KIND = { Ladebordwand: 'taillift', Ladekran: 'crane', 'Kühlgerät': 'reefer', 'ATP-Bescheinigung': 'reefer', Temperaturschreiber: 'reefer' };
 export const EQUIP_KEYS = ['taillift', 'crane', 'reefer'];
+// Backlog 1530: Schadstoffklassen laut Zulassungsbescheinigung (Feld V.9/14), Reihenfolge wie die Maut-Einstufung (EEV zwischen Euro V und VI)
+export const EMISSION_CLASSES = ['euro_1', 'euro_2', 'euro_3', 'euro_4', 'euro_5', 'eev', 'euro_6'];
+export const EMISSION_DE = { euro_1: 'Euro I', euro_2: 'Euro II', euro_3: 'Euro III', euro_4: 'Euro IV', euro_5: 'Euro V', eev: 'EEV', euro_6: 'Euro VI' };
 export const equipmentOf = (csv) => { const s = new Set(String(csv || '').split(',').map((k) => EQUIP_OF_KIND[k]).filter(Boolean)); return EQUIP_KEYS.filter((k) => s.has(k)); };
 export async function listVehicles(env, user, envName, query = {}) {
   const active = query.inactive === '1' && isManager(user) ? 0 : 1;
@@ -551,6 +554,9 @@ export function vehiclesCsv(list, csvCell, opts = {}) {
   // (Inhaber/Leitung/Disposition); am Ende, bestehende Spaltenpositionen und Auswertungen ohne den Parameter bleiben unverändert
   const withDrv = !!opts.withDrivers && list.some((v) => 'drivers_now' in v);
   if (withDrv) head.push('Fahrer (aktuell zugeordnet)');
+  // Backlog 1530: Fahrzeugdaten laut Zulassungsbescheinigung (Maut-Einstufung) – nur auf Anfrage (`spec=1`, Oberfläche), ganz am Ende
+  const withSpec = !!opts.withSpec;
+  if (withSpec) head.push('Zul. Gesamtmasse (kg)', 'Erstzulassung', 'Schadstoffklasse', 'Achsen');
   const lines = [head.join(';')];
   for (const v of list) lines.push([csvCell(v.plate), csvCell(v.vin), v.kind === 'anhaenger' ? 'Anhänger' : 'Lkw', csvCell(v.site), csvCell(v.manufacturer), csvCell(v.model), v.build_year ?? '',
     csvCell(v.trailer_plate), csvCell(v.master_status), AV_DE[v.availability] || v.availability, v.open_cases ?? '', v.last_km ?? '', v.next_due || '',
@@ -562,7 +568,8 @@ export function vehiclesCsv(list, csvCell, opts = {}) {
     // offene Herstellerrückrufe (Anzahl) – ebenfalls am Ende angehängt
     v.open_recalls ?? 0, ...(withAF ? [v.agent_findings_open ?? 0, v.agent_findings_critical ?? 0] : []),
     v.active === 0 || v.active === false ? 'außer Betrieb' : v.eval_excluded ? 'ruhend (nicht in Bewertungen)' : 'aktiv', failedCell(v.failed_inspection, csvCell), failedCell(v.coupled && v.coupled.failed_inspection, csvCell),
-    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0, csvCell(v.next_due ? v.next_due_kind : ''), ...(withDrv ? [csvCell((v.drivers_now || []).join(', '))] : [])].join(';'));
+    v.planned_workshop_date || '', v.planned_inspection_date || '', csvCell(v.planned_inspection_kind), v.parts_expected_date || '', v.notes_active ?? 0, csvCell(v.next_due ? v.next_due_kind : ''), ...(withDrv ? [csvCell((v.drivers_now || []).join(', '))] : []),
+    ...(withSpec ? [v.zgm_kg ?? '', v.first_registration || '', EMISSION_DE[v.emission_class] || '', v.axles ?? ''] : [])].join(';'));
   return '\ufeff' + lines.join('\r\n') + '\r\n';
 }
 
@@ -1581,7 +1588,7 @@ export async function dropUnusedHuSpRule(env, user, ruleId, vehicleId, kind) {
 // Prüfrelevante Fahrzeugdaten: zulässige Gesamtmasse (F.2), Erstzulassung (B) – nur mit Nachweis
 export async function setVehicleSpec(env, user, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration, emission_class, axles FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const source = str(body.spec_source, { key: 'spec_source', required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
   // Backlog 1014: „18.000 kg“/„F.2: 18000“ wie im Fahrzeugschein annehmen (`unit: 'kg'`), Tonnen mit eigener Meldung – nie umgerechnet
@@ -1599,6 +1606,11 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   if (ez && (!isCalendarDate(ez) || ez > berlinDate())) throw bad('validation', 'Erstzulassung im Format JJJJ-MM-TT, nicht in der Zukunft.', { field_key: 'first_registration' });
   // Untergrenze wie Baujahr (23.10.2026: 1900-01-01 wurde angenommen und trieb die SP-Prognose)
   if (ez && ez < '1950-01-01') throw bad('validation', 'Erstzulassung vor 1950 ist nicht plausibel.', { field_key: 'first_registration' });
+  // Backlog 1530: Schadstoffklasse (Feld V.9/14) nur für Lkw, Achszahl (Feld L) – Maut-Einstufung in der OBU; leer = nicht erfasst (nie geschätzt)
+  const emis = body.emission_class ? oneOf(body.emission_class, EMISSION_CLASSES, 'Schadstoffklasse', { key: 'emission_class' }) : null;
+  if (emis && v.kind === 'anhaenger') throw bad('validation', 'Anhänger haben keine Schadstoffklasse – bitte leer lassen.', { field_key: 'emission_class' });
+  const axles = body.axles === undefined || body.axles === null || body.axles === '' ? null : num(body.axles, { key: 'axles', min: 1, max: 10, field: 'Anzahl der Achsen' });
+  if (axles !== null && !Number.isInteger(axles)) throw bad('validation', 'Anzahl der Achsen als ganze Zahl angeben (Feld L).', { field_key: 'axles' });
   // Backlog 1090 (Gegenrichtung zu Backlog 619/1089): neue/geänderte Erstzulassung nach einer schon erfassten HU/SP – typisch Feld I
   // („Datum dieser Zulassung“) statt Feld B; die fällige SP wurde sonst still zu „erste SP künftig“ (Übersicht, Agent, Lückenliste)
   if (ez && ez !== v.first_registration) {
@@ -1607,14 +1619,14 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   }
   // gelesener Stand (Formular sendet `expected_updated_at`): zwischenzeitliche Änderung → 409 statt still überschreiben (21.10.2026, Backlog 105)
   const expected = body.expected_updated_at ? str(body.expected_updated_at, { max: 40, field: 'Stand' }) : null;
-  const up = await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, spec_source=?, updated_at=? WHERE id=? AND (? IS NULL OR updated_at=?)').bind(cls, kg, ez, source, nowIso(), vehicleId, expected, expected).run();
+  const up = await env.DB.prepare('UPDATE vehicles SET zgm_class=?, zgm_kg=?, first_registration=?, emission_class=?, axles=?, spec_source=?, updated_at=? WHERE id=? AND (? IS NULL OR updated_at=?)').bind(cls, kg, ez, emis, axles, source, nowIso(), vehicleId, expected, expected).run();
   if (expected && !(up.meta && up.meta.changes)) {
     // Backlog 805c (Funkloch): Antwort verloren, erneutes Speichern derselben Eingaben – steht schon genau so da → kein Konflikt
-    const cur = await env.DB.prepare('SELECT zgm_class, zgm_kg, first_registration, spec_source FROM vehicles WHERE id=?').bind(vehicleId).first();
-    if (cur && (cur.zgm_class || null) === cls && (cur.zgm_kg ?? null) === kg && (cur.first_registration || null) === ez && cur.spec_source === source) return { ok: true, zgm_class: cls, husp_recalc: 0, unchanged: true };
+    const cur = await env.DB.prepare('SELECT zgm_class, zgm_kg, first_registration, emission_class, axles, spec_source FROM vehicles WHERE id=?').bind(vehicleId).first();
+    if (cur && (cur.zgm_class || null) === cls && (cur.zgm_kg ?? null) === kg && (cur.first_registration || null) === ez && (cur.emission_class || null) === emis && (cur.axles ?? null) === axles && cur.spec_source === source) return { ok: true, zgm_class: cls, husp_recalc: 0, unchanged: true };
     throw conflict('version_conflict', 'Inzwischen von jemand anderem geändert – bitte neu laden.');
   }
-  await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez }, source });
+  await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration, emission_class: v.emission_class, axles: v.axles }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez, emission_class: emis, axles }, source });
   const sync = await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
   return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
 }

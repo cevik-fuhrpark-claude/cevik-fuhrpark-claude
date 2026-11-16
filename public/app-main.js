@@ -5385,6 +5385,7 @@ const DEFECT_RESULTS = ['erhebliche_maengel', 'gefaehrliche_maengel', 'verkehrsu
 
 
 
+
 async function viewVehicle(...a) { return (await lazyModule('fahrzeug')).viewVehicle(...a); }
 
 

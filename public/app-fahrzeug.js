@@ -192,7 +192,7 @@ async function viewVehicles() {
   const vcsv = $('#vcsv'); if (vcsv) vcsv.onclick = async () => { try {
     const vis = $$('#vl a').filter((a) => !a.hidden).map((a) => decodeURIComponent(a.getAttribute('href').split('/').pop()));
     const sel = vis.length < vs.length || S.vehSort && S.vehSort !== 'plate' ? '&ids=' + encodeURIComponent(vis.join(',')) : '';
-    download(await api('GET', '/api/vehicles?format=csv' + (inact ? '&inactive=1' : '') + (isMgr() || S.me.role === 'dispatch' ? '&drivers=1' : '')   + sel), `fuhrpark-fahrzeuge_${envFn()}${inact ? '_ausser-betrieb' : ''}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
+    download(await api('GET', '/api/vehicles?format=csv' + (inact ? '&inactive=1' : '') + (isMgr() || S.me.role === 'dispatch' ? '&drivers=1' : '')   + '&spec=1'   + sel), `fuhrpark-fahrzeuge_${envFn()}${inact ? '_ausser-betrieb' : ''}_${bDate()}.csv`); } catch (err) { toast(err.message, true); } };
   const vsite = $('#vsite'); if (vsite) vsite.onchange = () => { S.vehSite = vsite.value; viewVehicles(); };
   const veq = $('#veq'); if (veq) veq.onchange = () => { S.vehEq = veq.value; viewVehicles(); };
   const vsort = $('#vsort'); if (vsort) vsort.onchange = () => { S.vehSort = sortPref('vehicles', VEH_SORTS, 'plate', VEH_SORTS.includes(vsort.value) ? vsort.value : 'plate'); viewVehicles(); };
@@ -326,12 +326,16 @@ function huSpHtml(h, v, canEdit, orders, docOk) {
   };
   const clsList = v.kind === 'anhaenger' ? ['bis_3_5', '3_5_10', 'ueber_10'] : ['bis_3_5', '3_5_7_5', '7_5_12', 'ueber_12'];
   return `<h2>${esc(t('hu_sp'))}</h2><div class="grid2">${card('HU', h.hu)}${card('SP', h.sp)}</div>
-    <p class="small muted">${esc(t('zgm'))}: ${v.zgm_kg ? `${fmtNum(v.zgm_kg)} kg` : v.zgm_class ? esc(t('zc_' + v.zgm_class)) : '–'} · ${esc(t('first_reg'))}: ${fmtD(v.first_registration)}${v.spec_source ? ` · ${esc(t('evidence'))}: ${esc(v.spec_source)}` : ''} · ${h.rule_ref ? `${esc(h.rule_ref)} (${esc(t('rule_checked_on').replace('{d}', fmtD(h.rule_checked)))})` : esc(h.rule_version)}</p>
+    <p class="small muted">${esc(t('zgm'))}: ${v.zgm_kg ? `${fmtNum(v.zgm_kg)} kg` : v.zgm_class ? esc(t('zc_' + v.zgm_class)) : '–'} · ${esc(t('first_reg'))}: ${fmtD(v.first_registration)}${v.kind !== 'anhaenger' ? ` · <span data-emis>${esc(t('emis_class'))}: ${esc(EMIS_LABEL[v.emission_class] || '–')}</span>` : ''} · <span data-axles>${esc(t('axles_n'))}: ${v.axles ?? '–'}</span>${v.spec_source ? ` · ${esc(t('evidence'))}: ${esc(v.spec_source)}` : ''} · ${h.rule_ref ? `${esc(h.rule_ref)} (${esc(t('rule_checked_on').replace('{d}', fmtD(h.rule_checked)))})` : esc(h.rule_version)}</p>
     ${isMgr() ? `<details class="panel"><summary>${esc(t('edit_spec'))}</summary><form id="specf"><input type="hidden" name="expected_updated_at" value="${esc(v.updated_at || '')}"><label>${esc(t('zgm'))} (kg, F.2)</label><input name="zgm_kg" inputmode="numeric" value="${esc(v.zgm_kg || '')}">
       <label>${esc(t('zgm_class'))}</label><select name="zgm_class"><option value="">–</option>${clsList.map((c) => `<option value="${c}"${v.zgm_class === c ? ' selected' : ''}>${esc(t('zc_' + c))}</option>`).join('')}</select>
-      <label>${esc(t('first_reg'))} (B)</label><input type="date" name="first_registration" value="${esc(v.first_registration || '')}"><label>${esc(t('evidence'))}</label><input name="spec_source" required placeholder="${esc(t('spec_src_ph'))}">
+      <label>${esc(t('first_reg'))} (B)</label><input type="date" name="first_registration" value="${esc(v.first_registration || '')}">
+      ${v.kind !== 'anhaenger' ? `<label for="spemis">${esc(t('emis_field'))}</label><select id="spemis" name="emission_class"><option value="">–</option>${Object.entries(EMIS_LABEL).map(([k, l]) => `<option value="${k}"${v.emission_class === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>` : `<p class="small muted" data-emistr>${esc(t('emis_trailer'))}</p>`}
+      <label for="spaxles">${esc(t('axles_field'))}</label><input id="spaxles" name="axles" inputmode="numeric" maxlength="2" value="${esc(v.axles ?? '')}"><p class="small muted" data-emishint>${esc(t('emis_hint'))}</p><label>${esc(t('evidence'))}</label><input name="spec_source" required placeholder="${esc(t('spec_src_ph'))}">
       <div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}`;
 }
+
+const EMIS_LABEL = { euro_1: 'Euro I', euro_2: 'Euro II', euro_3: 'Euro III', euro_4: 'Euro IV', euro_5: 'Euro V', eev: 'EEV', euro_6: 'Euro VI' };
 const VNOTES_MAX = 20;
 
 async function loadVehicleNotes(vid, showArchive = false) {

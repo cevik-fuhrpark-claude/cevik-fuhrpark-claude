@@ -127,7 +127,7 @@ const muts = [
   ['POST', `/api/vehicles/${VE}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 5 }, ['event_type', 'position', 'positions', 'tread_mm', 'pressure_bar', 'dot', 'brand', 'size', 'winter_mark', 'odometer_km', 'at', 'note', 'case_id']],
   ['POST', `/api/vehicles/${VE}/tires/specs`, { axle: 'lenkachse', size: '315/70 R22.5', verified: true }, ['axle', 'size', 'verified', 'min_tread_mm', 'source', 'note']],
   ['POST', `/api/vehicles/${VE}/tires/winter-order`, { workshop_site: ws, planned_date: ahead(3), request_key: 'fz-wo' }, ['workshop_site', 'planned_date', 'request_key', 'note']],
-  ['POST', `/api/vehicles/${VE}/spec`, {}, ['zgm_kg', 'zgm_class', 'first_registration', 'spec_source', 'evidence', 'build_year']],
+  ['POST', `/api/vehicles/${VE}/spec`, {}, ['zgm_kg', 'zgm_class', 'first_registration', 'emission_class', 'axles', 'spec_source', 'evidence', 'build_year']],
   ['POST', `/api/vehicles/${VE}/evaluation`, { excluded: false }, ['excluded', 'reason']],
   ['POST', `/api/vehicles/${VE}/drivers`, { user_id: uid, evidence: 'x' }, ['user_id', 'evidence', 'end_previous', 'note']],
   ['POST', '/api/telematics/mappings', { provider: 'webfleet', external_id: 'WF-9', vehicle_id: V, evidence: 'Liste' }, ['provider', 'external_id', 'vehicle_id', 'evidence']],

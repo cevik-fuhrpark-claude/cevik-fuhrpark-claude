@@ -43444,6 +43444,51 @@ await test('Backlog 1529 (Blickwinkel „Leitung fragt: Welches Fahrzeug fährt 
   }
 });
 
+await test('Backlog 1530 (Blickwinkel „Leitung prüft vor der Mautabrechnung, ob Schadstoffklasse und Achszahl in der OBU stimmen“): Fahrzeugdaten mit Schadstoffklasse (nur Lkw, feste Liste) und Achszahl (ganzzahlig 1–10), leer = nicht erfasst, Protokoll, unverändert-Erkennung; CSV-Spalten nur mit spec=1; Oberfläche und Hilfe (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const spec = (c, b, id = V1) => c.post(`/api/vehicles/${id}/spec`, { spec_source: 'Zulassungsbescheinigung Teil I', ...b });
+  eq((await spec(U.ws, { emission_class: 'euro_6' })).status, 403, 'Werkstatt darf nicht');
+  let r = await spec(U.fleet, { emission_class: 'euro_7' }); eq(r.status, 400); eq(r.data.field_key, 'emission_class', 'unbekannte Klasse');
+  r = await spec(U.fleet, { axles: '2,5' }); eq(r.status, 400); eq(r.data.field_key, 'axles', 'keine ganze Zahl');
+  r = await spec(U.fleet, { axles: 11 }); eq(r.status, 400); eq(r.data.field_key, 'axles', 'zu viele');
+  r = await spec(U.fleet, { zgm_kg: 18000, emission_class: 'euro_6', axles: '2' }); eq(r.status, 200, JSON.stringify(r.data));
+  let v = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle; eq(`${v.emission_class}/${v.axles}/${v.zgm_kg}`, 'euro_6/2/18000');
+  const au = e.DB.db.prepare(`SELECT detail FROM audit_log WHERE action='vehicle.spec' AND target=? ORDER BY created_at DESC LIMIT 1`).get(V1);
+  const d = JSON.parse(au.detail); eq(`${d.from.emission_class}/${d.to.emission_class}/${d.to.axles}`, 'null/euro_6/2', 'Protokoll');
+  // Funkloch: gleiche Eingaben mit altem Stand → unverändert statt Konflikt
+  r = await spec(U.fleet, { zgm_kg: 18000, emission_class: 'euro_6', axles: 2, expected_updated_at: '2020-01-01T00:00:00.000Z' }); eq(r.status, 200); eq(r.data.unchanged, true, 'unverändert');
+  r = await spec(U.fleet, { zgm_kg: 18000, emission_class: 'eev', axles: 2, expected_updated_at: '2020-01-01T00:00:00.000Z' }); eq(r.status, 409, 'andere Klasse mit altem Stand → Konflikt');
+  // leer = nicht erfasst (Formular sendet leere Felder nicht)
+  eq((await spec(U.fleet, { zgm_kg: 18000 })).status, 200); v = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle; eq(`${v.emission_class}/${v.axles}`, 'null/null', 'geleert');
+  // Anhänger: keine Schadstoffklasse, Achsen ja
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340310153001', plate: 'AA-AH 1530', kind: 'anhaenger', site: 'Dortmund' })).status, 201);
+  const TR = (await U.fleet.get('/api/vehicles')).data.vehicles.find((x) => x.plate === 'AA-AH 1530').id;
+  r = await spec(U.fleet, { emission_class: 'euro_6' }, TR); eq(r.status, 400); eq(r.data.field_key, 'emission_class', 'Anhänger');
+  eq((await spec(U.fleet, { axles: 3 }, TR)).status, 200, 'Anhänger mit Achsen');
+  eq((await spec(U.fleet, { zgm_kg: 18000, emission_class: 'euro_6', axles: 2, first_registration: '2016-03-01' })).status, 200);
+  // CSV
+  const csv = async (q) => { const x = await U.fleet.req('GET', '/api/vehicles?format=csv' + q); eq(x.status, 200); return new TextDecoder().decode(x.data).replace(/^﻿/, '').split('\r\n'); };
+  let rows = await csv(''); ok(rows[0].endsWith(';Art nächste Prüfung') && !rows[0].includes('Schadstoffklasse'), 'ohne spec=1 unverändert');
+  rows = await csv('&drivers=1&spec=1'); ok(rows[0].endsWith(';Fahrer (aktuell zugeordnet);Zul. Gesamtmasse (kg);Erstzulassung;Schadstoffklasse;Achsen'), rows[0].slice(-120));
+  const p1 = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle.plate;
+  ok(rows.find((l) => l.startsWith(p1 + ';')).endsWith(';18000;01.03.2016;Euro VI;2'), 'Zeile Lkw: ' + rows.find((l) => l.startsWith(p1 + ';')).slice(-80));
+  ok(rows.find((l) => l.startsWith('AA-AH 1530;')).endsWith(';;;;3'), 'Zeile Anhänger');
+  eq(new Set(rows.filter(Boolean).map((l) => l.split(';').length)).size, 1, 'gleiche Spaltenzahl');
+  // Übersetzungen der Server-Meldungen
+  const { STRINGS, translateValidation } = await import('../public/i18n.js');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('../src/vehicles.js', import.meta.url), 'utf8');
+  const lab = new Function(app.slice(app.indexOf('const EMIS_LABEL = '), app.indexOf('\n', app.indexOf('const EMIS_LABEL = '))) + '; return EMIS_LABEL;')();
+  const de = new Function(src.slice(src.indexOf('const EMISSION_DE = '), src.indexOf('\n', src.indexOf('const EMISSION_DE = '))).replace('export ', '') + '; return EMISSION_DE;')();
+  eq(JSON.stringify(lab), JSON.stringify(de), 'Oberfläche und Server gleiche Klassen/Reihenfolge');
+  ok(app.includes("+ '&spec=1' /* Backlog 1530 */") && app.includes('name="emission_class"') && app.includes('name="axles"') && app.includes('data-emistr') && app.includes('data-emishint'), 'Formular, CSV');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['emis_class', 'axles_n', 'emis_field', 'axles_field', 'emis_hint', 'emis_trailer']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_dates_s.split('|').some((p) => p.includes('V.9') && p.includes('L)') && p.includes(STRINGS[l].edit_spec)), `${l}: Hilfe`);
+  }
+  if (translateValidation) for (const l of ['uk', 'en']) ok(translateValidation(l, 'Anhänger haben keine Schadstoffklasse – bitte leer lassen.') !== 'Anhänger haben keine Schadstoffklasse – bitte leer lassen.', `${l}: Meldung übersetzt`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
