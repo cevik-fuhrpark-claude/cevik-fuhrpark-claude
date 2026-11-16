@@ -26868,7 +26868,7 @@ await test('Backlog 634 (Teilagent-Fund „Diebstahl auf dem Rastplatz“): Meld
   for (const x of ['Тент напівпричепа порізаний', 'Plane aufgeschlitzt', 'Auflieger Rücklicht defekt', 'trailer light broken', 'тент полуприцепа порезан', 'причіп пошкоджено']) ok(R.test(x), 'Auflieger: ' + x);
   for (const x of ['Anhängerkupplung defekt', 'Aufliegerkupplung', 'trailer hitch broken', 'Sattelkupplung klemmt', 'Spiegel kaputt', 'прицепное устройство', 'Planetengetriebe']) ok(!R.test(x), 'kein Auflieger: ' + x);
   ok(app.includes("const show = !!(v && v.kind !== 'anhaenger' && v.trailer_plate && TRAILER_DMG.test($('#d').value) && !FOREIGN_TRAILER.test($('#d').value));"), 'nur Lkw mit gekoppeltem Auflieger (Backlog 640: nicht bei fremdem Auflieger)');
-  ok(app.includes("const hints = () => { const dv = recurFix($('#d').value); const dsk = noSticker(dv); const dck = noCabkit(dv); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
+  ok(app.includes("const hints = () => { const dv = recurFix(otherPart($('#d').value)); const dsk = noSticker(dv); const dck = noCabkit(dv); $('#trlr').hidden = !trailerHint();") && app.includes("$$('input[name=veh]').forEach((x) => x.addEventListener('change', hints));"), 'bei Text- und Fahrzeugwechsel');
   ok(/const HINT_ORDER = \[[^\]]*'trlr'/.test(app) && app.includes('<div id="trlr" class="panel" hidden role="status"></div>'), 'Hinweisgruppe');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].trlr_title.includes('{p}') && STRINGS[l].trlr_text.includes('{p}'), l); }
@@ -27918,7 +27918,7 @@ await test('Backlog 764 (Folge aus 761/763, Sonde Reparaturvermerke): ältere Hi
   ok(c > b && d > c, 'noFixed auf Modulebene nach recurFix');
   const noFixed = new Function(app.slice(c, d) + '; return noFixed;')();
   const hl = app.split('\n').find((x) => x.includes('const hints = () =>')) || '';
-  ok(hl.includes("const dv = recurFix($('#d').value);") && hl.includes("$('#trlr').hidden = !trailerHint(); const dfx = noFixed(dv);"), 'Meldeformular: dfx = noFixed(recurFix(Text))');
+  ok(hl.includes("const dv = recurFix(otherPart($('#d').value));") && hl.includes("$('#trlr').hidden = !trailerHint(); const dfx = noFixed(dv);"), 'Meldeformular: dfx = noFixed(recurFix(Text))');
   const SET = ['WARNLIGHT', 'PFILTER', 'NOSTART', 'DASH', 'TELEM', 'SEAT', 'WINDOW', 'CABKIT', 'CABLEAK', 'CABLOCK', 'CABTILT', 'FUELCAP', 'ELEC', 'BATT', 'MIRROR', 'GEAR', 'EXHAUST', 'TOLL', 'DOOR', 'VISIB', 'STEP'];
   for (const n of SET) ok(hl.includes('!' + n + '_HINT.test(dfx)') || hl.includes('!' + n + '_HINT.test(noAux(dfx))') || hl.includes('!' + n + '_HINT.test(noCabHyd(dfx))') || hl.includes('!' + n + '_HINT.test(noStepDoor(dfx))') || (hl.includes('const dsh = noSeatHeat(noReefRu(dfx));') && hl.includes('!' + n + '_HINT.test(dsh)')), n + ' über dfx'); // noAux: Backlog 919; dsh = noSeatHeat(dfx): Backlog 1164; noReefRu: Backlog 1310
   for (const n of ['BRAKE', 'PARKBRAKE', 'STEER', 'SUSP', 'TYRE', 'FLAT', 'WHEEL', 'COUPLING', 'FIRE', 'LEAK', 'ENGINE', 'TACHO', 'ACC', 'THEFT', 'GLASS', 'FUEL']) ok(!hl.includes('!' + n + '_HINT.test(dfx'), n + ' bewusst nicht über dfx');
@@ -27980,7 +27980,7 @@ await test('Backlog 761 (Sonde Reparaturvermerke, 31.10.2026 05:15): wiederkehre
   const a = app.indexOf('const FIX_WORD'), b = app.indexOf("}).join('');", a) + 12;
   ok(a > 0 && b > a, 'recurFix auf Modulebene');
   const recurFix = new Function(app.slice(a, b) + '; return recurFix;')();
-  ok(/const hints = \(\) => \{ const dv = recurFix\(\$\('#d'\)\.value\);/.test(app), 'Meldeformular prüft den Text über recurFix');
+  ok(/const hints = \(\) => \{ const dv = recurFix\(otherPart\(\$\('#d'\)\.value\)\);/.test(app), 'Meldeformular prüft den Text über recurFix');
   ok(!/const hints = \(\) => \{[^\n]*\$\('#d'\)\.value\)[^\n]*\$\('#d'\)\.value/.test(app), 'Hinweise lesen den Text nicht mehr ungefiltert');
   const T = {
     SUSP_HINT: [['Feder gebrochen, nicht repariert', 'Luftfederung zu tief wieder, obwohl repariert', 'Luftfederung zu tief, trotz Reparatur'], ['Luftfederung zu tief, repariert']],
@@ -43661,8 +43661,26 @@ await test('Backlog 1536 (Folge aus 1535, Blickwinkel „Hitzewelle im Sommer“
   for (const x of ['engine is not overheating', 'gearbox is not overheating', 'retarder not overheating', 'фреон заправили, кондиціонер працює', 'AC regassed, out of gas before', 'ретардер не перегрівається', 'коробка не перегревается', 'tyre on the trailer did not burst']) eq([...heatKinds(x)].join(','), '', 'ohne Hinweis: ' + x);
   for (const x of ['retarder overheating', 'gearbox overheating', 'ретардер перегрівається', 'коробка передач перегревается', 'transmission overheats']) ok(heatNoEngine(x), 'kein Motor-Hinweis: ' + x);
   for (const x of ['retarder overheating, coolant boiling', 'gearbox and engine overheating', 'коробка перегрівається, двигун теж', 'engine overheating']) ok(!heatNoEngine(x), 'Motor-Hinweis bleibt: ' + x);
-  ok(app.includes("$('#engine').hidden ||= heatNoEngine(dfx); for (const k of heatKinds(dfx)) $('#' + k).hidden = false; for (const k of fkSet)"), 'im Meldeformular vor fremden Sprachen und Geräusch-Hinweis');
+  ok(app.includes("$('#engine').hidden ||= heatNoEngine(dfx) || heatNoEngine(dv); for (const k of heatKinds(dfx)) $('#' + k).hidden = false; for (const k of fkSet)"), 'im Meldeformular vor fremden Sprachen und Geräusch-Hinweis');
   ok(readFileSync(new URL('../scripts/ui-meldung-hitze.py', import.meta.url), 'utf8').includes('ретардер перегрівається'), 'UI-Prüfung deckt UK/RU/EN ab');
+});
+await test('Backlog 1537 (Blickwinkel „Nach der Reparatur ist das andere Teil defekt“): „Reifen gewechselt, jetzt ist der andere platt“, „Lampe getauscht, jetzt geht die andere nicht“, „tyre replaced, now the other one is flat“ → otherPart hängt „<Bauteil> <Befund>“ als eigenen Satz an; „…, jetzt ist der andere in Ordnung/auch ok“ nicht; „retarder repaired, was overheating“, „Retarder wurde repariert, er war überhitzt“ ohne Motor-Hinweis (heatNoEngine auch auf dem Text vor noFixed)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.slice(app.indexOf('\nconst HEAT_KINDS'), app.indexOf('\n', app.indexOf('\nfunction heatKinds') + 2));
+  const { otherPart, heatNoEngine } = new Function(src + '\nreturn { otherPart, heatNoEngine };')();
+  const add = (x) => otherPart(x).slice(x.length).replace(/^\. /, '');
+  const CASES = [['Reifen gewechselt, jetzt ist der andere platt', 'Reifen ist platt'], ['Lampe getauscht, jetzt geht die andere nicht', 'Lampe geht nicht'], ['Spiegel ersetzt, jetzt ist der linke kaputt', 'Spiegel ist kaputt'],
+    ['Spiegel ersetzt und jetzt ist der rechte auch kaputt', 'Spiegel ist auch kaputt'], ['Wischer erneuert, jetzt quietscht der andere', 'Wischer quietscht'], ['tyre replaced, now the other one is flat', 'tyre is flat'], ['bulb replaced, now the other one is out', 'bulb is out'],
+    ['Reifen wurde gewechselt, nun ist der hintere platt. Sonst ok', 'Reifen ist platt']];
+  for (const [x, w] of CASES) eq(add(x), w, x);
+  for (const x of ['Reifen gewechselt, jetzt ist der andere in Ordnung', 'Reifen gewechselt, jetzt ist der andere auch ok', 'Lampe getauscht, die andere geht', 'Reifen gewechselt, jetzt ist der andere', 'Reifen gewechselt, war platt', 'tyre replaced, now the other one is fine']) eq(otherPart(x), x, 'unverändert: ' + x);
+  eq(otherPart(''), '', 'leer');
+  for (const x of ['retarder repaired, was overheating', 'Retarder repariert, war überhitzt', 'Retarder wurde repariert, er war überhitzt', 'gearbox repaired, was overheating', 'ретардер отремонтирован, перегревался', 'Getriebe überhitzt']) ok(heatNoEngine(x), 'kein Motor-Hinweis: ' + x);
+  for (const x of ['Retarder wurde repariert, Motor war überhitzt', 'Getriebe getauscht, Kühlwasser kocht, überhitzt']) ok(!heatNoEngine(x), 'Motor-Hinweis bleibt: ' + x);
+  ok(app.includes("const hints = () => { const dv = recurFix(otherPart($('#d').value));"), 'Meldeformular wertet die angehängten Sätze aus');
+  ok(!/new RegExp\([^)]*OTHER_PART/.test(app), 'Muster bleibt Literal (lbRx für ältere iPhones)');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-anderes-teil.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
