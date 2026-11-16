@@ -43202,6 +43202,32 @@ await test('Backlog 1523 (Blickwinkel „Zugmaschine wird verkauft – der fest 
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1523'), 'API.md');
 });
 
+await test('Backlog 1524 (Folge aus 1523): „Wieder in Betrieb“ bzw. „wieder in Auswertungen“ nennt in `return_check.coupled_inactive` das fest gekoppelte Fahrzeug, das außer Betrieb ist – nicht, wenn ein anderes Fahrzeug in Betrieb dieses Kennzeichen trägt; Oberfläche/Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const mk = async (b) => { const r = await U.own.post('/api/vehicles', { site: 'Dortmund', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const T = await mk({ plate: 'TQ-ZM 1524', vin: 'WDB96340310991541', trailer_plate: 'tq-an1524' });
+  const A = await mk({ plate: 'TQ-AN 1524', vin: 'WDB96340310991542', kind: 'anhaenger' });
+  const set = async (id, active) => { const r = await U.fleet.post(`/api/vehicles/${id}/active`, { active, reason: active ? null : 'verkauft' }); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  await set(T, false); await set(A, false);
+  let r = await set(T, true);
+  eq(JSON.stringify(r.return_check.coupled_inactive), JSON.stringify([{ id: A, plate: 'TQ-AN 1524', kind: 'anhaenger' }]), 'Zugmaschine zurück, Anhänger außer Betrieb');
+  r = await set(A, true); eq(r.return_check.coupled_inactive, undefined, 'Zugmaschine schon in Betrieb');
+  await set(T, false);
+  const ev = await U.fleet.post(`/api/vehicles/${A}/evaluation`, { excluded: true, reason: 'Standzeit' }); eq(ev.status, 200);
+  const inc = await U.fleet.post(`/api/vehicles/${A}/evaluation`, { excluded: false }); eq(inc.status, 200);
+  eq(JSON.stringify(inc.data.return_check.coupled_inactive), JSON.stringify([{ id: T, plate: 'TQ-ZM 1524', kind: 'lkw' }]), 'Anhänger wieder in Auswertungen, Zugmaschine außer Betrieb');
+  // anderer aktiver Anhänger mit demselben Kennzeichen (Nachfolger) → kein Hinweis
+  await set(A, false); await mk({ plate: 'TQ-AN 1524', vin: 'WDB96340310991543', kind: 'anhaenger' });
+  r = await set(T, true); eq(r.return_check.coupled_inactive, undefined, 'Nachfolger in Betrieb');
+  // ohne Anhängerkennzeichen kein Hinweis
+  const S = await mk({ plate: 'TQ-SO 1524', vin: 'WDB96340310991544' }); await set(S, false); eq((await set(S, true)).return_check.coupled_inactive, undefined, 'Solo-Lkw');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(rc.coupled_inactive || []).length ? t('rc_coupled_inactive')"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].rc_coupled_inactive.includes('{list}') && STRINGS[l].help_fleet_s.split('|').some((p) => /Umgekehrt nennt|І навпаки|Conversely/.test(p)), `${l}: Text/Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1524'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -7039,7 +7039,9 @@ function returnCheckText(rc) {
   const parts = [rc.locked_cases ? tn('rc_locked', rc.locked_cases) : '', rc.overdue_inspections ? tn('rc_overdue', rc.overdue_inspections) : '', rc.unclear_inspections ? tn('rc_unclear', rc.unclear_inspections) : '',
     rc.expired_contracts ? tn('rc_contracts', rc.expired_contracts) : '', rc.insurance_none_running ? t('rc_no_insurance') : '',
     // Backlog 469: aktive Hinweise (z. B. ausgebautes Teil) und offene Restarbeiten
-    rc.active_notes ? tn('rc_notes', rc.active_notes) : '', rc.open_items ? tn('rc_open_items', rc.open_items) + (rc.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(rc.open_items_safety)) : '') : '', rc.last_km_at ? t('rc_km').replace('{d}', fmtD(rc.last_km_at)) : t('rc_km_none')].filter(Boolean);
+    rc.active_notes ? tn('rc_notes', rc.active_notes) : '', rc.open_items ? tn('rc_open_items', rc.open_items) + (rc.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(rc.open_items_safety)) : '') : '', rc.last_km_at ? t('rc_km').replace('{d}', fmtD(rc.last_km_at)) : t('rc_km_none'),
+    // Backlog 1524: fest gekoppeltes Fahrzeug (Anhänger bzw. Zugmaschine) laut Stammliste außer Betrieb
+    (rc.coupled_inactive || []).length ? t('rc_coupled_inactive').replace('{list}', () => rc.coupled_inactive.map((x) => x.plate).join(', ')) : ''].filter(Boolean);
   return `${t('rc_head')}: ${parts.join(' · ')}`;
 }
 // „(heute)“ hinter einem geplanten Termin in Listen (Backlog 209: Prüftermin heute in der Fahrzeugliste nicht erkennbar – Ersatzsuche)

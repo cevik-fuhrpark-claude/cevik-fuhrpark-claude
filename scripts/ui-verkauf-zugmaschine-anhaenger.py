@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test (16.11.2026, Backlog 1523, Blickwinkel „Zugmaschine wird verkauft – der fest gekoppelte Auflieger bleibt in Betrieb“):
 # Fahrzeugakte der Zugmaschine → „Außer Betrieb nehmen“ → Hinweis nennt den gekoppelten Anhänger (Kennzeichen), der in Betrieb bleibt.
+# Backlog 1524: Anhänger danach ebenfalls außer Betrieb → „Wieder in Betrieb nehmen“ der Zugmaschine nennt ihn im Hinweis.
 # Inhaber, DE 390 / UK 820 / EN 1366 px; kein Querscrollen, keine Skriptfehler; Anhänger bleibt in Betrieb. Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -42,6 +43,18 @@ with sync_playwright() as p:
         vs = api('GET', '/api/vehicles')['d']; rows = vs.get('vehicles')
         check(any(x.get('id') == TID for x in (rows or [])), f'{lang}: Anhänger weiter in Betrieb')
         check(not any(x.get('id') == VID for x in (rows or [])), f'{lang}: Zugmaschine außer Betrieb')
+        # Backlog 1524: Anhänger inzwischen ebenfalls außer Betrieb → „Wieder in Betrieb nehmen“ der Zugmaschine nennt ihn
+        check(api('POST', f'/api/vehicles/{TID}/active', {'active': False, 'reason': 'abgemeldet'})['s'] == 200, f'{lang}: Anhänger außer Betrieb')
+        T2 = q.evaluate("async (l) => (await import('/i18n.js')).STRINGS[l].rc_coupled_inactive", lang)
+        q.evaluate("() => { for (const t of document.querySelectorAll('.toast')) t.remove(); }")
+        q.goto(B + '/#/vehicles/' + VID.replace(':', '%3A')); q.reload()
+        q.wait_for_selector('#react', state='attached', timeout=20000)
+        q.evaluate("()=>{ for (const d of document.querySelectorAll('details')) if (d.querySelector('#react')) d.open = true; }")
+        q.click('#react'); q.wait_for_selector('.toast', timeout=15000); q.wait_for_timeout(300)
+        tx2 = q.locator('.toast').last.inner_text()
+        check(T2.split('{list}')[0].strip()[:20] in tx2 and tp in tx2, f'{lang}: Rückkehr-Hinweis „…{tx2[-150:]}“')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/rueckkehr-zugmaschine-{lang}-{w}.png')
+        check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'), f'{lang}: ohne Querscrollen (Rückkehr)')
         check(not errs, f'{lang}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

@@ -714,14 +714,25 @@ async function returnCheck(env, envName, vehicleId) {
       -- offene Restarbeiten dieser Umgebung – beim Außer-Betrieb-Nehmen schon genannt (Backlog 370), bei der Rückkehr fehlten sie
       (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?3 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?2)) AS n,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen') AS oi,
-      (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS ois`).bind(vehicleId, today, envName).first();
+      (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS ois,
+      (SELECT kind FROM vehicles WHERE id=?1) AS vk, (SELECT plate FROM vehicles WHERE id=?1) AS vp, (SELECT trailer_plate FROM vehicles WHERE id=?1) AS vtp`).bind(vehicleId, today, envName).first();
+  // Backlog 1524 (Folge aus 1523, Blickwinkel „verkaufte Zugmaschine kommt zurück – der Auflieger wurde inzwischen abgemeldet“): das fest gekoppelte
+  // Fahrzeug laut Stammliste ist außer Betrieb und kein anderes Fahrzeug in Betrieb trägt dieses Kennzeichen bzw. Anhängerkennzeichen →
+  // `coupled_inactive` nennen (Gespann fährt sonst ohne Partner; Abfahrtskontrolle/Prüftermine des Partners laufen nicht). Nur Hinweis.
+  const isTrailer = row.vk === 'anhaenger'; const key = normPlate(isTrailer ? row.vp : row.vtp);
+  let coupledInactive = [];
+  if (key) {
+    const rows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, active FROM vehicles WHERE id<>? AND ${isTrailer ? "kind<>'anhaenger' AND trailer_plate IS NOT NULL" : "kind='anhaenger'"}`).bind(vehicleId).all()).results
+      .filter((x) => normPlate(isTrailer ? x.trailer_plate : x.plate) === key);
+    if (!rows.some((x) => Number(x.active) === 1)) coupledInactive = rows.map((x) => ({ id: x.id, plate: x.plate, kind: x.kind }));
+  }
   let overdue = row.o || 0; let unclear = 0;
   const x = (await loadHuSpInputs(env, [vehicleId])).get(vehicleId);
   if (x) {
     const h = huSpFor(x, today, maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value));
     for (const y of [h.hu, h.sp]) { if (!y) continue; if (y.status === 'ueberfaellig') overdue++; else if (y.status === 'ungeklaert') unclear++; }
   }
-  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, active_notes: row.n || 0, open_items: row.oi || 0, open_items_safety: row.ois || 0, last_km_at: row.k || null };
+  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, active_notes: row.n || 0, open_items: row.oi || 0, open_items_safety: row.ois || 0, last_km_at: row.k || null, ...(coupledInactive.length ? { coupled_inactive: coupledInactive } : {}) };
 }
 
 export async function setVehicleEvaluation(env, user, envName, vehicleId, body) {
