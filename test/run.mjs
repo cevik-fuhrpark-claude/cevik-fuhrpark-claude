@@ -15240,7 +15240,7 @@ await test('Fehlersuche 20.10. (16): Führerscheinkontrolle am selben Tag korrig
   const li = (await U.fleet.get('/api/drivers')).data.drivers.find((d) => d.id === dr).status; const ak2 = (await U.fleet.get(`/api/drivers/${dr}`)).data.status;
   eq(li.tacho_status, 'keine'); eq(li.overall, ak2.overall); ok(li.overall !== 'ok', 'keine Auslesung = mindestens Hinweis'); ok('overall_docs' in li, 'Stand ohne Auslesung');
   const csv = new TextDecoder().decode((await U.fleet.get('/api/drivers?format=csv')).data); ok(csv.includes({ hinweis: 'Hinweis', kritisch: 'kritisch' }[li.overall]), csv);
-  ok(app.includes("'/api/drivers?format=csv' + (dq ? '&' + dq : '')") && app.includes('`fuhrpark-fahrer-fristen_${envFn()}_'), 'Fahrer-CSV mit „inaktiv“ und Umgebung');
+  ok(app.includes("'/api/drivers?format=csv&vehicles=1' + (dq ? '&' + dq : '')") && app.includes('`fuhrpark-fahrer-fristen_${envFn()}_'), 'Fahrer-CSV mit „inaktiv“ und Umgebung');
   ok(app.includes("location.replace('#/drivers/' + encodeURIComponent(list[0].id))"), 'Fahrer: „Zurück“ ohne Schleife');
   ok(app.includes("(d.status.overall_docs || d.status.overall) === 'kritisch'"), 'Startseite: Auslesung nur unter „Auslesungen“');
   // 3. Protokoll: Fahrerakte-Einträge mit Namen, per Name suchbar, im Protokoll der Person
@@ -43393,6 +43393,54 @@ await test('Backlog 1528 (Blickwinkel „Disposition fragt: Wer fährt heute den
   for (const l of ['de', 'uk', 'en']) {
     for (const k of ['av_no_driver', 'av_no_driver_t', 'drv_now_title', 'veh_search_ph_drv']) ok(STRINGS[l][k], `${l}.${k}`);
     ok(STRINGS[l].help_dispo_s.split('|').some((p) => p.includes('👤') && p.includes(STRINGS[l].av_no_driver)), `${l}: Hilfe Disposition`);
+  }
+});
+
+await test('Backlog 1529 (Blickwinkel „Leitung fragt: Welches Fahrzeug fährt Fahrer X gerade? Wer hat noch kein Fahrzeug?“): Fahrerliste nennt die zurzeit zugeordneten Fahrzeuge (`vehicles_now`, nur Leitung, nur diese Umgebung, beendete Zuordnungen nicht, Lkw vor Anhänger); Akten ohne App-Konto ohne Feld; CSV-Spalte nur mit vehicles=1; Filter „Ohne Fahrzeug“, Hinweis und Hilfe (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const y = await U.own.post('/api/users', { username: 'w.fahrer1529', display_name: 'Berta Ohne', role: 'driver', environment: 'test' }); eq(y.status, 201, JSON.stringify(y.data));
+  const a = await U.fleet.post('/api/drivers', { display_name: 'Fahrer W', user_id: U.driver.id }); eq(a.status, 201, JSON.stringify(a.data));
+  const b = await U.fleet.post('/api/drivers', { display_name: 'Berta Ohne', user_id: y.data.id }); eq(b.status, 201, JSON.stringify(b.data));
+  const c = await U.fleet.post('/api/drivers', { display_name: 'Carl Kontolos' }); eq(c.status, 201, JSON.stringify(c.data));
+  const tr = await U.fleet.post('/api/vehicles', { vin: 'WDB96340310152901', plate: 'AA-AH 1529', kind: 'anhaenger', site: 'Dortmund' }); eq(tr.status, 201, 'Anhänger');
+  const TR = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.plate === 'AA-AH 1529').id;
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id })).status, 201);
+  eq((await U.fleet.post(`/api/vehicles/${TR}/drivers`, { user_id: U.driver.id })).status, 201, 'Anhänger zusätzlich');
+  // Zuordnung in der Betriebsumgebung zählt in der Test-Liste nicht
+  e.DB.db.prepare("INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at,environment) VALUES ('dv-p1529',?,?,'2026-01-01T00:00:00.000Z',NULL,'Test',?,'2026-01-01T00:00:00.000Z','production')").run(y.data.id, V2, U.fleet.id);
+  const list = async (cl) => { const r = await cl.get('/api/drivers'); eq(r.status, 200); return new Map(r.data.drivers.map((d) => [d.display_name, d])); };
+  let m = await list(U.fleet);
+  const plates = (d) => (d.vehicles_now || []).map((v) => v.plate).join(',');
+  const p1 = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle.plate;
+  eq(plates(m.get('Fahrer W')), p1 + ',AA-AH 1529', 'Lkw vor Anhänger (trotz alphabetisch früherem Anhänger-Kennzeichen)');
+  eq(JSON.stringify(m.get('Berta Ohne').vehicles_now), '[]', 'mit Konto, ohne Zuordnung (Betriebsumgebung zählt nicht)');
+  ok(!('vehicles_now' in m.get('Carl Kontolos')) && !('vnow' in m.get('Carl Kontolos')), 'ohne App-Konto kein Feld');
+  const own = await U.driver.get('/api/drivers'); eq(own.status, 200); ok(own.data.drivers.every((d) => !('vehicles_now' in d) && !('vnow' in d)), 'Fahrer (eigene Akte) ohne Feld');
+  // Zuordnung beenden → verschwindet
+  const as = (await U.fleet.get(`/api/vehicles/${TR}`)).data.drivers.find((d) => d.user_id === U.driver.id && !d.valid_to);
+  eq((await U.fleet.req('DELETE', `/api/assignments/${as.id}`)).status, 200, 'Zuordnung beendet');
+  m = await list(U.fleet); eq(plates(m.get('Fahrer W')), p1, 'beendete Zuordnung nicht mehr');
+  // CSV
+  const csv = async (q) => { const r = await U.fleet.req('GET', '/api/drivers?format=csv' + q); eq(r.status, 200); return new TextDecoder().decode(r.data).replace(/^﻿/, '').split('\r\n'); };
+  let rows = await csv('&vehicles=1'); ok(rows[0].endsWith(';Status;Fahrzeug (aktuell zugeordnet)'), rows[0].slice(-60));
+  ok(rows.find((r) => r.startsWith('Fahrer W;')).endsWith(';' + p1), 'Zeile mit Kennzeichen');
+  ok(rows.find((r) => r.startsWith('Carl Kontolos;')).endsWith(';kein App-Konto'), 'ohne Konto ausdrücklich');
+  ok(/;in Ordnung|;Hinweis|;kritisch/.test(rows.find((r) => r.startsWith('Berta Ohne;'))) && rows.find((r) => r.startsWith('Berta Ohne;')).endsWith(';'), 'mit Konto ohne Zuordnung: leere Zelle');
+  rows = await csv(''); ok(rows[0].endsWith(';Status') && !rows[0].includes('Fahrzeug (aktuell'), 'ohne vehicles=1 unverändert');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = (k) => app.slice(app.indexOf(k), app.indexOf('\n', app.indexOf(k)));
+  const dNoVeh = new Function(line('const dNoVeh = (d) =>') + '; return dNoVeh;')();
+  eq(dNoVeh({ user_id: 'u', vehicles_now: [] }), true); eq(dNoVeh({ user_id: 'u', vehicles_now: [{ plate: 'A' }] }), false); eq(dNoVeh({ user_id: null }), false, 'ohne Konto nie „ohne Fahrzeug“');
+  ok(app.includes("'/api/drivers?format=csv&vehicles=1'"), 'CSV mit Spalte');
+  ok(app.includes('data-vehnow title=') && app.includes('id="dnoveh"') && app.includes('data-novehhint') && app.includes("S.drvNoVeh = nv.checked"), 'Zeile, Filter, Hinweis');
+  ok(app.includes("t('print_count').replace('{n}', shownD.length)"), 'Druckkopf zählt die gezeigten');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['drv_veh_now_title', 'drv_noveh', 'drv_noveh_t']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_drivers_s.split('|').some((p) => p.startsWith('🚚') && p.includes(STRINGS[l].drv_noveh) && p.includes(STRINGS[l].assign_driver)), `${l}: Hilfe Fahrer`);
+    ok(STRINGS[l].drv_noveh_t.includes(STRINGS[l].assign_driver), `${l}: Hinweis nennt den Knopf`);
   }
 });
 

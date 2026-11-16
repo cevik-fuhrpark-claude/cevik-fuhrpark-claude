@@ -110,7 +110,18 @@ export async function listDrivers(env, user, envName, query = {}, settings = nul
     return own ? [await driverDetail(env, user, envName, own.id)].map((x) => ({ ...x.driver, status: x.status })) : [];
   }
   const active = query.inactive === '1' ? 0 : 1;
-  const drivers = (await env.DB.prepare(`SELECT d.*, u.username FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, active).all()).results;
+  // Backlog 1529 (Blickwinkel „Leitung fragt: Welches Fahrzeug fährt Fahrer X gerade? Wer hat noch kein Fahrzeug?“): laufende
+  // Fahrzeugzuordnungen dieser Umgebung (Kennzeichen, über idx_dv_user) – nur Akten mit App-Konto (Zuordnungen hängen am Konto)
+  const drivers = (await env.DB.prepare(`SELECT d.*, u.username,
+      CASE WHEN d.user_id IS NOT NULL THEN (SELECT json_group_array(json_object('id', v.id, 'plate', v.plate, 'kind', v.kind)) FROM driver_vehicles x JOIN vehicles v ON v.id=x.vehicle_id
+        WHERE x.user_id=d.user_id AND x.environment=? AND (x.valid_to IS NULL OR x.valid_to > ?)) END AS vnow
+    FROM drivers d LEFT JOIN users u ON u.id=d.user_id WHERE d.environment=? AND d.active=? ORDER BY d.display_name`).bind(envName, nowIso(), envName, active).all()).results;
+  for (const d of drivers) {
+    if (d.vnow != null) { let vn = []; try { vn = JSON.parse(d.vnow); } catch {} const seen = new Set();
+      d.vehicles_now = vn.filter((v) => v && v.id && !seen.has(v.id) && seen.add(v.id)).map((v) => ({ id: v.id, plate: v.plate, kind: v.kind }))
+        .sort((a, b) => (a.kind === 'anhaenger') - (b.kind === 'anhaenger') || String(a.plate).localeCompare(String(b.plate), 'de')); }
+    delete d.vnow;
+  }
   const docs = (await env.DB.prepare(`SELECT x.id, x.driver_id, x.kind, x.title, x.valid_until, x.issued_on, x.created_at, x.superseded FROM driver_documents x JOIN drivers d ON d.id=x.driver_id WHERE d.environment=? AND x.superseded=0`).bind(envName).all()).results;
   const checks = (await env.DB.prepare(`SELECT c.driver_id, c.checked_on, c.result FROM driver_license_checks c JOIN drivers d ON d.id=c.driver_id
     WHERE d.environment=? AND c.cancelled_at IS NULL AND c.checked_on = (SELECT MAX(c2.checked_on) FROM driver_license_checks c2 WHERE c2.driver_id=c.driver_id AND c2.cancelled_at IS NULL)
@@ -543,7 +554,7 @@ export function driverDueItems(d, tc, dueBy) {
 }
 export const validDay = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(x + 'T00:00:00Z')) && new Date(x + 'T00:00:00Z').toISOString().slice(0, 10) === x;
 
-export function driversCsv(list, tachoByDriver, cell) {
+export function driversCsv(list, tachoByDriver, cell, opts = {}) {
   const DOV = { ok: 'in Ordnung', hinweis: 'Hinweis', kritisch: 'kritisch' };
   const DCK = { ok: 'aktuell', faellig: 'fällig', bald: 'bald fällig', fehlt: 'keine erfasst', mangel: 'Mangel' };
   const TST = { ueberfaellig: 'überfällig', bald: 'bald fällig', ok: 'in Ordnung', keine: 'keine erfasst' };
@@ -556,7 +567,7 @@ export function driversCsv(list, tachoByDriver, cell) {
     ...(tc && tc.status !== 'ok' ? ['Auslesung: ' + TST[tc.status]] : []),
   ];
   const overall = (d, tc) => tachoOverall(d.status.overall_docs || d.status.overall, tc);
-  const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status'];
+  const lines = ['﻿Name;Personalnummer;Standort;Führerschein gültig bis;Fahrerkarte gültig bis;Code 95 gültig bis;Letzte Führerscheinkontrolle;Ergebnis;Kontrolle fällig;Letzte Auslesung Fahrerkarte;Auslesung spätestens;Status' + (opts.withVehicles ? ';Fahrzeug (aktuell zugeordnet)' : '')]; // Backlog 1529: Spalte nur auf Anfrage (vehicles=1) – bestehende Auswertungen unverändert
   for (const d of list) {
     const v = (k) => (d.status.items.find((i) => i.kind === k) || {}).valid_until || '';
     // Backlog 383 (Blickwinkel „Betriebskontrolle“): leere Zelle war nicht von „nicht erfasst“ zu unterscheiden – Fahrerkarte/Code 95
@@ -564,7 +575,8 @@ export function driversCsv(list, tachoByDriver, cell) {
     const vx = (k) => { const it = d.status.items.find((i) => i.kind === k); return !it ? 'nicht erfasst' : it.valid_until || 'ohne Ablaufdatum'; };
     const tc = tachoByDriver.get(d.id);
     lines.push([cell(d.display_name), cell(d.personnel_no), cell(d.site), v('fuehrerschein'), vx('fahrerkarte'), vx('code95'), d.status.check.last || '', CHECK_RESULT_DE[d.status.check.result] || d.status.check.result || '',
-      d.status.check.due || (d.status.check.no_interval ? 'Intervall nicht eingestellt' : ''), tc ? tc.last || 'keine erfasst' : 'ohne Fahrerkarte', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · '))].join(';'));
+      d.status.check.due || (d.status.check.no_interval ? 'Intervall nicht eingestellt' : ''), tc ? tc.last || 'keine erfasst' : 'ohne Fahrerkarte', tc ? tc.due || '' : '', cell([DOV[overall(d, tc)], ...reasons(d, tc)].join(' · ')),
+      ...(opts.withVehicles ? [cell(d.user_id ? (d.vehicles_now || []).map((v) => v.plate).join(', ') : 'kein App-Konto')] : [])].join(';'));
   }
   return lines.join('\r\n') + '\r\n';
 }

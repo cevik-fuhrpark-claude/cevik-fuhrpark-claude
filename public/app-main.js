@@ -1892,7 +1892,7 @@ async function viewHome() {
       ${v.winter ? `<p class="small" role="note" data-drvwinter><b>❄ ${esc(t('drv_winter').replace('{p}', v.winter.noncompliant.map(posL).join(', ')))}</b></p>` : ''}
       <dl class="kv" style="margin-top:8px">${v.trailer_plate ? `<dt>${esc(t('trailer'))}</dt><dd>${esc(v.trailer_plate)}</dd>` : ''}${v.valid_from ? `<dt>${esc(t('drv_assigned_since'))}</dt><dd data-assignedsince>${fmtD(v.valid_from)}</dd>` : ''}<dt>${esc(t('km'))}</dt><dd>${v.last_km ? `${fmtKm(v.last_km.km)} <span class="small muted">(${fmtD(v.last_km.measured_at)})</span>` : '–'}</dd>${myPlanned(v)}${drvInspRows(v)}${(v.km_due || []).map((r) => `<dt>${esc(mk(r.kind))}</dt><dd>${esc(t('due_at_km'))} ${fmtKm(r.next_due_km)}${r.km_remaining < 0 ? ` <span class="chip kritisch">${esc(t('drv_overdue'))}</span>` : ` <span class="small">(${esc(t('km_left'))} ${fmtKm(r.km_remaining)})</span>`}${r.planned_date ? ` <span class="small">· ${esc(t('planned'))} ${fmtD(r.planned_date)}${todayMark(r.planned_date)}</span>${drvPlanNote(r)}` : ''}</dd>`).join('')}</dl>${knownDefects(v.known_defects, v.planned_workshop_date)}${relItems(v.open_items_after_release)}${drvCoupled(v.coupled)}</section>`; }).join('')}`;
 
-    else if (mv && !mvOffline) html += `<div class="panel" role="note" data-novehicle>${esc(t('drv_no_vehicle'))}</div>`;
+    else if (mv && !mvOffline) html += `<div class="panel" role="note" data-novehicle>${esc(t('drv_noveh'))}</div>`;
 
     const qo = (cases || []).filter((c) => c.q_state === 'open');
     if (qo.length) html += `<section class="panel warn" role="note" id="qhome"><h2 style="margin-top:0">${esc(t('q_drv_title'))}</h2><p class="small">${esc(t('q_drv_hint'))}</p>${caseList(qo)}</section>`;
@@ -5570,6 +5570,7 @@ async function viewCosts(...a) { return (await lazyModule('verwaltung')).viewCos
 
 
 async function viewDriverRecords(...a) { return (await lazyModule('verwaltung')).viewDriverRecords(...a); }
+
 
 
 

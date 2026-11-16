@@ -629,7 +629,7 @@ async function handleApi(request, env, ctx, url) {
     if (q.format === 'csv') {
       if (!['owner', 'fleet'].includes(user.role)) throw forbidden();
       await auth.audit(env, user.id, 'reports.drivers.export', null, { rows: list.length, environment: envName, site: dsel ? dsel.site : null, ...(dueBy ? { due_by: dueBy } : {}) });
-      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}${dueBy ? '_bis_' + dueBy : ''}.csv"` } });
+      return new Response(drivers.driversCsv(list, new Map(tr.drivers.map((x) => [x.id, x])), maint.csvCell, { withVehicles: q.vehicles === '1' }), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="fuhrpark-fahrer-fristen_${envName}_${berlinDate()}${dueBy ? '_bis_' + dueBy : ''}.csv"` } });
     }
     return json({ drivers: list, ...(dueBy ? { due_by: dueBy } : {}), ...(dsel ? { site: dsel.site, site_options: dsel.options, no_site_hidden: noSiteHidden, linked_user_ids: await drivers.linkedUserIds(env) } : {}) });
   }

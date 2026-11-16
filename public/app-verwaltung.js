@@ -645,12 +645,16 @@ function wireDlb() {
     } catch (err) { toast(err.code === 'driver_inactive' && err.data && err.data.drivers ? t('dtb_inactive').replace('{list}', err.data.drivers.map((x) => x.display_name).join(', ')) : err.message, true); }
   };
 }
+
+const dNoVeh = (d) => !!d.user_id && Array.isArray(d.vehicles_now) && !d.vehicles_now.length;
 async function viewDrivers() {
   const dsite = isMgr() ? vsDef('drvSite') || '' : '';
 
   const ddue = isMgr() && S.drvDueBy && S.drvDueBy >= bDate() ? S.drvDueBy : '';
   const dq = [S.drvInactive ? 'inactive=1' : '', dsite ? 'site=' + encodeURIComponent(dsite) : '', ddue ? 'due_by=' + ddue : ''].filter(Boolean).join('&');
   const dr = await api('GET', '/api/drivers' + (dq ? '?' + dq : '')); const list = dr.drivers;
+
+  const nNV = S.drvInactive ? 0 : list.filter(dNoVeh).length; const noVeh = !S.drvInactive && !!S.drvNoVeh; const shownD = noVeh ? list.filter(dNoVeh) : list;
   if (!isMgr()) { if (list.length) { location.replace('#/drivers/' + encodeURIComponent(list[0].id)); return; }   render(`<h1>${esc(t('my_driver_file'))}</h1><p class="muted">${esc(t('no_driver_file'))}</p>`, 'more'); return; }
   let users = [];
 
@@ -663,11 +667,11 @@ async function viewDrivers() {
     ${dtbHtml(list)}${dlbHtml(list)}
     <div class="actions" style="margin-top:0"><button type="button" class="btn secondary" id="dcsv">${esc(t('driver_csv'))}</button><button type="button" class="btn secondary" id="dprl">${esc(t('print'))}</button></div>
     <p class="noprint"><a href="#/drivers/records" class="tap" id="drlink">${esc(t('dr_link'))} ›</a></p>
-    ${printHead([S.drvInactive ? t('inactive_drivers') : '', dr.site ? `${t('site')}: ${dr.site === 'ohne' ? t('cs_nosite') : dr.site}` : '', dr.due_by ? t('ddue_label') + ' ' + fmtD(dr.due_by) : '', t('print_count').replace('{n}', list.length)])}
+    ${printHead([S.drvInactive ? t('inactive_drivers') : '', dr.site ? `${t('site')}: ${dr.site === 'ohne' ? t('cs_nosite') : dr.site}` : '', dr.due_by ? t('ddue_label') + ' ' + fmtD(dr.due_by) : '', noVeh ? t('drv_noveh') : '', t('print_count').replace('{n}', shownD.length)])}
     <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:0 0 10px"><div><label for="ddueby">${esc(t('ddue_label'))}</label><input type="date" id="ddueby" min="${esc(bDate())}" value="${esc(ddue)}"></div><button type="button" class="btn secondary" id="dduenext">${esc(t('mdueby_next'))}</button><button type="button" class="btn secondary" id="ddueyear">${esc(t('mdueby_year'))}</button>${ddue ? `<button type="button" class="btn secondary" id="dueclr">${esc(t('ddue_clear'))}</button>` : ''}</div>${dr.due_by ? `<p class="small muted" data-ddue>${esc(t('ddue_hint').replace('{d}', fmtD(dr.due_by)))}</p>` : ''}
-    <p class="noprint"><label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label></p>
+    <p class="noprint" style="display:flex;flex-wrap:wrap;gap:8px 16px"><label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dinact" ${S.drvInactive ? 'checked' : ''} style="width:auto"> ${esc(t('inactive_drivers'))}</label>${nNV || noVeh ? `<label class="chkl" style="display:inline-flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="dnoveh" ${noVeh ? 'checked' : ''} style="width:auto"> ${esc(t('drv_noveh'))} (${nNV})</label>` : ''}</p>${noVeh ? `<p class="small muted" data-novehhint>${esc(t('drv_noveh_t'))}</p>` : ''}
     ${(dr.site_options || []).length > 1 || dr.site ? `<div class="actions noprint" style="margin-top:0"><div>${siteSelect('dsite', '', dr.site_options, dr.site, t('site'), t('filter_all'))}</div></div>` : ''}${dr.no_site_hidden ? `<p class="small muted noprint" data-nositehidden>${esc(tn('drv_nosite_hidden', dr.no_site_hidden))}</p>` : ''}
-    <div class="list">${list.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${noTr(d.personnel_no)}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${d.due_items ? [...d.due_items.map((i) => `${i.kind === 'kontrolle' ? t('license_check') : i.kind === 'auslesung' ? t('tacho_card') : t('dk2_' + i.kind) + (i.title ? ' ' + i.title : '')}: ${fmtD(i.date)}`), d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ') : [...crit.map((i) => `${t('dk2_' + i.kind)}${i.title ? ' ' + i.title : ''}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', d.status.tacho_status && d.status.tacho_status !== 'ok' ? `${t('tacho_card')}: ${t('tst_' + d.status.tacho_status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || noneP()}</div>`;
+    <div class="list">${shownD.map((d) => { const crit = d.status.items.filter((i) => i.status !== 'ok'); return `<a class="row ${d.status.overall === 'kritisch' ? 'p-kritisch' : d.status.overall === 'hinweis' ? 'p-mittel' : ''}" href="#/drivers/${esc(d.id)}"><span>🪪</span><span class="title">${esc(d.display_name)}${d.personnel_no ? ` <span class="small muted">${noTr(d.personnel_no)}</span>` : ''}${d.vehicles_now && d.vehicles_now.length ? ` <span class="small" data-vehnow title="${esc(t('drv_veh_now_title'))}">🚚 ${esc(d.vehicles_now.map((v) => v.plate).join(', '))}</span>` : ''}</span><span class="chip ${DST[d.status.overall]}">${esc(t('dov_' + d.status.overall))}</span><span class="sub">${d.due_items ? [...d.due_items.map((i) => `${i.kind === 'kontrolle' ? t('license_check') : i.kind === 'auslesung' ? t('tacho_card') : t('dk2_' + i.kind) + (i.title ? ' ' + i.title : '')}: ${fmtD(i.date)}`), d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ') : [...crit.map((i) => `${t('dk2_' + i.kind)}${i.title ? ' ' + i.title : ''}: ${t('dst_' + i.status)} (${fmtD(i.valid_until)})`), d.status.check.status !== 'ok' ? `${t('license_check')}: ${t('dck_' + d.status.check.status)}` : '', d.status.tacho_status && d.status.tacho_status !== 'ok' ? `${t('tacho_card')}: ${t('tst_' + d.status.tacho_status)}` : '', !d.status.has_license ? t('no_license_doc') : '', d.username ? t('app_account') + ': ' + d.username : ''].filter(Boolean).map(esc).join(' · ')}</span></a>`; }).join('') || noneP()}</div>`;
   if (!onPage('#/drivers')) return;
   if (S.quietBg && !isDriversHash()) return;
   render(html, 'more');
@@ -675,13 +679,14 @@ async function viewDrivers() {
   { const rl = $('#drvreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewDrivers(); } catch (err) { toast(err.message, true); } }; }
   S.dtbRes = ''; S.dlbRes = ''; wireDtb(); wireDlb();
   const ia = $('#dinact'); if (ia) ia.onchange = () => { S.drvInactive = ia.checked; viewDrivers(); };
+  { const nv = $('#dnoveh'); if (nv) nv.onchange = () => { S.drvNoVeh = nv.checked; viewDrivers(); }; }
   const dse = $('#dsite'); if (dse) dse.onchange = () => { S.drvSite = dse.value; viewDrivers(); };
   { const di = $('#ddueby'); if (di) di.onchange = () => { S.drvDueBy = di.value && di.value >= bDate() ? di.value : null; viewDrivers(); };
     const dn = $('#dduenext'); if (dn) dn.onclick = () => { const [y, m] = bDate().split('-').map(Number); const x = new Date(Date.UTC(y, m + 1, 0)); S.drvDueBy = `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; viewDrivers(); };
     const dy = $('#ddueyear'); if (dy) dy.onclick = () => { S.drvDueBy = `${Number(bDate().slice(0, 4)) + 1}-12-31`; viewDrivers(); };
     const dc = $('#dueclr'); if (dc) dc.onclick = () => { S.drvDueBy = null; viewDrivers(); }; }
   $('#dprl').onclick = () => window.print();
-  $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv' + (dq ? '&' + dq : '')), `fuhrpark-fahrer-fristen_${envFn()}_${S.drvInactive ? 'inaktiv_' : ''}${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}${dr.due_by ? '_bis_' + dr.due_by : ''}.csv`); } catch (err) { toast(err.message, true); } };
+  $('#dcsv').onclick = async () => { try { download(await api('GET', '/api/drivers?format=csv&vehicles=1' + (dq ? '&' + dq : '')), `fuhrpark-fahrer-fristen_${envFn()}_${S.drvInactive ? 'inaktiv_' : ''}${bDate()}${dr.site ? '_' + fnPart(dr.site) : ''}${dr.due_by ? '_bis_' + dr.due_by : ''}.csv`); } catch (err) { toast(err.message, true); } };
   const f = $('#ndf'); f.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(f)); for (const k of Object.keys(b)) if (b[k] === '') delete b[k]; b.check_inactive = true; b.request_key = rkFor(f, b);   try {
 
     let r; try { r = await api('POST', '/api/drivers', b, { timeoutMs: SEND_TIMEOUT_MS }); } catch (err) {

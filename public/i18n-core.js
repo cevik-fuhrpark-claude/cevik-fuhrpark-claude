@@ -1378,6 +1378,9 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
  // Backlog 1528
  // Backlog 1528
  // Backlog 1528
+ // Backlog 1529
+ // Backlog 1529
+ // Backlog 1529
 // Backlog 1514 (Blickwinkel „Leitung ordnet einen Springer mit Führerschein C1 einem 18-t-Lkw bzw. einem Sattelzug zu“): Führerscheinklasse passt nicht
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
