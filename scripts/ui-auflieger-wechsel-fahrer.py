@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (16.11.2026, Backlog 1526, Blickwinkel „Leitung sattelt einen anderen Auflieger an – der zugeordnete Fahrer merkt es erst am Hof“):
 # Fahrer ist einer Zugmaschine zugeordnet; die Leitung trägt in den Stammdaten ein anderes Anhängerkennzeichen ein → auf demselben Gerät erscheint
 # „Deine Fahrzeugzuordnung hat sich geändert“ mit „Anderer Anhänger/Auflieger an …: bisher …, jetzt …“ und dem Abfahrts-Hinweis, bis „Verstanden“.
+# Backlog 1527: danach Ummeldung der Zugmaschine → „Dein Fahrzeug hat ein neues Kennzeichen: bisher …, jetzt …“.
 # DE/UK/EN bei 390/820/1366 px, kein Querscrollen, keine Skriptfehler. Braucht den Dev-Server (scripts/dev-server.mjs).
 import os
 from playwright.sync_api import sync_playwright
@@ -42,6 +43,15 @@ with sync_playwright() as p:
         q.click('#vchangeok'); q.wait_for_timeout(200); check(q.locator('#vchange').count()==0,f'{lang} {w}px: „Verstanden“ blendet aus')
         q.reload(); q.wait_for_selector('[data-assignedsince]',timeout=15000); q.wait_for_timeout(300)
         check(q.locator('#vchange').count()==0,f'{lang} {w}px: nach „Verstanden“ nicht wieder')
+        # Backlog 1527: Zugmaschine umgemeldet (neues Kennzeichen, gleiche FIN)
+        zn=f'AW-UM {R%900}{n}'
+        check(api('POST','/api/vehicles',{'plate':zn,'vin':vin,'site':'Dortmund','keep_active':True,'trailer_plate':new})['s']==201,'Zugmaschine umgemeldet')
+        q.reload(); q.wait_for_selector('#vchange',timeout=15000); q.wait_for_timeout(300)
+        t=q.inner_text('[data-vchplate]')
+        check(zm in t and zn in t and q.locator('[data-vchplatehint]').count()==1 and q.locator('[data-vchtrl]').count()==0 and q.locator('[data-vchnew]').count()==0,f'{lang} {w}px: neues Kennzeichen der Zugmaschine ({t})')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang} {w}px: ohne Querscrollen (Ummeldung)')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/ummeldung_{lang}_{w}.png')
+        q.click('#vchangeok'); q.wait_for_timeout(200); check(q.locator('#vchange').count()==0,f'{lang} {w}px: „Verstanden“ (Ummeldung)')
         check(not errs,f'{lang} {w}px: ohne Skriptfehler {errs[:1]}')
         ctx.close()
     br.close()

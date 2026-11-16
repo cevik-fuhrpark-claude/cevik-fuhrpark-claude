@@ -43302,6 +43302,46 @@ await test('Backlog 1526 (Blickwinkel „Leitung sattelt einen anderen Auflieger
   }
 });
 
+await test('Backlog 1527 (Blickwinkel „Lkw und Auflieger werden umgemeldet – neue Kennzeichen“): Hinweis „Fahrzeugzuordnung geändert“ nennt beim zugeordneten Fahrer das neue Kennzeichen des eigenen Fahrzeugs und – derselbe Anhänger laut Stammliste – „neues Kennzeichen“ statt „anderer Anhänger“; Hilfe DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const mk = async (b) => { const r = await U.own.post('/api/vehicles', { site: 'Dortmund', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data; };
+  const vin = 'WDB96340310991571'; const tvin = 'WDB96340310991572';
+  const T = (await mk({ plate: 'TQ-ZM 1527', vin, trailer_plate: 'TQ-AN 1527' })).id;
+  const A = (await mk({ plate: 'TQ-AN 1527', vin: tvin, kind: 'anhaenger' })).id;
+  eq((await U.fleet.post(`/api/vehicles/${T}/drivers`, { user_id: U.driver.id })).status, 201);
+  const a = (await U.driver.get('/api/me/vehicles')).data.vehicles; eq(a[0].coupled && a[0].coupled.id, A, 'gekoppelter Anhänger');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/const vehSeenKey = [\s\S]*?\n}\n/); ok(src, 'vehChangeNote gefunden');
+  const store = new Map(); const localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)) };
+  const S = { me: { id: 'u1', environment: 'test' } };
+  const { STRINGS } = await import('../public/i18n.js');
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const f = new Function('S', 'localStorage', 't', 'esc', 'fmtD', src[0] + '\nreturn { vehChangeNote, vehSeenSave };')(S, localStorage, (k) => STRINGS.de[k], esc, (d) => String(d).slice(0, 10));
+  eq(f.vehChangeNote(a), '', 'erstes Öffnen'); ok(store.get('cfp_vseen_u1_test').includes(`"cid":"${A}"`), 'Anhänger-ID gemerkt');
+  // Auflieger umgemeldet, Leitung trägt das neue Kennzeichen an der Zugmaschine nach
+  eq((await U.fleet.post('/api/vehicles', { vin: tvin, plate: 'TQ-NA 9527', kind: 'anhaenger', site: 'Dortmund', keep_active: true })).status, 201);
+  eq((await U.fleet.post('/api/vehicles', { vin, plate: 'TQ-ZM 1527', site: 'Dortmund', keep_active: true, trailer_plate: 'TQ-NA 9527' })).status, 201);
+  const b = (await U.driver.get('/api/me/vehicles')).data.vehicles; eq(b[0].coupled && b[0].coupled.id, A, 'derselbe Anhänger');
+  let h = f.vehChangeNote(b);
+  ok(h.includes('data-vchtrlsame') && h.includes('TQ-NA 9527') && h.includes('TQ-AN 1527') && h.includes('neues Kennzeichen') && !h.includes('Anderer Anhänger') && !h.includes('data-vchplate'), h);
+  f.vehSeenSave(S.vcur); eq(f.vehChangeNote(b), '', 'nach „Verstanden“ weg');
+  // Zugmaschine umgemeldet
+  eq((await U.fleet.post('/api/vehicles', { vin, plate: 'TQ-NZ 9527', site: 'Dortmund', keep_active: true, trailer_plate: 'TQ-NA 9527' })).status, 201);
+  const c = (await U.driver.get('/api/me/vehicles')).data.vehicles; eq(c[0].id, T); eq(c[0].plate, 'TQ-NZ 9527');
+  h = f.vehChangeNote(c);
+  ok(h.includes('data-vchplate') && h.includes('TQ-ZM 1527') && h.includes('TQ-NZ 9527') && h.includes('data-vchplatehint') && !h.includes('data-vchnew') && !h.includes('data-vchgone') && !h.includes('data-vchtrl'), h);
+  // nur andere Schreibweise des Kennzeichens → kein Hinweis
+  f.vehSeenSave(S.vcur); eq(f.vehChangeNote(c.map((v) => ({ ...v, plate: 'tq-nz9527' }))), '', 'Schreibweise egal');
+  // älterer Gerätestand ohne cid (aus 1526) → weiter „anderer Anhänger“
+  store.set('cfp_vseen_u1_test', JSON.stringify([{ id: T, plate: 'TQ-NZ 9527', tp: 'TQ-AN 1527' }]));
+  h = f.vehChangeNote(c); ok(h.includes('data-vchtrl') && !h.includes('data-vchtrlsame'), h);
+  for (const l of ['de', 'uk', 'en']) {
+    ok(['{a}', '{b}'].every((x) => STRINGS[l].drv_vchange_plate.includes(x) && STRINGS[l].drv_vchange_trl_same.includes(x)) && STRINGS[l].drv_vchange_trl_same.includes('{p}') && STRINGS[l].drv_vchange_plate_hint, `${l}: Texte`);
+    ok(STRINGS[l].help_myveh_s.split('|').some((p) => /Ummeldung|перереєстрація|re-registration/.test(p)), `${l}: Hilfe`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
