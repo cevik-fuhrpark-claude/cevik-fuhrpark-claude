@@ -43813,6 +43813,9 @@ await test('Backlog 1542 (Blickwinkel „Fahrer speichert sein Passwort im Passw
   ok(setup.includes('<input id="c" required autocomplete="off"'), 'Einrichtungscode ohne Autofill');
   // Neue Person anlegen: Daten einer anderen Person – kein Autofill mit eigenem Namen/Benutzernamen
   ok(app.includes('<input id="nuname" name="display_name" required autocomplete="off">') && app.includes('<input id="nuuser" name="username" required autocomplete="off"'), 'Neue Person ohne Autofill');
+  // Felder, die Chrome/Safari sonst mit den eigenen Kontaktdaten füllen (Name/Telefon), aber Daten anderer Personen bzw. Teile meinen
+  const own = app.match(/<input[^>]*name="[^"]*(?:name|phone|email|mail|tel)[^"]*"[^>]*>/g) || [];
+  for (const f of own) if (!f.includes('id="vf_${name}"') && !f.includes('data-invname')) ok(/autocomplete="(?:off|username|name)"/.test(f), 'Feld ohne autocomplete: ' + f.slice(0, 90));
   // ausgelagerte Module tragen das Feld mit (Build aktuell)
   const { readdirSync } = await import('node:fs');
   const all = readdirSync(new URL('../public/', import.meta.url)).filter((f) => /^app-[a-z]+\.js$/.test(f)).map((f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8')).join('\n');
