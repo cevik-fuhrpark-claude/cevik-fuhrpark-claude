@@ -398,7 +398,7 @@ async function handleApi(request, env, ctx, url) {
   if ((mm = path.match(/^\/api\/maintenance\/events\/([\w-]+)\/order$/)) && m === 'POST') return json(await cases.orderFromInspectionDefect(env, ctx, user, envName, mm[1], await readJson(request)), 201);
   if (path === '/api/maintenance/create-batch' && m === 'POST') return json(await veh.addMaintenanceRuleBatch(env, user, await readJson(request)));
   if (path === '/api/maintenance/plan-batch' && m === 'POST') return json(await veh.planMaintenanceBatch(env, user, await readJson(request)));
-  if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request)));
+  if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/plan$/)) && m === 'POST') return json(await veh.planMaintenance(env, user, mm[1], await readJson(request), envName));
   // Backlog 579: Prüftermin bearbeiten / beenden (ganz entfernen nur ohne Durchführungen und Aufträge)
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)$/)) && m === 'PATCH') return json(await veh.editMaintenanceRule(env, user, mm[1], await readJson(request)));
   if ((mm = path.match(/^\/api\/maintenance\/([\w-]+)\/end$/)) && m === 'POST') return json(await veh.endMaintenanceRule(env, user, mm[1], await readJson(request)));
@@ -412,7 +412,7 @@ async function handleApi(request, env, ctx, url) {
     const rule = await veh.ensureHuSpRule(env, user, mm[1], mm[2], { allowInactive: mm[3] === 'complete' });
     try {
       if (mm[3] === 'complete') return json({ ...(await veh.completeMaintenance(env, user, rule.id, body, { ctx, envName })), rule_id: rule.id });
-      if (mm[3] === 'plan') return json({ ...(await veh.planMaintenance(env, user, rule.id, body)), rule_id: rule.id });
+      if (mm[3] === 'plan') return json({ ...(await veh.planMaintenance(env, user, rule.id, body, envName)), rule_id: rule.id });
       return json({ ...(await cases.orderFromMaintenance(env, ctx, user, envName, rule.id, body)), rule_id: rule.id }, 201);
     } catch (e) {
       // Aktion abgewiesen (z. B. Termin/Datum in ferner Zukunft, unbekannte Werkstatt): soeben angelegten, noch unbenutzten Eintrag wieder

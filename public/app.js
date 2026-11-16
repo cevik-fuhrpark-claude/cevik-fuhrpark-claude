@@ -176,9 +176,9 @@ const linkedMsg = (err) => { const ld = err && err.code === 'duplicate' && err.d
 // bundesweiter gesetzlicher Feiertag (Backlog 267, public/holidays.js): Name in der Oberflächensprache oder ''
 const holName = (iso) => { const h = federalHoliday(iso); return h ? t('hol_' + h) : ''; };
 // Backlog 1518/1519: „Bis dahin ebenfalls fällig und noch ohne Termin: …“ aus `also_due` (Prüftermin bzw. Werkstatttermin eines Vorgangs), sonst leer
-// Backlog 1521: Termin verschoben/entfernt – am bisherigen Tag weiter eingeplante Prüftermine (Fahrzeug + Gespann) aus `left_on_previous`
+// Backlog 1521/1522: Termin verschoben/entfernt – am bisherigen Tag weiter eingeplante Prüftermine und Werkstattaufträge (Fahrzeug + Gespann) aus `left_on_previous`
 const alsoDueTxt = (r) => (r && Array.isArray(r.also_due) && r.also_due.length ? ' ' + t('plan_also_due').replace('{list}', () => r.also_due.map((x) => `${x.plate ? x.plate + ': ' : ''}${mk(x.kind)} (${fmtD(x.due)})`).join(', ')) : '')
-  + (r && r.left_on_previous && Array.isArray(r.left_on_previous.items) && r.left_on_previous.items.length ? ' ' + t('plan_left_prev').replace('{d}', () => fmtD(r.left_on_previous.date)).replace('{list}', () => r.left_on_previous.items.map((x) => `${x.plate ? x.plate + ': ' : ''}${x.title || mk(x.kind)}`).join(', ')) : '');
+  + (r && r.left_on_previous && Array.isArray(r.left_on_previous.items) && r.left_on_previous.items.length ? ' ' + t('plan_left_prev').replace('{d}', () => fmtD(r.left_on_previous.date)).replace('{list}', () => r.left_on_previous.items.map((x) => `${x.plate ? x.plate + ': ' : ''}${x.case_no ? t('case_no_lbl').replace('{no}', x.case_no) : x.title || mk(x.kind)}`).join(', ')) : '');
 const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${holName(iso) ? ' (' + holName(iso) + ')' : isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
 // Hinweistext zur Antwortfrist: Feiertag vor Wochenende (Frist bleibt der Tag laut Schreiben)
 const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWeekendD(iso) ? t('due_weekend_hint') : '');

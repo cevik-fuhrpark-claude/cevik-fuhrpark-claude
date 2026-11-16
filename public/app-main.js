@@ -210,7 +210,7 @@ const holName = (iso) => { const h = federalHoliday(iso); return h ? t('hol_' + 
 
 
 const alsoDueTxt = (r) => (r && Array.isArray(r.also_due) && r.also_due.length ? ' ' + t('plan_also_due').replace('{list}', () => r.also_due.map((x) => `${x.plate ? x.plate + ': ' : ''}${mk(x.kind)} (${fmtD(x.due)})`).join(', ')) : '')
-  + (r && r.left_on_previous && Array.isArray(r.left_on_previous.items) && r.left_on_previous.items.length ? ' ' + t('plan_left_prev').replace('{d}', () => fmtD(r.left_on_previous.date)).replace('{list}', () => r.left_on_previous.items.map((x) => `${x.plate ? x.plate + ': ' : ''}${x.title || mk(x.kind)}`).join(', ')) : '');
+  + (r && r.left_on_previous && Array.isArray(r.left_on_previous.items) && r.left_on_previous.items.length ? ' ' + t('plan_left_prev').replace('{d}', () => fmtD(r.left_on_previous.date)).replace('{list}', () => r.left_on_previous.items.map((x) => `${x.plate ? x.plate + ': ' : ''}${x.case_no ? t('case_no_lbl').replace('{no}', x.case_no) : x.title || mk(x.kind)}`).join(', ')) : '');
 const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const d = new Date(iso + 'T12:00:00Z'); if (Number.isNaN(d.getTime())) return '–'; const k = 'wd' + uiLoc(); const wd = (DT_FMT[k] || (DT_FMT[k] = new Intl.DateTimeFormat(uiLoc(), { weekday: 'short', timeZone: 'UTC' }))).format(d); return `${wd} ${fmtD(iso)}${holName(iso) ? ' (' + holName(iso) + ')' : isWeekendD(iso) ? ' (' + t('due_weekend') + ')' : ''}`; };
 
 

@@ -1186,7 +1186,7 @@ export async function addMaintenanceRule(env, user, vehicleId, body) {
 }
 
 // Geplanter Werkstatttermin für eine Prüfung (ersetzt keine Durchführung, verschiebt keine Frist)
-export async function planMaintenance(env, user, ruleId, body) {
+export async function planMaintenance(env, user, ruleId, body, envName) {
   if (!isManager(user) && user.role !== 'workshop') throw forbidden();
   const r = await env.DB.prepare('SELECT m.id, m.vehicle_id, m.kind, m.last_done_date, m.next_due_date, m.planned_date, m.planned_note, v.active FROM maintenance_rules m JOIN vehicles v ON v.id=m.vehicle_id WHERE m.id=?').bind(ruleId).first();
   if (!r) throw notFound();
@@ -1230,7 +1230,7 @@ export async function planMaintenance(env, user, ruleId, body) {
   const also = d && !afterDue.in_past ? await alsoDueAt(env, r, d) : [];
   // Backlog 1521: Termin verschoben/entfernt – was am bisherigen Tag (Fahrzeug + Gespann) weiter eingeplant ist, nennen
   const prev = r.planned_date && r.planned_date !== d && r.planned_date >= berlinDate() ? r.planned_date : null;
-  const left = prev ? await leftOnDay(env, r, prev) : [];
+  const left = prev ? await leftOnDay(env, r, prev, { envName, user }) : []; // Backlog 1522: mit Werkstattaufträgen der Umgebung
   return { ok: true, planned_date: d, ...noteOut, ...afterDue, ...(also.length ? { also_due: also } : {}),
     ...(left.length ? { left_on_previous: { date: prev, items: left } } : {}) };
 }
@@ -1239,7 +1239,7 @@ export async function planMaintenance(env, user, ruleId, body) {
 // denselben Tag geplant (Gespann sollte gemeinsam kommen)“): weitere Prüftermin-Einträge desselben und des gekoppelten Fahrzeugs (laut Stammliste,
 // in Betrieb, nicht ruhend), deren geplanter Werkstatttermin auf dem bisherigen Tag liegt. Nur Hinweis – dort wird nichts mitverschoben (ein
 // gemeinsamer Termin kann bewusst getrennt werden). Erledigte Rückrufe zählen nicht. Höchstens 6, eigenes Fahrzeug zuerst.
-export async function leftOnDay(env, r, day) {
+export async function leftOnDay(env, r, day, opts) {
   const vrows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate, active, COALESCE(eval_excluded,0) AS eval_excluded FROM vehicles
       WHERE id=?1 OR (active=1 AND id<>?1 AND kind IN ('lkw','anhaenger')) ORDER BY COALESCE(eval_excluded,0), created_at`).bind(r.vehicle_id).all()).results;
   const self = vrows.find((x) => x.id === r.vehicle_id);
@@ -1250,11 +1250,20 @@ export async function leftOnDay(env, r, day) {
     : self.trailer_plate ? pool.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === normPlate(self.trailer_plate)) : [];
   const partner = self.eval_excluded ? null : cand.find((x) => !x.eval_excluded) || null;
   const vids = [self.id, ...(partner ? [partner.id] : [])];
-  const rows = (await env.DB.prepare(`SELECT id, vehicle_id, kind, title, last_done_date FROM maintenance_rules
-      WHERE vehicle_id IN (SELECT value FROM json_each(?1)) AND planned_date=?2 AND id<>?3 ORDER BY kind, id`).bind(JSON.stringify(vids), day, r.id || '').all()).results;
-  return rows.filter((m) => !(ONE_TIME_KINDS.includes(m.kind) && m.last_done_date))
+  // Backlog 1522: mit `opts.envName` auch freigegebene/laufende Werkstattaufträge (Vorgänge) am bisherigen Tag – nur der eigenen Umgebung, für die
+  // Werkstatt nur Aufträge ihres Standorts (Sichtbarkeit wie Werkstattplan); der eigene Vorgang (`opts.caseId`) nie. Eine Abfrage (UNION ALL).
+  const o = opts || {};
+  const wsOnly = o.user && o.user.role === 'workshop' ? (o.user.workshop_site || '\u0000') : null;
+  const rows = (await env.DB.prepare(`SELECT 'm' AS t, id, vehicle_id, kind, title, last_done_date, NULL AS case_no FROM maintenance_rules
+      WHERE vehicle_id IN (SELECT value FROM json_each(?1)) AND planned_date=?2 AND id<>?3
+    UNION ALL SELECT 'c', id, vehicle_id, NULL, NULL, NULL, case_no FROM cases WHERE ?4 IS NOT NULL AND environment=?4
+      AND vehicle_id IN (SELECT value FROM json_each(?1)) AND planned_date=?2 AND id<>?5 AND status IN ('werkstatt_freigegeben','in_reparatur','wartet_teile')
+      AND (?6 IS NULL OR workshop_site=?6)
+    ORDER BY t DESC, kind, case_no, id`).bind(JSON.stringify(vids), day, r.id || '', o.envName || null, o.caseId || '', wsOnly).all()).results;
+  return rows.filter((m) => !(m.t === 'm' && ONE_TIME_KINDS.includes(m.kind) && m.last_done_date))
     .sort((a, b) => (a.vehicle_id === self.id ? 0 : 1) - (b.vehicle_id === self.id ? 0 : 1)).slice(0, 6)
-    .map((m) => ({ id: m.id, kind: m.kind, ...(m.title ? { title: m.title } : {}), ...(m.vehicle_id !== self.id ? { plate: partner.plate, vehicle_id: m.vehicle_id } : {}) }));
+    .map((m) => ({ ...(m.t === 'c' ? { case_id: m.id, case_no: m.case_no } : { id: m.id, kind: m.kind, ...(m.title ? { title: m.title } : {}) }),
+      ...(m.vehicle_id !== self.id ? { plate: partner.plate, vehicle_id: m.vehicle_id } : {}) }));
 }
 
 // Backlog 1518 (Backlog 195, Blickwinkel „Leitung legt den HU-Termin der Zugmaschine fest – UVV der Zugmaschine bzw. SP des fest gekoppelten

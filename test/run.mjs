@@ -43141,6 +43141,43 @@ await test('Backlog 1521 (Backlog 195, Blickwinkel „Werkstatt verschiebt den U
   ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1521'), 'API.md');
 });
 
+await test('Backlog 1522 (Folge aus 1521): `left_on_previous` nennt auch freigegebene/laufende Werkstattaufträge von Fahrzeug + Gespann am bisherigen Tag – Werkstatt nur Aufträge ihres Standorts, nie der verschobene Vorgang selbst; Oberfläche DE/UK/EN', async () => {
+  const { U, cmd, newCase } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY) + n * 86400000).toISOString().slice(0, 10);
+  const t1 = await U.own.post('/api/vehicles', { plate: 'TQ-AD 1522', vin: 'WDB96340310991523', site: 'Dortmund', trailer_plate: 'TQ-AN 1522' }); eq(t1.status, 201, JSON.stringify(t1.data));
+  const a1 = await U.own.post('/api/vehicles', { plate: 'TQ-AN 1522', vin: 'WDB96340310991524', site: 'Dortmund', kind: 'anhaenger' }); eq(a1.status, 201, JSON.stringify(a1.data));
+  const T = t1.data.id; const A = a1.data.id;
+  const x = await U.fleet.post(`/api/vehicles/${T}/maintenance`, { kind: 'UVV', next_due_date: day(40), evidence: 'Test 1522' }); eq(x.status, 201); const uvv = x.data.id;
+  const plan = async (c, d) => { const r = await c.post(`/api/maintenance/${uvv}/plan`, { planned_date: d }); eq(r.status, 200, JSON.stringify(r.data)); return r; };
+  await plan(U.fleet, day(10));
+  const cT = await newCase({ vehicle_id: T, description: 'Spiegel rechts abgebrochen' }, U.fleet);
+  const cA = await newCase({ vehicle_id: A, description: 'Plane eingerissen' }, U.fleet);
+  eq((await cmd(U.fleet, cT, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(10) }, 'Spiegel')).status, 200);
+  eq((await cmd(U.fleet, cA, 'approve_repair', { workshop_site: 'MUENCHEN', planned_date: day(10) }, 'Plane')).status, 200);
+  const noT = (await U.fleet.get(`/api/cases/${cT}`)).data.case.case_no; const noA = (await U.fleet.get(`/api/cases/${cA}`)).data.case.case_no;
+  const items = (r) => JSON.stringify(r.data.left_on_previous && r.data.left_on_previous.items.map(({ id, ...y }) => y));
+  let r = await plan(U.fleet, day(12));
+  eq(items(r), JSON.stringify([{ case_id: cT, case_no: noT }, { case_id: cA, case_no: noA, plate: 'TQ-AN 1522', vehicle_id: A }]), 'Leitung: beide Aufträge');
+  await plan(U.fleet, day(10));
+  r = await plan(U.ws, day(13)); eq(items(r), JSON.stringify([{ case_id: cT, case_no: noT }]), 'Werkstatt Dortmund: Münchner Auftrag nicht');
+  await plan(U.fleet, day(10));
+  eq((await cmd(U.wsMuc, cA, 'acknowledge')).status, 200);
+  r = await cmd(U.fleet, cA, 'set_planned_date', { planned_date: day(16) }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(items(r), JSON.stringify([{ kind: 'UVV', plate: 'TQ-AD 1522', vehicle_id: T }, { case_id: cT, case_no: noT, plate: 'TQ-AD 1522', vehicle_id: T }]), 'Vorgang am Auflieger verschoben: eigener Vorgang nie');
+  eq((await cmd(U.ws, cT, 'acknowledge')).status, 200);
+  r = await cmd(U.ws, cT, 'set_planned_date', { planned_date: day(15) }); eq(r.status, 200);
+  eq(items(r), JSON.stringify([{ kind: 'UVV' }]), 'Werkstatt verschiebt eigenen Auftrag');
+  // Aufträge der anderen Umgebung nie: Inhaber (Betrieb) sieht den Testauftrag am Tag 15 nicht
+  const me = (await U.own.get('/api/me')).data; const ownEnv = (me.user || me).environment;
+  await plan(U.fleet, day(15)); r = await plan(U.own, day(17));
+  eq(ownEnv, 'production', 'Inhaber im Betrieb'); eq(items(r), undefined, 'nur eigene Umgebung');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("x.case_no ? t('case_no_lbl').replace('{no}', x.case_no)"), 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].case_no_lbl.includes('{no}') && STRINGS[l].help_dates_s.split('|').some((p) => /Werkstattauftrag|замовлення майстерні|workshop order/.test(p) && /bisherigen Tag|попередню дату|previous day/.test(p)), `${l}: Text/Hilfe`);
+  ok(fs.readFileSync(new URL('../docs/API.md', import.meta.url), 'utf8').includes('Backlog 1522'), 'API.md');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

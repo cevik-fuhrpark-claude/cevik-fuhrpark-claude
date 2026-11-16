@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (16.11.2026, Backlog 1521, Blickwinkel „Werkstatt verschiebt den UVV-Termin der Zugmaschine – der Feuerlöscher des fest
 # gekoppelten Aufliegers war für denselben Tag geplant“): Fahrzeugakte → UVV-Termin von Tag 10 auf Tag 12 verschieben → Hinweis nennt den
 # bisherigen Tag und den Feuerlöscher des Aufliegers (mit Kennzeichen); dort nichts mitverschoben. Werkstattkonto, DE 820 / UK 390 / EN 1366 px;
-# kein Querscrollen, keine Skriptfehler. Screenshots: CFP_SHOTS=<Ordner>.
+# kein Querscrollen, keine Skriptfehler. Backlog 1522: zusätzlich Werkstattauftrag des Aufliegers am selben Tag → als „Auftrag …“ genannt. Screenshots: CFP_SHOTS=<Ordner>.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B = os.environ.get('CFP_URL', 'http://localhost:8787'); PW = 'Sicheres-Passwort-2026'; SHOTS = os.environ.get('CFP_SHOTS')
@@ -31,6 +31,12 @@ with sync_playwright() as p:
         r = mk(VID, 'UVV', iso(60)); check(r['s'] == 201, f'{lang}: UVV'); rid = r['d']['id']
         f = mk(TID, 'Feuerlöscher', iso(60)); check(f['s'] == 201, f'{lang}: Feuerlöscher'); fid = f['d']['id']
         check(api('POST', f'/api/maintenance/{rid}/plan', {'planned_date': iso(10)})['s'] == 200 and api('POST', f'/api/maintenance/{fid}/plan', {'planned_date': iso(10)})['s'] == 200, f'{lang}: beide auf Tag 10 geplant')
+        # Backlog 1522: Werkstattauftrag am Auflieger für denselben Tag
+        cs = api('POST', '/api/cases', {'vehicle_id': TID, 'description': 'Plane eingerissen', 'priority': 'niedrig', 'driveability': 'fahrbereit', 'workshop_site': 'DORTMUND', 'request_key': f'bt{R}{i}'})
+        check(cs['s'] == 201, f'{lang}: Vorgang am Auflieger'); cid = cs['d']['id']
+        cv = api('GET', f'/api/cases/{cid}')['d']['case']
+        ap = api('POST', f'/api/cases/{cid}/commands', {'action': 'approve_repair', 'command_id': f'bt{R}{i}a', 'expected_version': cv['version'], 'payload': {'workshop_site': 'DORTMUND', 'planned_date': iso(10)}, 'note': 'Plane'})
+        check(ap['s'] == 200, f"{lang}: Auftrag auf Tag 10{'' if ap['s'] == 200 else ' ' + str(ap)}"); cno = cv['case_no']
         un = f'bt.ws{R}.{i}'
         u = api('POST', '/api/users', {'username': un, 'display_name': f'BT Werkstatt {i}', 'role': 'workshop', 'environment': envn, 'language': lang, 'workshop_site': 'DORTMUND'})
         check(u['s'] in (200, 201), f'{lang}: Werkstattkonto')
@@ -38,7 +44,7 @@ with sync_playwright() as p:
         q = ctx.new_page(); q.on('pageerror', lambda e: errs.append(str(e))); q.goto(B)
         q.evaluate(JS, ['POST', '/api/invite/accept', {'token': u['d']['invite_token'], 'password': PW}])
         q.evaluate(JS, ['POST', '/api/login', {'username': un, 'password': PW}]); q.evaluate(JS, ['PATCH', '/api/me', {'language': lang}])
-        T = q.evaluate("async (l) => { const S = (await import('/i18n.js')); return { a: S.STRINGS[l].plan_left_prev, s: S.STRINGS[l].plan_also_saved }; }", lang)
+        T = q.evaluate("async (l) => { const S = (await import('/i18n.js')); return { a: S.STRINGS[l].plan_left_prev, s: S.STRINGS[l].plan_also_saved, c: S.STRINGS[l].case_no_lbl }; }", lang)
         q.goto(B + '/#/vehicles/' + VID.replace(':', '%3A')); q.reload()
         fm = q.locator(f'form[data-hsplan="{rid}"]'); fm.wait_for(state='attached', timeout=20000)
         fm.locator('xpath=ancestor::details[1]/summary').click()
@@ -47,6 +53,7 @@ with sync_playwright() as p:
         tt = q.locator('.toast.err').last.inner_text()
         check(T['s'] in tt and T['a'].split('{d}')[0][:12] in tt and tp in tt, f'{lang}: Hinweis „{tt[:160]}…“')
         check(iso(10)[8:10] in tt, f'{lang}: bisheriger Tag genannt')
+        check(T['c'].replace('{no}', cno) in tt, f'{lang}: Werkstattauftrag {cno} genannt')
         if SHOTS: q.screenshot(path=f'{SHOTS}/termin-bisheriger-tag-{lang}-{w}.png')
         check(q.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'), f'{lang}: ohne Querscrollen')
         rows = api('GET', '/api/maintenance')['d']['rows']
