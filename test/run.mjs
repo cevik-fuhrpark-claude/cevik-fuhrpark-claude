@@ -43861,7 +43861,7 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|tlCo|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
-  ok(app.includes('...hiKinds(v), ...tlKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...hiKinds(v), ...tlKinds(v)'), 'in foreignKinds aufgenommen'); // Backlog 1544: danach ...esKinds(v)
   ok(!main.includes('const TL_KINDS') && lang.includes('const TL_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['sira ang preno', 'flat ang gulong', 'ayaw mag-start ng makina', 'nasusunog ang truck', 'tumutulo ang langis', 'nabangga ako', 'nakailaw ang check engine', 'hindi lumalamig ang reefer']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
@@ -43869,6 +43869,55 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
     ok(STRINGS[l].help_report_s.includes('walang preno') && [...await fk('walang preno')].join() === 'brake', 'Hilfe „walang preno“ = Bremse: ' + l);
     ok(STRINGS[l].help_report_s.includes('maitim na usok sa tambutso') && [...await fk('maitim na usok sa tambutso')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-taglish.py'), 'UI-Prüfung in pruefen.sh');
+});
+await test('Backlog 1544 (Blickwinkel „Fahrer aus Spanien/Lateinamerika schreibt Spanisch“, Backlog 195): „los frenos no funcionan“, „se pinchó la rueda“, „el motor no arranca“, „se está quemando la cabina“, „pierde aceite“, „tuve un accidente“, „el frigo no enfría“, „me robaron el gasoil“ u. a. → dieselben Hinweise (ES_KINDS über esFold, Akzente egal, Hauptwort und Befund in beliebiger Reihenfolge); Reparaturvermerk („ya está arreglado“, „funciona bien“), Verneinung („no pierde aceite“, „sin fugas“, „no hubo accidente“) und Alltagssätze ohne; „sin frenos“/„sin luces“ sowie „no está bien“/„no funciona bien“ sind Mängel; Auspuffrauch Motor; andere Sprachen unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { esKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { esKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...esKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [["los frenos no funcionan", "brake"], ["no frenan los frenos", "brake"], ["el camion no frena", "brake"], ["sin frenos", "brake"], ["los frenos están muy blandos", "brake"], ["el freno se bloquea", "brake"], ["la presión de aire baja", "brake"],
+    ["el freno de mano no se suelta", "parkbrake"], ["el camión se movió solo", "parkbrake"], ["se pinchó la rueda", "flat"], ["la rueda está pinchada", "flat"], ["reventó un neumático", "flat"], ["se me ponchó la llanta", "flat"], ["la rueda delantera pierde aire", "flat"],
+    ["el neumático está muy gastado", "tyre"], ["la rueda tiene un bulto", "tyre"], ["la dirección está dura", "steer"], ["el volante vibra mucho", "steer"], ["el camión tira a la derecha", "steer"], ["pierde aceite", "leak"], ["hay una fuga de gasoil", "leak"],
+    ["gotea refrigerante", "leak"], ["pierde adblue por debajo", "leak"], ["se está quemando la cabina", "fire"], ["sale humo de la cabina", "fire"], ["el camión está en llamas", "fire"], ["huele a quemado en el tablero", "fire"], ["tuve un accidente", "acc"],
+    ["choqué con un poste", "acc"], ["me dieron por detrás", "acc"], ["tuve un accidente pero no hay heridos", "acc"], ["estoy herido", "injury"], ["el motor no arranca", "nostart"], ["el camión no arranca", "nostart"], ["no prende la troca", "nostart"],
+    ["se apaga el motor", "nostart"], ["el motor se calienta", "engine"], ["el motor pierde potencia", "engine"], ["el motor hace un ruido raro", "engine"], ["sale humo negro del escape", "engine"], ["el espejo está roto", "mirror"], ["se cayó el retrovisor", "mirror"],
+    ["el parabrisas está rajado", "glass"], ["impacto de piedra en el parabrisas", "glass"], ["la ventanilla no sube", "window"], ["las luces no funcionan", "lights"], ["el faro izquierdo está fundido", "lights"], ["no encienden las luces del remolque", "lights"], ["sin luces atrás", "lights"],
+    ["se encendió el testigo del motor", "warnlight"], ["aparece un error en el tablero", "warnlight"], ["la batería está descargada", "batt"], ["la batería está muerta", "batt"], ["el tacógrafo da error", "tacho"], ["el tacógrafo no lee la tarjeta del conductor", "tacho"], ["perdí la tarjeta de conductor", "tacho"],
+    ["la tarjeta de gasoil está bloqueada", "fuelcard"], ["perdí las llaves", "lost"], ["no encuentro los papeles del camión", "lost"], ["se soltó el remolque", "coupling"], ["la quinta rueda no cierra", "coupling"], ["me quedé sin gasoil", "dryfuel"], ["se acabó el combustible", "dryfuel"],
+    ["el frigo no enfría", "reefer"], ["el equipo de frío da alarma", "reefer"], ["el aire acondicionado no enfría", "climate"], ["la calefacción no funciona", "climate"], ["el clima de la troca no enfría", "climate"], ["el asiento calefactable no calienta", "cabkit"], ["la lona está rota", "tarp"],
+    ["se cayó el tubo de escape", "exhaust"], ["el escape hace mucho ruido", "exhaust"], ["los limpiaparabrisas no funcionan", "visib"], ["el cinturón no engancha", "seat"], ["el asiento se baja solo", "seat"], ["la puerta no cierra", "door"], ["las puertas del remolque no cierran", "door"],
+    ["el camión está atascado en el barro", "stuck"], ["se cayó la matrícula", "numplate"], ["no entran las marchas", "gear"], ["el embrague patina", "gear"], ["las tuercas de la rueda están flojas", "wheel"], ["el rodamiento está caliente", "wheel"], ["la balona de la suspensión está reventada", "susp"],
+    ["el sensor del radar da error", "adas"], ["el camión frena solo", "adas"], ["me robaron el gasoil", "theft"], ["nos robaron en la cabina", "theft"], ["sacaron gasoil del depósito", "theft"], ["alguien rayó la puerta", "vandal"]];
+  for (const [x, k] of CASES) { eq([...esKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x);
+    ok([...await others(x)].every((o) => o === k), 'übrige Tabellen höchstens derselbe Hinweis: ' + x); }
+  eq([...esKinds('se pincharon dos ruedas y el remolque se soltó')].sort().join(','), 'coupling,flat', '„y“ trennt Satzteile, zwei Hinweise');
+  eq([...esKinds('el motor hace ruido y pierde aceite')].sort().join(','), 'engine,leak', 'Motor + Leck');
+  eq([...esKinds('ya está arreglado el freno pero las luces no funcionan')].sort().join(','), 'lights', '„pero“ trennt Satzteile: Reparaturvermerk gilt nur für die Bremse');
+  for (const x of ['el freno no está bien', 'el freno no funciona bien', 'todavía no está arreglado el freno', 'sin frenos']) eq([...esKinds(x)].join(), 'brake', 'Mangel trotz „bien“/„arreglado“/„sin“: ' + x);
+  eq([...esKinds('el camión se quedó sin batería')].join(), 'batt', 'ohne Batterie'); eq([...esKinds('se me quedó el móvil sin batería')].join(), '', 'Handy-Akku kein Hinweis');
+  eq([...esKinds('humo negro del escape')].join(), 'engine', 'Auspuffrauch = Motor, kein Brand');
+  const NO = ["ya está arreglado el freno", "los frenos ya funcionan bien", "cambiada la rueda", "la rueda ya está cambiada", "todo bien", "todo en orden, sin problemas", "no pierde aceite", "no hay fugas", "sin fugas", "no hubo accidente", "sin heridos", "no robaron nada", "no hay humo", "gracias", "ya voy para la base", "estoy en el parking", "mi hijo está en el hospital", "hace mucho calor hoy", "hay mucho tráfico en la autopista", "estoy en un atasco", "voy en dirección a Madrid", "me dejé las llaves dentro del camión", "el freno funciona perfectamente", "mañana cambio de aceite"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Spanisch-Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1544"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (esKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Spanisch-Tabelle');
+  const src = app.slice(app.indexOf('\nconst esFold'), app.indexOf('\nfunction esKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|esCo|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...tlKinds(v), ...esKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const ES_KINDS') && lang.includes('const ES_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['los frenos no funcionan', 'se pinchó la rueda', 'el motor no arranca', 'se está quemando la cabina', 'pierde aceite', 'tuve un accidente', 'se encendió el testigo del motor', 'el frigo no enfría']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['ya está arreglado', 'ya está cambiada', 'todo bien', 'no pierde aceite', 'no hubo accidente']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('sin frenos') && [...await fk('sin frenos')].join() === 'brake', 'Hilfe „sin frenos“ = Bremse: ' + l);
+    ok(STRINGS[l].help_report_s.includes('sin luces') && [...await fk('sin luces')].join() === 'lights', 'Hilfe „sin luces“ = Licht: ' + l);
+    ok(STRINGS[l].help_report_s.includes('humo negro del escape') && [...await fk('humo negro del escape')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-spanisch.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
