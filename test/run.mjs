@@ -42844,7 +42844,8 @@ await test('Backlog 1513 (Blickwinkel „Disposition braucht kurzfristig einen f
   const ch = eqChips({ equipment: ['taillift'], coupled: { kind: 'anhaenger', equipment: ['reefer'] } });
   ok(ch.includes('data-eq="taillift">Ladebordwand<') && ch.includes('data-eqc>Kühlung (Anhänger)<'), 'Chip nennt Herkunft: ' + ch);
   ok(app.includes('<select id="veq"') && app.includes("S.vehEq = veq.value; viewVehicles();"), 'Auswahl „Ausstattung“ (kein <form>, lädt sofort)');
-  ok(app.includes("const base = preEq.filter((v) => !eqSel || vEquip(v).includes(eqSel));"), 'Auswahl wirkt vor den Verfügbarkeits-Knöpfen');
+  // Backlog 1531: Schadstoffklasse-Auswahl liegt zwischen Ausstattung und Verfügbarkeits-Knöpfen (preEm)
+  ok(app.includes("const preEm = preEq.filter((v) => !eqSel || vEquip(v).includes(eqSel));") && app.includes('  const base = preEm.filter('), 'Auswahl wirkt vor den Verfügbarkeits-Knöpfen');
   ok(app.includes("eqSel ? `${t('eq_label')} ${t('eq_' + eqSel)}` : ''"), 'Druckkopf nennt die Ausstattung');
   ok(app.includes('data-eqhint') && app.includes("vEquip(v).map((k) => t('eq_' + k)).join(' ') + ' ' + (v.drivers_now || []).join(' ')).toLowerCase()"), 'Hinweis und Suche („kühlung“ findet das Gespann; seit 1528 auch Fahrer)');
   const { STRINGS } = await import('../public/i18n.js');
@@ -43487,6 +43488,27 @@ await test('Backlog 1530 (Blickwinkel „Leitung prüft vor der Mautabrechnung, 
     ok(STRINGS[l].help_dates_s.split('|').some((p) => p.includes('V.9') && p.includes('L)') && p.includes(STRINGS[l].edit_spec)), `${l}: Hilfe`);
   }
   if (translateValidation) for (const l of ['uk', 'en']) ok(translateValidation(l, 'Anhänger haben keine Schadstoffklasse – bitte leer lassen.') !== 'Anhänger haben keine Schadstoffklasse – bitte leer lassen.', `${l}: Meldung übersetzt`);
+});
+
+await test('Backlog 1531 (Blickwinkel „Disposition braucht für eine Tour in eine Umweltzone einen Lkw mit Euro VI“): Fahrzeugliste filtert nach Schadstoffklasse (nur Lkw, „nicht erfasst“ ohne Angabe), Auswahl nur mit erfasster Klasse, Hinweis, Druckkopf, Hilfe (DE/UK/EN)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('  const preEm = preEq.filter('); const i1 = app.indexOf('\n', app.indexOf('  const base = preEm.filter('));
+  ok(i0 > 0 && i1 > i0, 'Filterblock gefunden');
+  const lab = app.slice(app.indexOf('const EMIS_LABEL = '), app.indexOf('\n', app.indexOf('const EMIS_LABEL = ')));
+  const run = new Function('preEq', 'eqSel', 'vEquip', 'S', lab + '\n' + app.slice(i0, i1) + '\n; return { emSel, emN, anyEm, base };');
+  const vs = [{ id: 'a', kind: 'lkw', emission_class: 'euro_6' }, { id: 'b', kind: 'lkw', emission_class: 'euro_5' }, { id: 'c', kind: 'lkw', emission_class: null }, { id: 'd', kind: 'anhaenger', emission_class: null }];
+  let r = run(vs, '', () => [], { vehEmis: '' });
+  eq(JSON.stringify(r.emN), JSON.stringify({ euro_6: 1, euro_5: 1, none: 1 }), 'Anhänger zählt nicht'); eq(r.anyEm, true); eq(r.base.length, 4, 'ohne Auswahl alle');
+  eq(run(vs, '', () => [], { vehEmis: 'euro_6' }).base.map((v) => v.id).join(), 'a', 'Euro VI');
+  eq(run(vs, '', () => [], { vehEmis: 'none' }).base.map((v) => v.id).join(), 'c', 'nicht erfasst ohne Anhänger');
+  eq(run(vs, '', () => [], { vehEmis: 'euro_9' }).base.length, 4, 'ungültige Auswahl wirkt nicht');
+  eq(run([vs[2], vs[3]], '', () => [], { vehEmis: '' }).anyEm, false, 'ohne erfasste Klasse keine Auswahl');
+  ok(app.includes('id="vemis"') && app.includes('data-emisfhint') && app.includes("S.vehEmis = vem.value") && app.includes("emSel ? `${t('emis_class')} ${emSel === 'none' ? t('emis_none') : EMIS_LABEL[emSel]}` : ''"), 'Auswahl, Hinweis, Druckkopf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['emis_none', 'emis_f_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+    ok(STRINGS[l].help_dates_s.split('|').some((p) => p.includes('Euro VI') && p.includes(STRINGS[l].emis_class) && p.includes(STRINGS[l].emis_none)), `${l}: Hilfe nennt Filter`);
+  }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

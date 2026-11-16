@@ -1,6 +1,7 @@
 # [CLAUDE] UI-Test (16.11.2026, Backlog 1530, Blickwinkel „Leitung prüft vor der Mautabrechnung, ob Schadstoffklasse und Achszahl in der OBU stimmen“):
 # Fahrzeugakte → HU/SP → „Prüfrelevante Fahrzeugdaten“: Auswahl Schadstoffklasse (nur Lkw), Achszahl, Hinweis; Anzeige in der Zeile darunter;
 # Anhänger ohne Auswahl, mit Hinweis; falsche Achszahl wird am Feld markiert. DE/UK/EN, 390/820/1366 px.
+# Backlog 1531: Fahrzeugliste – Auswahl „Schadstoffklasse“ (nur Lkw, „nicht erfasst“), Hinweis, Druckkopf.
 # Frischer Dev-Server nötig (sh scripts/restart-dev.sh). Screenshots: CFP_SHOTS=<Ordner>.
 import os
 from playwright.sync_api import sync_playwright
@@ -48,6 +49,26 @@ with sync_playwright() as p:
         q.goto(B+'/#/vehicles/'+'VIN%3AWSM00000015300003'); q.wait_for_selector('#specf',state='attached',timeout=20000); q.wait_for_timeout(400)
         check(q.locator('#specf select[name=emission_class]').count()==0 and q.locator('#specf [data-emistr]').count()==1 and q.locator('[data-emis]').count()==0,f'{lang} {wd}px: Anhänger ohne Schadstoffklasse')
         check(not errs,f'{lang} {wd}px: keine Skriptfehler {errs[:1]}')
+        ctx.close()
+    # Backlog 1531: Filter in der Fahrzeugliste
+    check(api('POST','/api/vehicles',{'plate':'SK-CD 1530','vin':'WDB96340315300002','site':'Dortmund'})['s'] in (200,201),'Fahrzeug SK-CD 1530')
+    check(api('POST','/api/vehicles/VIN:WDB96340315300002/spec',{'emission_class':'euro_5','spec_source':'Zulassungsbescheinigung'})['s']==200,'SK-CD Euro V')
+    for lang in ['de','uk','en']:
+      api('PATCH','/api/me',{'language':lang})
+      for wd,h in [(390,844),(820,1180),(1366,900)]:
+        ctx=br.new_context(viewport={'width':wd,'height':h}); q=ctx.new_page(); errs=[]; q.on('pageerror',lambda e: errs.append(str(e)))
+        q.goto(B); q.evaluate(JS,['POST','/api/login',{'username':'sk.inhaber','password':PW}])
+        q.goto(B+'/#/vehicles'); q.reload(); q.wait_for_selector('#vl',timeout=15000); q.wait_for_timeout(500)
+        sel=q.locator('#vemis')
+        check(sel.count()==1 and LBL[lang] in sel.inner_text() and 'Euro VI (1)' in sel.inner_text() and 'Euro V (1)' in sel.inner_text(),f'{lang} {wd}px: Auswahl mit Euro VI/V')
+        if sel.count(): sel.select_option('euro_6'); q.wait_for_timeout(600)
+        rows=q.locator('#vl a.row').all_inner_texts()
+        check(any('SK-AB 1530' in x for x in rows) and not any('SK-CD 1530' in x or 'SK-AH 1530' in x for x in rows),f'{lang} {wd}px: nur Euro-VI-Lkw ({len(rows)})')
+        check(q.locator('[data-emisfhint]').count()==1 and 'Euro VI' in (q.locator('#vprl').text_content() or ''),f'{lang} {wd}px: Hinweis und Druckkopf')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{lang} {wd}px: ohne Querscrollen (Liste)')
+        if SHOTS: q.screenshot(path=f'{SHOTS}/schadstoff_liste_{lang}_{wd}.png',full_page=False)
+        q.locator('#vemis').select_option(''); q.wait_for_timeout(400)
+        check(not errs,f'{lang} {wd}px: Liste ohne Skriptfehler {errs[:1]}')
         ctx.close()
     br.close()
 print('FEHLER: '+str(len(fails)) if fails else 'alles grün'); raise SystemExit(1 if fails else 0)
