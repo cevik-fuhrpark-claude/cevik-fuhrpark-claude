@@ -942,7 +942,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   const now = nowIso();
   // Backlog 855 (Blickwinkel „Zweifahrerbetrieb“): in derselben Abfrage die anderen offenen Zuordnungen dieses Fahrzeugs (andere Fahrer) –
   // die neue Zuordnung verdrängt sie nicht; Hinweis für die Leitung, falls eine Ablösung gemeint war (nur Information, keine Automatik)
-  const rowsOpen = (await env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, NULL AS other_name FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=?1 AND (d.valid_to IS NULL OR d.valid_to > ?2)
+  const rowsOpen = (await env.DB.prepare(`SELECT d.id, d.vehicle_id, v.plate, NULL AS other_name FROM driver_vehicles d JOIN vehicles v ON v.id=d.vehicle_id WHERE d.user_id=?1 AND d.environment=?4 AND (d.valid_to IS NULL OR d.valid_to > ?2)
     UNION ALL SELECT d.id, d.vehicle_id, NULL, u.display_name FROM driver_vehicles d JOIN users u ON u.id=d.user_id WHERE d.vehicle_id=?3 AND d.user_id<>?1 AND d.environment=?4 AND (d.valid_to IS NULL OR d.valid_to > ?2)`)
     .bind(driver.id, now, vehicleId, envName).all()).results;
   const open = rowsOpen.filter((o) => o.other_name == null);
@@ -954,7 +954,8 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   const stmts = [];
   // atomar (17.10.2026): bisherige immer im selben Stapel beenden (nicht nur, wenn beim Lesen welche offen waren) und nur einfügen, wenn
   // keine offene Zuordnung Fahrer↔Fahrzeug besteht – zwei gleichzeitige Zuordnungen ergaben sonst doppelte bzw. zwei „aktuelle“ Fahrzeuge
-  if (endPrev) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, now));
+  // Backlog 1532: nur Zuordnungen dieser Umgebung beenden (eine Zuordnung aus der anderen Umgebung – z. B. vor einem Umgebungswechsel des Kontos – bleibt unberührt)
+  if (endPrev) stmts.push(env.DB.prepare('UPDATE driver_vehicles SET valid_to=? WHERE user_id=? AND environment=? AND (valid_to IS NULL OR valid_to > ?)').bind(now, driver.id, envName, now));
   // Umgebung der Zuordnung festhalten (Migration 0075): ein späterer Umgebungswechsel des Kontos macht sie nicht zu Daten der anderen Umgebung
   stmts.push(env.DB.prepare(`INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at,environment) SELECT ?1,?2,?3,?4,NULL,?5,?6,?7,?8
     WHERE NOT EXISTS (SELECT 1 FROM driver_vehicles WHERE user_id=?2 AND vehicle_id=?3 AND (valid_to IS NULL OR valid_to > ?4))

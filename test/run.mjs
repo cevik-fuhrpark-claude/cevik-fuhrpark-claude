@@ -43511,6 +43511,51 @@ await test('Backlog 1531 (Blickwinkel „Disposition braucht für eine Tour in e
   }
 });
 
+await test('Backlog 1532 (Blickwinkel „Leitung legt einen neuen Fahrer an und will ihm gleich sein Fahrzeug geben“): Fahrerakte liefert je zugeordnetem Fahrzeug Art und Zuordnungs-ID (nur Leitung, nur diese Umgebung, Lkw vor Anhänger); Zuordnen/Beenden aus der Akte über denselben Serverweg; Oberfläche und Hilfe (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld();
+  const a = await U.fleet.post('/api/drivers', { display_name: 'Fahrer W', user_id: U.driver.id }); eq(a.status, 201, JSON.stringify(a.data));
+  const c = await U.fleet.post('/api/drivers', { display_name: 'Carl Kontolos' }); eq(c.status, 201);
+  eq((await U.fleet.post('/api/vehicles', { vin: 'WDB96340310153201', plate: 'AA-AH 1532', kind: 'anhaenger', site: 'Dortmund' })).status, 201);
+  const TR = (await U.fleet.get('/api/vehicles')).data.vehicles.find((v) => v.plate === 'AA-AH 1532').id;
+  const det = async (cl, id = a.data.id) => { const r = await cl.get('/api/drivers/' + id); eq(r.status, 200, JSON.stringify(r.data)); return r.data; };
+  eq(JSON.stringify((await det(U.fleet)).vehicles), '[]', 'noch keins');
+  // Zuordnung wie aus der Fahrerakte: Anhänger zuerst, dann Lkw ohne Fahrzeugwechsel
+  let r = await U.fleet.post(`/api/vehicles/${TR}/drivers`, { user_id: U.driver.id, end_previous: false }); eq(r.status, 201, JSON.stringify(r.data));
+  r = await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: U.driver.id, end_previous: false }); eq(r.status, 201); eq(r.data.other_open.join(), 'AA-AH 1532', 'Anhänger bleibt zugeordnet');
+  // Zuordnung in der Betriebsumgebung erscheint in der Test-Akte nicht
+  e.DB.db.prepare("INSERT INTO driver_vehicles(id,user_id,vehicle_id,valid_from,valid_to,evidence,created_by,created_at,environment) VALUES ('dv-p1532',?,'VIN:WDB9630051L917317','2026-01-01T00:00:00.000Z',NULL,'Test',?,'2026-01-01T00:00:00.000Z','production')").run(U.driver.id, U.fleet.id);
+  let x = await det(U.fleet);
+  eq(x.vehicles.map((v) => v.kind).join(), 'lkw,anhaenger', 'Lkw vor Anhänger, ohne andere Umgebung');
+  ok(x.vehicles.every((v) => v.assignment_id && v.id && v.plate), 'Leitung: Zuordnungs-ID');
+  const own = await det(U.driver); eq(own.vehicles.length, 2); ok(own.vehicles.every((v) => !('assignment_id' in v)), 'Fahrer selbst ohne Zuordnungs-ID');
+  // Beenden über die ID aus der Akte
+  const asTr = x.vehicles.find((v) => v.id === TR).assignment_id;
+  eq((await U.fleet.req('DELETE', '/api/assignments/' + asTr)).status, 200);
+  eq((await U.fleet.req('DELETE', '/api/assignments/' + asTr)).status, 404, 'zweites Beenden → bereits beendet');
+  x = await det(U.fleet); eq(x.vehicles.map((v) => v.id).join(), V1, 'nur noch der Lkw');
+  // Fahrzeugwechsel aus der Akte: bisherige beenden
+  r = await U.fleet.post(`/api/vehicles/${TR}/drivers`, { user_id: U.driver.id, end_previous: true }); eq(r.status, 201); eq(r.data.ended_previous.length, 1, 'Lkw beendet (Zuordnung der Betriebsumgebung bleibt)');
+  eq(e.DB.db.prepare("SELECT valid_to FROM driver_vehicles WHERE id='dv-p1532'").get().valid_to, null, 'andere Umgebung unberührt');
+  x = await det(U.fleet); eq(x.vehicles.map((v) => v.id).join(), TR);
+  eq((await U.fleet.post(`/api/vehicles/${TR}/drivers`, { user_id: U.driver.id, end_previous: true })).status, 409, 'bereits zugeordnet (Funkloch-Wiederholung)');
+  eq(JSON.stringify((await det(U.fleet, c.data.id)).vehicles), '[]', 'ohne Konto leer');
+  // Oberfläche
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const vd = app.slice(app.indexOf('async function viewDriver(id)'), app.indexOf('\nasync function ', app.indexOf('async function viewDriver(id)') + 10));
+  ok(vd.includes('data-dend=') && vd.includes("'/api/assignments/' + b.dataset.dend") && vd.includes("t('end_assign_confirm')"), 'Beenden mit Rückfrage');
+  ok(vd.includes('id="dvasg"') && vd.includes('id="dvsel"') && vd.includes('id="dvend"') && vd.includes('/drivers`, db') && vd.includes('asgToast(r)'), 'Zuordnen-Formular');
+  ok(vd.includes('<a href="#/vehicles/${esc(v.id)}">'), 'Kennzeichen verlinkt'); ok(vd.includes('data-asgnoacc'), 'Hinweis ohne Konto');
+  ok(app.includes('asgToast(r); viewVehicle(id);'), 'Fahrzeugakte nutzt dieselbe Rückmeldung');
+  ok(!/dvf\.onsubmit = async[\s\S]{0,80}await api\(/.test(vd.split('try {')[0] || ''), 'await api nicht vor try');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const k of ['drv_asg_vehicle', 'drv_asg_none', 'drv_asg_noacc', 'drv_asg_novs']) ok(STRINGS[l][k], `${l}.${k}`);
+    const last = STRINGS[l].help_drivers_s.split('|').pop(); ok(last.includes(STRINGS[l].drv_asg_vehicle) && last.includes(STRINGS[l].end), `${l}: Hilfe nennt „${STRINGS[l].drv_asg_vehicle}“`);
+    ok(STRINGS[l].drv_noveh_t.includes(STRINGS[l].drv_asg_vehicle), `${l}: Hinweis „Ohne Fahrzeug“ nennt die Fahrerakte`);
+    ok(STRINGS[l].drv_asg_noacc.includes(STRINGS[l].app_account), `${l}: Hinweis nennt das Feld App-Konto`);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

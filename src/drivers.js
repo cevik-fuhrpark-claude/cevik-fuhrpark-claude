@@ -151,7 +151,11 @@ export async function driverDetail(env, user, envName, id) {
   // stornierte Auslesungen bleiben im Verlauf, zählen aber nicht für die Frist (18.10.2026) – und nicht als „Auslesung vorhanden“ (wie Übersicht)
   const valid = downloads.find((x) => !x.cancelled_at);
   const tacho = hasCard || valid ? { ...tachoStatus(valid ? valid.downloaded_on : null, TACHO_RULE.card_days, berlinDate(), warnDaysOf(sm)), rule: TACHO_RULE } : null;
-  const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)`).bind(d.user_id, nowIso()).all()).results : [];
+  // Backlog 1532: nur Zuordnungen dieser Umgebung (wie Fahrerliste/Zuordnung beenden), Lkw vor Anhänger; Inhaber/Leitung erhalten die
+  // Zuordnungs-ID (Knopf „Zuordnung beenden“ direkt in der Fahrerakte) – der Fahrer selbst nicht
+  const vehicles = d.user_id ? (await env.DB.prepare(`SELECT v.id, v.plate, v.kind, dv.id AS assignment_id FROM driver_vehicles dv JOIN vehicles v ON v.id=dv.vehicle_id WHERE dv.user_id=? AND dv.environment=? AND (dv.valid_to IS NULL OR dv.valid_to > ?)
+    ORDER BY CASE v.kind WHEN 'anhaenger' THEN 1 ELSE 0 END, v.plate`).bind(d.user_id, envName, nowIso()).all()).results : [];
+  if (!isMgr(user)) for (const v of vehicles) delete v.assignment_id;
   // Backlog 1517 (Gegenrichtung zu 1514, Blickwinkel „Leitung trägt einen neuen Führerschein mit weniger Klassen ein, der Fahrer ist einem 18-t-Lkw zugeordnet“):
   // die Fahrerakte nennt je aktuell zugeordnetem Fahrzeug den Klassenhinweis – nur Inhaber/Leitung; höchstens 5 Fahrzeuge (je eine Abfrage)
   if (isMgr(user) && d.user_id && vehicles.length) {
