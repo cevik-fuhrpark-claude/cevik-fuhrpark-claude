@@ -43789,6 +43789,37 @@ await test('Backlog 1541 (Folge aus 1540): Vorgangsansicht – Hinweis „Diebst
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-anzeige-fremdsprache.py'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 1542 (Blickwinkel „Fahrer speichert sein Passwort im Passwortmanager des Handys“, Backlog 195, WCAG 1.3.5): jedes Formular mit Passwortfeld nennt den Benutzernamen (sichtbar oder verstecktes Feld autocomplete=username), Passwortfelder mit current-/new-password, Ersteinrichtung mit username/name, fremde Personen ohne Autofill', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  // Hilfsfeld: versteckt, ohne name (geht nicht in FormData/Anfrage), nicht fokussierbar, für Screenreader unsichtbar
+  const def = app.match(/^const acUser = \(u\) => \(u \? `(<input [^`]*>)` : ''\);$/m); ok(def, 'acUser fehlt');
+  for (const a of ['type="text"', 'autocomplete="username"', ' hidden', ' readonly', 'tabindex="-1"', 'aria-hidden="true"', 'value="${esc(u)}"']) ok(def[1].includes(a), 'acUser: ' + a);
+  ok(!/\bname=/.test(def[1]), 'acUser ohne name=');
+  // alle Passwortfelder mit Zweck
+  const pws = app.match(/<input[^>]*type="password"[^>]*>/g) || []; ok(pws.length >= 6, 'Passwortfelder gefunden: ' + pws.length);
+  for (const x of pws) ok(/autocomplete="(?:current-password|new-password|\$\{ac\})"/.test(x), 'Passwortfeld ohne Zweck: ' + x.slice(0, 80));
+  ok(app.includes("pwField('current-password')") && app.includes("pwField('new-password', "), 'pwField-Aufrufe');
+  // jedes Formular mit Passwort enthält ein Benutzernamen-Feld
+  const forms = []; const rx = /<form id="([^"]+)"/g; let m;
+  while ((m = rx.exec(app))) { const end = app.indexOf('</form>', m.index); const body = app.slice(m.index, end); if (/type="password"|pwField\(/.test(body)) forms.push([m[1], body]); }
+  eq(forms.map((f) => f[0]).sort().join(','), 'f,f,pw,tfd,tfm,tfs', 'Formulare mit Passwort (Anmeldung, Einladung, Passwort ändern, 2FA)');
+  for (const [id, body] of forms) ok(body.includes('autocomplete="username"') || /\$\{acUser\((?:info|S\.me)\.username\)\}/.test(body), 'Formular #' + id + ' ohne Benutzernamen für den Passwortmanager');
+  // Passwort ändern: Beschriftungen verknüpft (WCAG 1.3.1)
+  ok(app.includes('<label for="pwold">') && app.includes('<input id="pwold" type="password" name="old_password"') && app.includes('<label for="pwnew">') && app.includes('<input id="pwnew" type="password" name="new_password"'), 'Passwort ändern: label for/id');
+  // Ersteinrichtung = eigenes Konto des Inhabers
+  const setup = app.slice(app.indexOf('async function viewSetup'), app.indexOf('async function viewInvite'));
+  ok(setup.includes('<input id="u" required autocomplete="username"') && setup.includes('<input id="n" required autocomplete="name">'), 'Ersteinrichtung: username/name');
+  ok(setup.includes('<input id="c" required autocomplete="off"'), 'Einrichtungscode ohne Autofill');
+  // Neue Person anlegen: Daten einer anderen Person – kein Autofill mit eigenem Namen/Benutzernamen
+  ok(app.includes('<input id="nuname" name="display_name" required autocomplete="off">') && app.includes('<input id="nuuser" name="username" required autocomplete="off"'), 'Neue Person ohne Autofill');
+  // ausgelagerte Module tragen das Feld mit (Build aktuell)
+  const { readdirSync } = await import('node:fs');
+  const all = readdirSync(new URL('../public/', import.meta.url)).filter((f) => /^app-[a-z]+\.js$/.test(f)).map((f) => readFileSync(new URL('../public/' + f, import.meta.url), 'utf8')).join('\n');
+  ok((all.match(/acUser\(/g) || []).length >= 5 && all.includes('data-acuser'), 'erzeugte Module enthalten acUser');
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-passwortmanager.py'), 'UI-Prüfung in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, afterLogin, api, bindLang, bindPwShow, deviceId, deviceLabel, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, tzNote, viewInbox, viewLogin } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, acUser, afterLogin, api, bindLang, bindPwShow, deviceId, deviceLabel, ensureLang, esc, fmtDT, langSelect, lostDup, lostMark, pwField, qrSvg, render, resetUserState, t, toast, tzNote, viewInbox, viewLogin } from './app-main.js';
 
 
 async function viewLoginCode(challenge) {
@@ -28,8 +28,8 @@ async function viewSetup() {
   if (!st.needs_setup) { location.hash = '#/login'; return; }
   render(`<div class="center"><form id="f" class="narrow panel"><h1>${esc(t('setup'))}</h1>
     <label for="c">${esc(t('setup_code'))}</label><input id="c" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-    <label for="u">${esc(t('username'))}<span class="hint">${esc(t('username_rule'))}</span></label><input id="u" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="y.cevik">
-    <label for="n">${esc(t('display_name'))}</label><input id="n" required>
+    <label for="u">${esc(t('username'))}<span class="hint">${esc(t('username_rule'))}</span></label><input id="u" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="y.cevik">
+    <label for="n">${esc(t('display_name'))}</label><input id="n" required autocomplete="name">
     <div class="actions"><button class="btn block">${esc(t('create_owner'))}</button></div><p class="small muted">${esc(t('setup_next'))}</p></form></div>`);
   $('#u').oninput = () => { const el = $('#u'); const v = el.value.toLowerCase().replace(/\s+/g, '.').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[^a-z0-9._-]/g, ''); if (v !== el.value) el.value = v; };
   $('#f').onsubmit = async (e) => {
@@ -48,7 +48,7 @@ async function viewInvite(token) {
   await ensureLang(S.lang);
   render(`<div class="center"><form id="f" class="narrow panel" novalidate><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
     <p class="muted">${esc(t('username'))}: <b>${esc(info.username)}</b> · ${esc(t('role_' + info.role))}${info.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>
-    <label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label>${pwField('new-password', ' minlength="10"')}
+    ${acUser(info.username)}<label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label>${pwField('new-password', ' minlength="10"')}
     <div class="actions"><button class="btn block">${esc(t('set_password'))}</button></div>${langSelect()}</form></div>`);
   bindLang(); bindPwShow();
   $('#f').onsubmit = async (e) => {
@@ -153,7 +153,7 @@ async function loadTotp() {
   if (!box.isConnected) return;
   if (!st.enabled) {
     box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
-      <form id="tfs"><label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
+      <form id="tfs">${acUser(S.me.username)}<label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
     $('#tfs').onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -184,8 +184,8 @@ async function loadTotp() {
   }
   box.innerHTML = `<p><span class="chip ok">${esc(t('tf_on').replace('{d}', fmtDT(st.enabled_at)))}</span> <span class="small ${st.recovery_left <= 2 ? '' : 'muted'}">${esc(t('tf_rc_left').replace('{n}', st.recovery_left))}</span></p>
     <details><summary>${esc(t('tf_rc_new'))}</summary><form id="tfr"><p class="small muted">${esc(t('tf_rc_new_hint'))}</p><label for="tfrc">${esc(t('tf_code'))}</label><input id="tfrc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required><div class="actions"><button class="btn secondary">${esc(t('tf_rc_new'))}</button></div></form></details>
-    <details id="tfmv"><summary>${esc(t('tf_move'))}</summary><form id="tfm"><p class="small muted">${esc(t('tf_move_hint'))}</p><label for="tfmpw">${esc(t('tf_pw'))}</label><input id="tfmpw" type="password" autocomplete="current-password" required><label for="tfmc">${esc(t('tf_code_or_rc'))}</label><input id="tfmc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn secondary">${esc(t('tf_move'))}</button></div></form><div id="tfmstep"></div></details>
-    <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd"><label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
+    <details id="tfmv"><summary>${esc(t('tf_move'))}</summary><form id="tfm"><p class="small muted">${esc(t('tf_move_hint'))}</p>${acUser(S.me.username)}<label for="tfmpw">${esc(t('tf_pw'))}</label><input id="tfmpw" type="password" autocomplete="current-password" required><label for="tfmc">${esc(t('tf_code_or_rc'))}</label><input id="tfmc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn secondary">${esc(t('tf_move'))}</button></div></form><div id="tfmstep"></div></details>
+    <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd">${acUser(S.me.username)}<label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
     <div id="tfout"></div>`;
   $('#tfr').onsubmit = async (e) => {
     e.preventDefault();

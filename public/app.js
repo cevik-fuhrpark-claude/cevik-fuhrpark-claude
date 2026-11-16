@@ -1619,6 +1619,9 @@ function orphanOutboxNote() {
 }
 // Backlog 535: Passwortfeld mit Knopf „Passwort anzeigen“ (Einladung und Anmeldung) – auf fremder Handytastatur vertippt man sich leicht,
 // und ein verbrauchter Einladungslink mit falsch getipptem Passwort kostet am ersten Arbeitstag eine neue Einladung
+// Backlog 1542 (WCAG 1.3.5, Passwortmanager): Formulare mit Passwort, aber ohne sichtbaren Benutzernamen bekommen ein verstecktes Feld
+// autocomplete="username" (ohne name – geht nicht in FormData), damit iPhone-Schlüsselbund/Google das Passwort dem richtigen Konto zuordnen.
+const acUser = (u) => (u ? `<input type="text" autocomplete="username" value="${esc(u)}" hidden readonly tabindex="-1" aria-hidden="true" data-acuser>` : '');
 const pwField = (ac, extra = '') => `<div class="pwrow" style="display:flex;gap:6px;align-items:center"><input id="p" type="password" autocomplete="${ac}"${extra} required style="flex:1;min-width:0"><button type="button" class="btn secondary small" id="pwshow" aria-pressed="false" aria-controls="p" style="white-space:nowrap">${esc(t('pw_show'))}</button></div>`;
 function bindPwShow() {
   const b = $('#pwshow'); if (!b) return;
@@ -1706,8 +1709,8 @@ async function viewSetup() {
   if (!st.needs_setup) { location.hash = '#/login'; return; }
   render(`<div class="center"><form id="f" class="narrow panel"><h1>${esc(t('setup'))}</h1>
     <label for="c">${esc(t('setup_code'))}</label><input id="c" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-    <label for="u">${esc(t('username'))}<span class="hint">${esc(t('username_rule'))}</span></label><input id="u" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="y.cevik">
-    <label for="n">${esc(t('display_name'))}</label><input id="n" required>
+    <label for="u">${esc(t('username'))}<span class="hint">${esc(t('username_rule'))}</span></label><input id="u" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="y.cevik">
+    <label for="n">${esc(t('display_name'))}</label><input id="n" required autocomplete="name">
     <div class="actions"><button class="btn block">${esc(t('create_owner'))}</button></div><p class="small muted">${esc(t('setup_next'))}</p></form></div>`);
   $('#u').oninput = () => { const el = $('#u'); const v = el.value.toLowerCase().replace(/\s+/g, '.').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[^a-z0-9._-]/g, ''); if (v !== el.value) el.value = v; };
   $('#f').onsubmit = async (e) => {
@@ -1726,7 +1729,7 @@ async function viewInvite(token) {
   await ensureLang(S.lang);
   render(`<div class="center"><form id="f" class="narrow panel" novalidate><h1>${esc(t('welcome'))}, ${esc(info.display_name)}</h1>
     <p class="muted">${esc(t('username'))}: <b>${esc(info.username)}</b> · ${esc(t('role_' + info.role))}${info.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>
-    <label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label>${pwField('new-password', ' minlength="10"')}
+    ${acUser(info.username)}<label for="p">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label>${pwField('new-password', ' minlength="10"')}
     <div class="actions"><button class="btn block">${esc(t('set_password'))}</button></div>${langSelect()}</form></div>`);
   bindLang(); bindPwShow();
   $('#f').onsubmit = async (e) => {
@@ -11186,7 +11189,7 @@ async function viewMore(open) { // Backlog 1196: liegt im nachgeladenen Modul ap
   </div>
   <h2>${esc(t('nav_profile'))}</h2><section class="panel"><p><b>${esc(S.me.display_name)}</b> · ${esc(S.me.username)} · ${esc(t('role_' + S.me.role))}${S.me.role === 'workshop' && S.me.workshop_site ? ` · <span data-mysite>${esc(t('ws_site_lbl'))} ${esc(wsName(S.me.workshop_site))}</span>` : ''}${S.me.environment === 'test' ? ' · <span class="chip test">TEST</span>' : ''}</p>${langSelect()}
   ${S.me.role !== 'driver' ? `<div id="hsbox"><label for="homesite">${esc(t('home_site'))}</label><select id="homesite"><option value="">${esc(t('filter_all'))}</option>${S.me.home_site ? `<option selected>${esc(S.me.home_site)}</option>` : ''}</select><p class="small muted">${esc(t(S.me.role === 'workshop' ? 'home_site_hint_ws' : S.me.role === 'dispatch' ? 'home_site_hint_dispo' : 'home_site_hint'))}</p></div>` : ''}
-  <details><summary>${esc(t('change_password'))}</summary><form id="pw"><label>${esc(t('old_password'))}</label><input type="password" name="old_password" required autocomplete="current-password"><label>${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input type="password" name="new_password" required minlength="10" maxlength="200" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
+  <details><summary>${esc(t('change_password'))}</summary><form id="pw">${acUser(S.me.username)}<label for="pwold">${esc(t('old_password'))}</label><input id="pwold" type="password" name="old_password" required autocomplete="current-password"><label for="pwnew">${esc(t('new_password'))}<span class="hint">${esc(t('pw_rule'))}</span></label><input id="pwnew" type="password" name="new_password" required minlength="10" maxlength="200" autocomplete="new-password"><div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
   <details id="tfa"><summary>${esc(t('tf_title'))} <span class="chip ok" id="tfchip"${S.me.totp_enabled ? '' : ' hidden'}>${esc(t('tf_chip'))}</span></summary><div id="tfabox"><p class="muted">${esc(t('loading'))}</p></div></details>
   <details id="sess"><summary>${esc(t('my_sessions'))}</summary><p class="small muted">${esc(t('new_login_hint'))}</p><div id="sesslist" class="list"><p class="muted">${esc(t('loading'))}</p></div><h3>${esc(t('kd_title'))}</h3><p class="small muted">${esc(t('kd_hint'))}</p><div id="kdlist" class="list"></div></details>
   <div class="actions"><button class="btn secondary" id="lo">${esc(t('logout'))}</button></div></section>`, 'more');
@@ -11239,7 +11242,7 @@ async function loadTotp() {
   if (!box.isConnected) return; // Ansicht inzwischen gewechselt
   if (!st.enabled) {
     box.innerHTML = `<p class="small">${esc(t('tf_intro'))}</p><p><span class="chip">${esc(t('tf_off'))}</span></p>
-      <form id="tfs"><label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
+      <form id="tfs">${acUser(S.me.username)}<label for="tfpw">${esc(t('tf_pw'))}</label><input id="tfpw" type="password" autocomplete="current-password" required><div class="actions"><button class="btn secondary">${esc(t('tf_start'))}</button></div></form><div id="tfstep"></div>`;
     $('#tfs').onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -11270,8 +11273,8 @@ async function loadTotp() {
   }
   box.innerHTML = `<p><span class="chip ok">${esc(t('tf_on').replace('{d}', fmtDT(st.enabled_at)))}</span> <span class="small ${st.recovery_left <= 2 ? '' : 'muted'}">${esc(t('tf_rc_left').replace('{n}', st.recovery_left))}</span></p>
     <details><summary>${esc(t('tf_rc_new'))}</summary><form id="tfr"><p class="small muted">${esc(t('tf_rc_new_hint'))}</p><label for="tfrc">${esc(t('tf_code'))}</label><input id="tfrc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required><div class="actions"><button class="btn secondary">${esc(t('tf_rc_new'))}</button></div></form></details>
-    <details id="tfmv"><summary>${esc(t('tf_move'))}</summary><form id="tfm"><p class="small muted">${esc(t('tf_move_hint'))}</p><label for="tfmpw">${esc(t('tf_pw'))}</label><input id="tfmpw" type="password" autocomplete="current-password" required><label for="tfmc">${esc(t('tf_code_or_rc'))}</label><input id="tfmc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn secondary">${esc(t('tf_move'))}</button></div></form><div id="tfmstep"></div></details>
-    <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd"><label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
+    <details id="tfmv"><summary>${esc(t('tf_move'))}</summary><form id="tfm"><p class="small muted">${esc(t('tf_move_hint'))}</p>${acUser(S.me.username)}<label for="tfmpw">${esc(t('tf_pw'))}</label><input id="tfmpw" type="password" autocomplete="current-password" required><label for="tfmc">${esc(t('tf_code_or_rc'))}</label><input id="tfmc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn secondary">${esc(t('tf_move'))}</button></div></form><div id="tfmstep"></div></details>
+    <details><summary>${esc(t('tf_disable'))}</summary><form id="tfd">${acUser(S.me.username)}<label for="tfdpw">${esc(t('tf_pw'))}</label><input id="tfdpw" type="password" autocomplete="current-password" required><label for="tfdc">${esc(t('tf_code_or_rc'))}</label><input id="tfdc" autocomplete="one-time-code" autocapitalize="none" maxlength="14" required><div class="actions"><button class="btn danger">${esc(t('tf_disable'))}</button></div></form></details>
     <div id="tfout"></div>`;
   $('#tfr').onsubmit = async (e) => {
     e.preventDefault();
@@ -11354,7 +11357,7 @@ async function viewUsers() {
   if (!onPage('#/users')) return; // Backlog 1235
   render(`<h1>${esc(t('users'))}</h1>${helpLink('access')}${no2fa.length ? `<div class="panel warn small" role="note">${esc(tn('tf_admin_hint', no2fa.length))} <a class="noprint tap" href="#/help?s=login2fa">${esc(t('help_login2fa_t'))} ›</a></div>` : ''}${noPush.length ? `<div class="panel warn small" role="note" id="nopush">${esc(tn('push_admin_hint', noPush.length))} <a class="noprint tap" href="#/help?s=push">${esc(t('help_push_t'))} ›</a></div>` : ''}${unused.length ? `<div class="panel warn small" role="note" id="unusedhint">${esc(tn('unused_admin_hint', unused.length).replace('{d}', nDays(ud)))}${ufi !== 'unused' ? `<div class="actions"><button type="button" class="btn secondary" id="ushowunused">${esc(t('unused_show'))}</button></div>` : ''}</div>` : ''}<div id="inv"></div>
     <details class="panel"><summary>${esc(t('new_user'))}</summary><form id="nf">
-      <label for="nuname">${esc(t('display_name'))}</label><input id="nuname" name="display_name" required><label for="nuuser">${esc(t('username'))}</label><input id="nuuser" name="username" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
+      <label for="nuname">${esc(t('display_name'))}</label><input id="nuname" name="display_name" required autocomplete="off"><label for="nuuser">${esc(t('username'))}</label><input id="nuuser" name="username" required autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="m.mustermann">
       <label for="rs">${esc(t('role'))}</label><select name="role" id="rs">${roles.map((r) => `<option value="${r}">${esc(t('role_' + r))}</option>`).join('')}</select>
       <div id="wsrow" hidden><label for="nuws">${esc(t('workshop'))}</label><select id="nuws" name="workshop_site">${S.meta.workshops.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select></div>
       <label for="nulang">${esc(t('user_language'))}<span class="hint">${esc(t('user_language_hint'))}</span></label><select id="nulang" name="language"><option value="">${esc(t('user_language_device'))}</option><option value="de" lang="de">Deutsch</option><option value="uk" lang="uk">Українська</option><option value="en" lang="en">English</option></select>
