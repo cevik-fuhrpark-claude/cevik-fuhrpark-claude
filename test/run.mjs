@@ -44311,6 +44311,42 @@ await test('Backlog 1552 (Blickwinkel „Ausländischer Fahrer meldet: Reifen ka
     for (const x of ['goma nuk është prishur', 'hindi sira ang gulong']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
 });
 
+await test('Backlog 1553 (Blickwinkel „Ausländischer Fahrer meldet: Reifen kaputt“, Stufe 3, Backlog 195): RU/UK „шина сломалась/сломана“, „шина зламалась/зіпсована“, „резина порвана“, „сломалась шина“, Serbisch „гума се покварила/поломљена“, Mazedonisch „гумата е расипана/скршена“ → Reifenpanne wie „Reifen kaputt“ (vorher kein Hinweis), „гумата е оштетена“ → Reifenschaden; „колесо сломалось“, Ersatzrad, Verneinung, Reparaturvermerk, Wischergummi ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const src = (n) => app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1];
+  const F = ['FLAT_HINT', 'FLAT2_HINT', 'FLAT3_HINT'].map((n) => new RegExp(src(n), 'i')), flat = (x) => F.some((r) => r.test(x));
+  const T = ['TYRE_HINT', 'TYRE2_HINT', 'TYRE3_HINT', 'TYRE4_HINT', 'TYRE5_HINT'].map((n) => new RegExp(src(n), 'i')), tyre = (x) => T.some((r) => r.test(x));
+  for (const x of ['шина зламалась', 'шина зламана', 'шина зіпсована', 'шина зіпсувалась', 'шина порвана', 'шина сломалась', 'шина сломана', 'шина испорчена', 'резина порвана', 'покрышка сломана', 'резина накрылась', 'зламалась шина', 'сломалась у меня шина', 'гума зламалась', 'шина на прицепе сломалась'])
+    ok(flat(x), 'Reifenpanne: ' + x);
+  for (const x of ['колесо сломалось', 'колесо накрылось', 'шина не зламана', 'шина не сломана', 'шина вроде не сломана', 'запасная шина сломана', 'запасна шина зламана', 'резинка дворника сломалась', 'шина сломалась, заменили', 'шиномонтаж сломался', 'шинка испорчена'])
+    ok(!flat(x), 'ohne Reifenpanne: ' + x);
+  // Gegenprobe Start-Modul: FLAT2 ohne die neuen Alternativen liefert für alle übrigen Testsätze dasselbe Ergebnis
+  const s2 = src('FLAT2_HINT'), cut = s2.indexOf('(?<![a-zäöüß-])reifen'); ok(s2.startsWith('(?:(?<![а-яіїєґё])(?<!запасн') && cut > 0, 'neue Alternativen vorne in FLAT2_HINT');
+  const F0 = [F[0], new RegExp('(?:' + s2.slice(cut), 'i'), F[2]], flat0 = (x) => F0.some((r) => r.test(x));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1553 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d1 = []; for (const x of strs) if (flat(x) !== flat0(x)) d1.push(x); eq(d1.slice(0, 5).join(' | '), '', 'Start-Modul: übrige Testsätze unverändert');
+  // Serbisch/Mazedonisch über foreignKinds
+  const load = (code) => new Function(code.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang);
+  const CASES = [['гума се покварила', 'flat'], ['гума је поломљена', 'flat'], ['guma se pokvarila', 'flat'], ['guma je polomljena', 'flat'], ['guma je slomljena', 'flat'], ['polomila se guma', 'flat'],
+    ['гумата е расипана', 'flat'], ['гумата е скршена', 'flat'], ['гумата се расипа', 'flat'], ['се расипа гумата', 'flat'], ['гумата е оштетена', 'tyre'], ['guma je slomljena i retrovizor je slomljen', 'flat,mirror']];
+  for (const [x, k] of CASES) eq([...await fk(x)].sort().join(','), k, x);
+  for (const x of ['guma se nije pokvarila', 'guma nije polomljena', 'гумата не е расипана', 'гумата не е оштетена', 'резервната гума е расипана', 'rezervna guma se pokvarila', 'гумата е заменета', 'metlica brisača se polomila'])
+    eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1553/.test(l) && /^\s+\/\//.test(l)) { let j = k + 1; while (/^  \['(?:flat|tyre)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 3, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old), d2 = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d2.push(x + ' → ' + b + ' / ' + a); }
+  eq(d2.slice(0, 5).join(' | '), '', 'Sprachmodul: übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes('(?:rasip\\S*|skrs\\S*)'), 'Mazedonisch nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['шина сломалась', 'шина зламалась', 'резина порвана']) ok(STRINGS[l].help_report_s.includes(x) && flat(x), 'Hilfe nennt Reifenpanne: ' + l + ' ' + x);
+    for (const x of ['гума се покварила', 'гумата е расипана']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'flat', 'Hilfe nennt Reifenpanne: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('гумата е оштетена') && [...await fk('гумата е оштетена')].join() === 'tyre', 'Hilfe nennt Reifenschaden: ' + l);
+    for (const x of ['колесо сломалось', 'шина не сломана']) ok(STRINGS[l].help_report_s.includes(x) && !flat(x), 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

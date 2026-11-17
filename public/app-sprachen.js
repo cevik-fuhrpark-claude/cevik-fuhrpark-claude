@@ -169,6 +169,8 @@ const HR_KINDS = [['brake', /\bkocnic\S*\s+(?:\S+\s+)?(?:ne\s+(?:rade|radi|koce|
   ['tyre', /\bgum\S*\s+(?:\S+\s+)?(?:ostecen|posjecen|isjecen|istrosen|celav|ima\s+balon|gubi\s+(?:zrak|vazduh)|malo\s+(?:zraka|vazduha))/, /pukl|puknut/],
 
   ['flat', /\b(?:gum(?:a|e|u|i|om|ama)|pneumati\S*)\s+(?:\S+\s+)?(?:je\s+|su\s+|mi\s+)?(?:pokvaren\S*|crkl\S*|crknut\S*|unisten\S*|za\s+baciti)|\b(?:pokvarila|crkla|crknula)\s+(?:mi\s+|se\s+)?(?:\S+\s+)?gum(?:a|e)\b/, /brisac|metlic|brtv|rezervn|zamjensk|vrata/],
+
+  ['flat', /\bgum(?:a|e|u|i|om|ama)\s+(?:(?!nije\s|ni\s|ne\s)\S+\s+)?(?:se\s+|je\s+|su\s+|mi\s+)?(?:pokvaril\S*|polomljen\S*|polomil\S*|slomljen\S*|slomil\S*)|\b(?:polomila|slomila)\s+(?:mi\s+|se\s+)?(?:\S+\s+)?gum(?:a|e)\b/, /brisac|metlic|brtv|rezervn|zamjensk|vrata/],
   ['reefer', /\b(?:agregat|hladnja|frigo|thermo\s*king|carrier)\S*\s+(?:\S+\s+)?(?:ne\s+(?:hladi|radi|pali)|alarm|greska|kvar|stao|ugasio)/],
   ['susp', /\b(?:jastuk|mijeh|meh)\S*\s+(?:\S+\s+)?(?:puk|pusta|ispust|ostecen)|\b(?:ogibljenj|vjesanj|vesanj)\S*\s+(?:\S+\s+)?(?:ne\s+radi|kvar|pokvaren)|\b(?:prikolica|kamion|tegljac)\s+(?:\S+\s+)?(?:nakrivljen|nagnut|spustil)/],
   ['gear', /\bbrzin\S*\s+(?:\S+\s+)?ne\s+(?:ulazi|ulaze)|\b(?:mjenjac|menjac)\S*\s+(?:\S+\s+)?(?:greska|kvar|ne\s+(?:radi|ubacuje|ulazi))|\bkvacil\S*\s+(?:\S+\s+)?(?:proklizava|ne\s+radi|izgorj|izgorel)/],
@@ -569,6 +571,9 @@ const MK_OK = /\bpopraven|\bpopravi(?:ja|vme|v)\b|\bzamen(?:et|ija|ivme|iv)\b|\b
 const MK_KINDS = [['brake', /\b(?:sopirac|kocnic)\S*\s+(?:\S+\s+){0,2}(?:ne\s+(?:rabot|fak|koc)|slab|otkaz|popust)|\bne\s+sopira\b|\b(?:pagja|paga|pada|gubi)\s+(?:\S+\s+)?(?:pritisok|vozduh|vozduhot)\b/, /racn|parkir|svetl|stop|asistent|samo\s+od\s+sebe|bez\s+pricina/],
   ['fire', /\bcad\S*\s+(?:\S+\s+)?(?:od|izleguva|izlegu|ima\s+vo)\b|\bse\s+zapali\b|\bpozar|\b(?:gori|gorat)\s+(?:kabinata|kamionot|motorot|prikolkata|gumata)/, /auspuh|izduv|aparat|lampick|sijalick|svetl/],
   ['flat', /\bgum\S*\s+(?:\S+\s+)?(?:(?:mi\s+|se\s+)?pukna|puknat|izdupc|duplna|izduvan|prazn)|\bpukna\S*\s+(?:\S+\s+){0,2}gum/],
+
+  ['flat', /\bgum\S*\s+(?:(?!ne\s|nema\s)\S+\s+)?(?:(?:e|se|mi)\s+)?(?:rasip\S*|skrs\S*)|\b(?:se\s+)?(?:rasipa|skrsi)\s+(?:mi\s+)?gum\S*/, /rezerv|brisac|metlic/],
+  ['tyre', /\bgum\S*\s+(?:(?!ne\s|nema\s)\S+\s+)?(?:(?:e|se)\s+)?ostet\S*/, /rezerv|brisac|metlic/],
   ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:(?:e|se)\s+)?(?:zaglav|blokir|tezok|tesko|ne\s+se\s+vrti)/],
   ['leak', /\b(?:maslo|gorivo|nafta|dizel|tecnost|antifriz|adblue)\S*\s+(?:\S+\s+)?(?:tece|kapi|curi|isteka)|\b(?:tece|kapi|isteka|curi)\s+(?:\S+\s+)?(?:maslo|goriv|naft|dizel|tecnost|antifriz|adblue)/],
   ['acc', /\bsoobracajna\s+nesrec|\bnesrekj|\bsudir|\b(?:udriv|udrija|izgrebav|zakaciv|me\s+udri|me\s+udrija)\b/, /kamen/],
