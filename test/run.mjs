@@ -43875,7 +43875,7 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-taglish.py'), 'UI-Prüfung in pruefen.sh');
 });
 // [CLAUDE] Backlog 1549: Gegenproben der Sprachtabellen ohne die Sätze des Ladungs-Tests (dort erzeugen Einzeltabellen bewusst Treffer, die foreignKinds über fkNeg/lxRun entfernt)
-const lx1549 = (r) => { const j = r.indexOf("\nawait test('Backlog 1549 ("); return j < 0 ? r : r.slice(0, j) + r.slice(r.indexOf('\nawait test(', j + 10)); };
+const lx1549 = (r) => { for (const n of ['1549', '1550']) { const j = r.indexOf("\nawait test('Backlog " + n + " ("); if (j >= 0) r = r.slice(0, j) + r.slice(r.indexOf('\nawait test(', j + 10)); } return r; }; // Backlog 1550: Reifen-kaputt-Sätze in mehreren Sprachen ebenso ausgenommen
 await test('Backlog 1544 (Blickwinkel „Fahrer aus Spanien/Lateinamerika schreibt Spanisch“, Backlog 195): „los frenos no funcionan“, „se pinchó la rueda“, „el motor no arranca“, „se está quemando la cabina“, „pierde aceite“, „tuve un accidente“, „el frigo no enfría“, „me robaron el gasoil“ u. a. → dieselben Hinweise (ES_KINDS über esFold, Akzente egal, Hauptwort und Befund in beliebiger Reihenfolge); Reparaturvermerk („ya está arreglado“, „funciona bien“), Verneinung („no pierde aceite“, „sin fugas“, „no hubo accidente“) und Alltagssätze ohne; „sin frenos“/„sin luces“ sowie „no está bien“/„no funciona bien“ sind Mängel; Auspuffrauch Motor; andere Sprachen unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -44218,7 +44218,7 @@ await test('Backlog 1549 (Blickwinkel „Ausländischer Fahrer meldet verrutscht
   for (const x of ['İSTANBUL yük kaydı 🚚', 'ładunek się przesunął', 'l’arrière a bougé', 'Straße']) eq(lxFold(x).length, x.length, 'Faltung längentreu: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests wird von lxRun verändert
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1549 (");
-  const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const k = rest0.indexOf("\nawait test('Backlog 1550 ("); const rest = k < 0 ? rest0 : rest0.slice(0, k) + rest0.slice(rest0.indexOf('\nawait test(', k + 10)); // Backlog 1550: dort Ladung + Reifen gemischt
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (lxRun(x).rest !== x) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Zeichenketten unverändert');
@@ -44231,6 +44231,41 @@ await test('Backlog 1549 (Blickwinkel „Ausländischer Fahrer meldet verrutscht
     for (const x of ['spanzet je puknuo', 'a heveder elszakadt', 'popruh praskl', 'spanzet koptu', 'pasy są zerwane', 'las cinchas están rotas', 'les sangles sont cassées', 'de spanbanden zijn kapot', 'il manque deux sangles']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'lashgear', 'Hilfe nennt Sicherungsmittel: ' + l + ' ' + x);
     for (const x of ['la carga no se ha movido', 'de lading is opnieuw vastgezet']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-ladung-fremd.py'), 'UI-Prüfung in pruefen.sh');
+});
+await test('Backlog 1550 (Blickwinkel „Ausländischer Fahrer meldet: Reifen kaputt“, Backlog 195): „de band is kapot“, „le pneu est cassé“, „la llanta está rota“, „o pneu está estragado“, „il pneumatico è rotto“, „lastik bozuk“, „opona jest zepsuta“, „cauciucul e stricat“, „guma je pokvarena“, „a gumi tönkrement“, „pneumatika je rozbitá“ → Reifenpanne wie „Reifen kaputt“ (vorher kein Hinweis); „beschädigt“ (abîmé/dañada/danificado/danneggiata/beschadigd/hasarlı) → Reifenschaden; verneint, „muss erneuert werden“, Ersatzrad, Wischergummi, „gumb“ (Knopf) ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const load = (src) => new Function(src.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang);
+  const CASES = [["de band is kapot", "flat"], ["de banden zijn stuk", "flat"], ["mijn band is naar de knoppen", "flat"], ["de band is beschadigd", "tyre"],
+    ["le pneu est cassé", "flat"], ["le pneu est mort", "flat"], ["mon pneu est foutu", "flat"], ["les pneus sont HS", "flat"], ["le pneu est abîmé", "tyre"], ["le pneu est endommagé", "tyre"],
+    ["la llanta está rota", "flat"], ["el neumático está roto", "flat"], ["se rompió la goma", "flat"], ["la goma está dañada", "tyre"],
+    ["o pneu está estragado", "flat"], ["o pneu estragou", "flat"], ["o pneu está danificado", "tyre"],
+    ["il pneumatico è rotto", "flat"], ["la gomma è andata", "flat"], ["la gomma si è rotta", "flat"], ["la gomma è danneggiata", "tyre"],
+    ["lastik bozuk", "flat"], ["lastiğim bozuldu", "flat"], ["lastik hasarlı", "tyre"], ["opona jest zepsuta", "flat"], ["zepsuła się opona", "flat"],
+    ["cauciucul e stricat", "flat"], ["anvelopa este distrusă", "flat"], ["s-a stricat anvelopa", "flat"], ["guma je pokvarena", "flat"], ["crkla mi je guma", "flat"],
+    ["a gumi tönkrement", "flat"], ["elromlott a gumi", "flat"], ["pneumatika je rozbitá", "flat"], ["pneu je na odpis", "flat"], ["pneumatika sa pokazila", "flat"],
+    ["il carico si è ribaltato e la gomma è rotta", "flat,load"], ["de spiegel is kapot, de band is kapot", "flat,mirror"]];
+  for (const [x, k] of CASES) eq([...await fk(x)].sort().join(','), k, x);
+  const NO = ["de band is niet kapot", "le pneu n'est pas cassé", "la llanta no está rota", "il pneumatico non è rotto", "lastik bozuk değil", "de band moet vervangen worden", "de band is nog niet vervangen", "il faut changer le pneu",
+    "de reserveband is kapot", "la roue de secours est cassée", "la rueda de repuesto está rota", "o pneu sobresselente está estragado", "gumb je pokvaren", "de radio is kapot", "la ruota di scorta è rotta"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  for (const x of ['la goma del limpiaparabrisas está rota', 'la gomma del tergicristallo è rotta', 'de spanbanden zijn kapot']) { const k = await fk(x); ok(!k.has('flat') && !k.has('tyre'), 'kein Reifen-Hinweis: ' + x); }
+  eq([...await fk('de spiegel moet vervangen worden')].join(','), 'mirror', '„moet vervangen worden“ zeigt bei anderen Teilen weiter den Mangel');
+  // Gegenprobe: ohne die neuen Einträge liefern alle übrigen Testsätze dasselbe Ergebnis
+  const L = app.split('\n'), E = []; L.forEach((l, i) => { if (/Backlog 1550/.test(l)) { let j = i + 1; while (/^\s+\/\//.test(L[j] || '')) j++; while (/^  \['(?:flat|tyre)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 17, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1550 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const diff = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) diff.push(x + ' → ' + b + ' / ' + a); }
+  eq(diff.slice(0, 5).join(' | '), '', 'übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes("nlCo('band|banden', 'kapot"), 'nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['de band is kapot', 'le pneu est cassé', 'la llanta está rota', 'o pneu está estragado', 'il pneumatico è rotto', 'lastik bozuk', 'opona jest zepsuta', 'cauciucul e stricat', 'guma je pokvarena', 'a gumi tönkrement', 'pneumatika je rozbitá']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'flat', 'Hilfe nennt Reifenpanne: ' + l + ' ' + x);
+    for (const x of ['le pneu est abîmé', 'la goma está dañada', 'de band is beschadigd']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'tyre', 'Hilfe nennt Reifenschaden: ' + l + ' ' + x);
+    for (const x of ['de band moet vervangen worden', 'de reserveband is kapot', 'gumb je pokvaren']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-reifen-kaputt-fremd.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
