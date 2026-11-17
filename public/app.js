@@ -4267,6 +4267,9 @@ const GE_KINDS = [['brake', /\b(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)
   ['parkbrake', /\bkhelis\s+(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:ar|ver|gapuch|gaiched)/],
   ['flat', /\b(?:saburav|borbal|shin)\S*\s+(?:\S+\s+)?(?:gaskd|daeshv|chajd|gaikhvrit|gaichr)|\b(?:gaskd|gaikhvrit)\S*\s+(?:\S+\s+)?(?:saburav|borbal)|\bsaburav\S*\s+(?:\S+\s+)?haer\S*\s+gadis/],
   ['tyre', /\bsaburav\S*\s+(?:\S+\s+)?(?:gatsvet|bzar|gaibzar|daziand|gaberil)/],
+  // [CLAUDE] Backlog 1561: „Reifen kaputt“ (saburavi gapuchda/gapuchebulia) → Reifenpanne, „beschaedigt“ (dazianebulia) → Reifenschaden; Rad/Ersatzrad ohne
+  ['flat', /\b(?:saburav|shin)\S*\s+(?:\S+\s+)?gapuch|\bgapuch\S*\s+(?:\S+\s+)?saburav/, /satadarig/],
+  ['tyre', /\b(?:saburav|shin)\S*\s+(?:\S+\s+)?dazianeb/, /satadarig/],
   ['steer', /\bsache\S*\s+(?:\S+\s+)?(?:mdzim|gaiched|ar\s+trial|ver\s+vatrial|luft|kankal)|\b(?:marjvniv|martskhniv)\s+(?:\S+\s+)?(?:miakv|itsev|mikh)/],
   ['leak', /\b(?:zet|satsvav|dizel|antifriz|tosol|adblu|siti)\S*\s+(?:\S+\s+)?(?:zhonav|gamodis|ighvr|gaedin|chamodis)|\bgazhonv|\bzhonav\S*\s+(?:\S+\s+)?(?:zet|satsvav|dizel|antifriz)/],
   ['fire', /\bitsvis\b|\btsetskhl(?!makr)|\bkhandzar(?!satsin)|\bkvaml/, /\b(?:maquch|gamonabolkv|glushitel|vikhlop)/],
@@ -4300,7 +4303,7 @@ const GE_KINDS = [['brake', /\b(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)
   ['adas', /\b(?:kamer|radar|asistent|sensor|datchik)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:mushaob|achveneb)|gapuch)/],
   ['door', /\b(?:kari|karebi|kars|saket|gidrobort|hidrobort)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:iketeb|igheb|vkhsni|vagheb|mushaob|eshveb)|gapuch)/]];
 // Verneinung vor heilen Zuständen: „ზეთი არ ჟონავს“, „სარკე არ გატყდა“, „საბურავი არ არის გახვრეტილი“ – kein Hinweis.
-const GE_NEG = /\b(?:ar|ver)\s+(?:aris\s+)?(?:itsv|zhonav|gamod|ighvr|gaskd|daeshv|gaikhvrit|gakhvret|gatqd|gaibzar|daziand|dashav|davejakh|chamovard)\S*/g;
+const GE_NEG = /\b(?:ar|ver)\s+(?:aris\s+)?(?:itsv|zhonav|gamod|ighvr|gaskd|daeshv|gaikhvrit|gakhvret|gatqd|gaibzar|dazian|dashav|davejakh|chamovard|gapuch)\S*/g;
 function geKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[ა-ჰᲐ-Ჰ]/.test(raw)) continue; const p = geLat(raw).replace(GE_NEG, ' '); if (!GE_OK.test(p)) for (const [n, rx, ex] of GE_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
 // [CLAUDE] Backlog 1503 (Blickwinkel „Fahrer schreibt die Meldung auf Arabisch“, Backlog 195): arabische Schrift (Hocharabisch und syrisch-levantinische
 // Umgangssprache) löste bisher keinen Hinweis aus. arLat schreibt in ein festes Konsonantengerüst um (Vokalzeichen/Tatweel entfernt, أ/إ/آ→a, ة→h, ى→a,
@@ -4739,6 +4742,9 @@ const HY_KINDS = [['brake', /\b(?:argelak|tormuz|tormoz)\S*\s+(?:\S+\s+)?(?:ch[e
   ['parkbrake', /\b(?:dzerki\s+(?:argelak|tormuz|tormoz)|dzernargelak|ruchnik)\S*\s+(?:\S+\s+)?(?:ch[ei]n?\s+(?:brn|ashkhat|pah)|pchats|tuyl)/],
   ['flat', /\b(?:anvadogh|aniv|shin|kolyos)\S*\s+(?:\S+\s+)?(?:payt|tsakv|ijel|nstel|od\s+e\s+togh)|\bpaytets\S*\s+(?:\S+\s+)?(?:anvadogh|aniv)/, /\b(?:ptutak|gayk)/],
   ['tyre', /\b(?:anvadogh|shin)\S*\s+(?:\S+\s+)?(?:mash|chakv|chakel)/],
+  // [CLAUDE] Backlog 1561: „Reifen kaputt“ (anvadoghy pchatsel/jardvel e) → Reifenpanne, „beschaedigt/geschnitten“ (vnasvel, ktrvel) → Reifenschaden; Rad/Ersatzrad ohne
+  ['flat', /\b(?:anvadogh|shin)\S*\s+(?:\S+\s+)?(?:pchats|jardv)/, /pahest/],
+  ['tyre', /\b(?:anvadogh|shin)\S*\s+(?:\S+\s+)?(?:vnasv|ktrv)/, /pahest/],
   ['steer', /\bghek\S*\s+(?:\S+\s+)?(?:tsanr|khagh|lyuft|chi\s+ptt)|\b(?:aj|dzakh)\s+(?:\S+\s+)?(?:kash|tan)um/],
   ['leak', /\b(?:yugh|varelik|dizel|solyar|antifriz|tosol|adblu|jur)\S*\s+(?:\S+\s+)?(?:hos|katum|kat\S*\s+e|artahos)|\bartahos/],
   ['fire', /\bvarvum\s+e\b|\bayrv|\bkrak(?!mar)|\bhrdeh|\btsukh|\bpozhar/, /\b(?:khlatsutsich|glushitel|vikhlop|chek|lamp|indikator|luys|far)/],
@@ -4772,7 +4778,7 @@ const HY_KINDS = [['brake', /\b(?:argelak|tormuz|tormoz)\S*\s+(?:\S+\s+)?(?:ch[e
   ['adas', /\b(?:tesakhtsik|kamer|radar|sensor|datchik|asistent)\S*\s+(?:\S+\s+)?(?:chi\s+ashkhat|pchats|skhal)/],
   ['door', /\b(?:dur(?:y|n|ry)?|drner\S*|(?:gidro|hidro)bort\S*)\s+(?:\S+\s+)?(?:chi\s+(?:pakv|batsv|ashkhat|bardzr|ijn)|chen\s+(?:pakv|batsv)|pchats)/]];
 // Verneinung vor heilen Zuständen: „յուղը չի հոսում“, „հայելին չի կոտրվել“, „անիվը պայթած չէ“, „չեմ բախվել“ – kein Hinweis.
-const HY_NEG = /\bch(?:i|en|em|enk|es)\s+(?:hos|kat|kotr|payt|tsakv|chakv|bakhv|vnasv|ayrv|ijel|ynk|jard|viravor)\S*|\b(?:kotrv|payt|tsakv|chakv|vnasv|jard)\S*\s+che\b|\bchkotrv\S*/g;
+const HY_NEG = /\bch(?:i|en|em|enk|es)\s+(?:hos|kat|kotr|payt|tsakv|chakv|bakhv|vnasv|ayrv|ijel|ynk|jard|viravor|pchats|ktrv)\S*|\b(?:kotrv|payt|tsakv|chakv|vnasv|jard|pchats|ktrv)\S*\s+che\b|\bchkotrv\S*/g;
 function hyKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n։՝]+/)) { if (!/[ա-ֆԱ-Ֆ]/.test(raw)) continue; const p = hyLat(raw).replace(HY_NEG, ' '); if (!HY_OK.test(p)) for (const [n, rx, ex] of HY_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
 // [CLAUDE] Backlog 1534 (Blickwinkel „Fahrer schreibt die Meldung auf Griechisch“, Backlog 195, Folge aus 1533): griechische Schrift (Neugriechisch,
 // Akzente/Trema über NFD entfernt, ς→σ) – grLat schreibt in eine feste Lateinform um (ου→u, αυ→av, ευ→ev, η/ι→i, υ→y, ω→o, β→v, θ→th, ξ→x, φ→f,
@@ -4789,6 +4795,9 @@ const GR_KINDS = [['brake', grCo('fren', `den\\s+(?:\\S+\\s+)?(?:pian|krat|stama
   ['parkbrake', grCo('che?irofren', `den\\s+(?:\\S+\\s+)?(?:krat|pian|xekol|lyn|kateva)|kollis|${GR_NW}`)],
   ['flat', grCo('lastich|elastik|rod(?:a|es)\\b', 'eskase|skas|trypi|xefusk|pagktser|pagkts'), /\b(?:paximad|mpulon)/],
   ['tyre', grCo('lastich|elastik', 'fagom|fagothik|gyalis|fthar')],
+  // [CLAUDE] Backlog 1561: „Reifen kaputt“ (chalase to lasticho) → Reifenpanne, „zerstoert/geschnitten“ (katestrammeno, kopike) → Reifenschaden; Rad, Ersatzrad, Wischer, Schlauch ohne
+  ['flat', grCo('lastich|elastik', 'chalas'), /efedrik|rezerv|yalokathar|ialokathar|katharist|\bneru|potism/],
+  ['tyre', grCo('lastich|elastik', 'katestramm|kommen|kopik'), /efedrik|rezerv|yalokathar|ialokathar|katharist|\bneru|potism/],
   ['steer', grCo('timon', `vary|sklir|tremei|tremun|paizei|tzogk|den\\s+(?:\\S+\\s+)?gyriz|${GR_NW}`)],
   ['steer', /\b(?:travaei|travai|pigainei|fevgei)\s+(?:\S+\s+)?(?:dexia|aristera)/],
   ['leak', grCo('lad|petrel|ntizel|diizel|antipsyktik|kavsim|adblu|ygr', 'trech|stazei|stazun|diarro|chyn'), /\b(?:amortis|aeranart|fusk)/],
@@ -4831,7 +4840,7 @@ const GR_KINDS = [['brake', grCo('fren', `den\\s+(?:\\S+\\s+)?(?:pian|krat|stama
   ['adas', grCo('kamer|radar|aisthitir|sensor', `den\\s+(?:\\S+\\s+)?(?:deichn|vlep)|sfalma|${GR_NW}`)],
   ['door', grCo('port(?:a|es|as|aki)\\b|ydravlik|anypsotik', `den\\s+(?:\\S+\\s+)?(?:klein|anoig|kleidon|xekleid|aneva|kateva)|kollis|espase|${GR_NW}`), /\b(?:tzam|parathyr)/]];
 // Verneinung vor heilen Zuständen: „Δεν έσπασε“, „Δεν τρέχει λάδι“, „δεν είναι σπασμένος“, „χωρίς διαρροή“ – kein Hinweis.
-const GR_NEG = /\bden\s+(?:\S+\s+)?(?:espase|ragise|eskase|trypise|trech|staz|kaigetai|chtypis|trakar|epese|chalase|chalarose|skistike|travmatist|pire\s+fotia|epiase\s+fotia)\S*|\bden\s+(?:einai|ine)\s+(?:\S+\s+)?(?:spasmen|ragismen|fagomen|chalasmen|trypim|travmatism)\S*|\bchoris\s+(?:\S+\s+)?(?:diarro|zimi|atychim|provlim)\S*/g;
+const GR_NEG = /\bden\s+(?:\S+\s+)?(?:espase|ragise|eskase|trypise|trech|staz|kaigetai|chtypis|trakar|epese|chalase|chalarose|skistike|travmatist|pire\s+fotia|epiase\s+fotia|kopik)\S*|\bden\s+(?:einai|ine)\s+(?:\S+\s+)?(?:spasmen|ragismen|fagomen|chalasmen|trypim|travmatism|katestramm|kommen)\S*|\bchoris\s+(?:\S+\s+)?(?:diarro|zimi|atychim|provlim)\S*/g;
 function grKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n\u00b7\u0387\u037e]+/)) { if (!/[\u0370-\u03ff\u1f00-\u1fff]/.test(raw)) continue; const p = grLat(raw).replace(GR_NEG, ' '); if (!GR_OK.test(p)) for (const [n, rx, ex] of GR_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
 // [CLAUDE] Backlog 1538 (Blickwinkel „Fahrer schreibt Hindi/Punjabi in lateinischen Buchstaben (Hinglish)“, Backlog 195): viele Fahrer aus Indien schreiben
 // Hindi/Punjabi per Handy-Tastatur lateinisch, mit englischen Hauptwörtern („brake kaam nahi kar raha“, „tyre phat gaya“, „gaadi start nahi ho rahi“).

@@ -43571,7 +43571,7 @@ await test('Backlog 1533 (Blickwinkel „Fahrer schreibt die Meldung auf Armenis
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   ok(hyKinds('Արգելակները չեն աշխատում։ Յուղը հոսում է').size === 2 && hyKinds('Արգելակնե՞րը չեն աշխատում').has('brake'), 'armenischer Punkt „։“ trennt Sätze, Fragezeichen im Wort stört nicht');
   // Gegenprobe: Zeichenketten der übrigen Tests (andere Schriften) bekommen aus der armenischen Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1533"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1533"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1561 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1561: Reifen kaputt GR/GE/HY – Treffer erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (hyKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der armenischen Tabelle');
@@ -43606,7 +43606,7 @@ await test('Backlog 1534 (Blickwinkel „Fahrer schreibt die Meldung auf Griechi
   eq([...grKinds('Τα φρένα δεν πιάνουν· τρέχουν λάδια')].sort().join(','), 'brake,leak', 'Hochpunkt „·“ (U+0387/U+00B7) trennt Sätze');
   eq([...grKinds('Ο καθρέφτης έσπασε, τα φρένα δουλεύουν')].join(','), 'mirror', 'Mangel und Hauptwort nur im selben Satzteil');
   // Gegenprobe: Zeichenketten der übrigen Tests (andere Schriften) bekommen aus der griechischen Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1534"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1534"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1561 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1561: Reifen kaputt GR/GE/HY – Treffer erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (grKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der griechischen Tabelle');
@@ -44561,6 +44561,37 @@ await test('Backlog 1560 (Sorani Stufe 2, Backlog 195): „تایەکە بڕاو
   for (const l of ['de', 'uk', 'en']) for (const x of ['تاکۆگراف کار ناکات', 'چادرەکە دڕا', 'قایشی بار پچڕا', 'کلیلەکە ون بوو']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
   const ui = readFileSync(new URL('../scripts/ui-meldung-sorani.py', import.meta.url), 'utf8'); ok(ui.includes('Backlog 1560') && ui.includes('"قایشی بار پچڕا", "lashgear"'), 'UI-Prüfung Stufe 2');
 });
+await test('Backlog 1561 (Blickwinkel „Ausländischer Fahrer meldet: Reifen kaputt“, Stufe 5, Backlog 195): griechisch „χάλασε το λάστιχο“, georgisch „საბურავი გაფუჭდა“, armenisch „անվադողը փչացել է“ → Reifenpanne; „το λάστιχο είναι κατεστραμμένο/κόπηκε“, „საბურავი დაზიანებულია“, „անվադողը վնասվել/կտրվել է“ → Reifenschaden (vorher kein Hinweis); Rad, Ersatzrad, Wischergummi, Wasserschlauch, Verneinung, Reparaturvermerk ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const load = (code) => new Function(code.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang), K = async (x) => [...await fk(x)].sort().join(',');
+  for (const x of ['χάλασε το λάστιχο', 'το λάστιχο χάλασε', 'το λάστιχο είναι χαλασμένο', 'λάστιχο χαλασμένο πίσω δεξιά', 'το λάστιχο του τρέιλερ χάλασε',
+    'საბურავი გაფუჭდა', 'საბურავი გაფუჭებულია', 'საბურავი გაფუჭდა უკანა', 'անվադողը փչացել է', 'անվադողը փչացավ', 'անվադողը ջարդվել է'])
+    eq(await K(x), 'flat', 'Reifenpanne: ' + x);
+  for (const x of ['το λάστιχο είναι κατεστραμμένο', 'κομμένο λάστιχο', 'το λάστιχο κόπηκε', 'το λάστιχο του ρυμουλκούμενου είναι κομμένο', 'საბურავი დაზიანებულია',
+    'անվադողը վնասվել է', 'անվադողը վնասված է', 'անվադողը կտրվել է'])
+    eq(await K(x), 'tyre', 'Reifenschaden: ' + x);
+  for (const x of ['χάλασε η ρόδα', 'δεν χάλασε το λάστιχο', 'το εφεδρικό λάστιχο χάλασε', 'το λάστιχο του νερού χάλασε', 'η ρεζέρβα χάλασε', 'το λάστιχο δεν είναι χαλασμένο', 'το λάστιχο δεν κόπηκε',
+    'το λάστιχο χάλασε και το αλλάξαμε', 'ბორბალი გაფუჭდა', 'საბურავი არ გაფუჭებულა', 'სათადარიგო საბურავი გაფუჭდა', 'საბურავი არ არის დაზიანებული', 'საბურავი გაფუჭდა და შევცვალეთ',
+    'անիվը փչացել է', 'անվադողը չի փչացել', 'պահեստային անվադողը փչացել է', 'անվադողը չի վնասվել', 'անվադողը վնասված չէ', 'անվադողը փչացել է և փոխեցինք'])
+    eq(await K(x), '', 'ohne Hinweis: ' + x);
+  eq(await K('το λάστιχο του υαλοκαθαριστήρα χάλασε'), 'visib', 'Wischergummi: nur Sicht, keine Reifenpanne');
+  // Gegenprobe: ohne die neuen Einträge (Kommentar „Backlog 1561“) liefern alle übrigen Testsätze dasselbe Ergebnis
+  const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1561/.test(l) && /^\s+\/\//.test(l)) { let j = k + 1; while (/^  \['(?:flat|tyre)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 6, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old), t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1561 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ' → ' + b + ' / ' + a); }
+  eq(d.slice(0, 5).join(' | '), '', 'Sprachmodul: übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes("grCo('lastich|elastik', 'chalas')"), 'Griechisch nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) {
+    for (const [x, k] of [['χάλασε το λάστιχο', 'flat'], ['საბურავი გაფუჭდა', 'flat'], ['անվադողը փչացել է', 'flat'], ['το λάστιχο είναι κατεστραμμένο', 'tyre'], ['საბურავი დაზიანებულია', 'tyre'], ['անվադողը վնասվել է', 'tyre'], ['δεν χάλασε το λάστιχο', '']])
+      ok(STRINGS[l].help_report_s.includes(x) && (await K(x)) === k, 'Hilfe nennt ' + (k || 'ohne Hinweis') + ': ' + l + ' ' + x);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

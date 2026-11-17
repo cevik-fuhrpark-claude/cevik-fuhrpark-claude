@@ -5,6 +5,7 @@
 # Stufe 2 (Backlog 1552): Bulgarisch, Litauisch, Lettisch, Albanisch, Estnisch, Hinglish, Tagalog.
 # Stufe 3 (Backlog 1553): Russisch/Ukrainisch („шина сломалась/зламалась“, „резина порвана“), Serbisch kyrillisch, Mazedonisch.
 # Stufe 4 (Backlog 1555): Ukrainisch „опона зламалася“, Belarussisch, Kasachisch, Kirgisisch, Usbekisch, Tadschikisch, Aserbaidschanisch.
+# Stufe 5 (Backlog 1561): Griechisch „χάλασε το λάστιχο“, Georgisch „საბურავი გაფუჭდა“, Armenisch „անվադողը փչացել է“ (Reifenpanne) bzw. „κατεστραμμένο/დაზიანებულია/վնասվել“ (Reifenschaden).
 # DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -18,10 +19,11 @@ CASES=[["de band is kapot", "flat"], ["de banden zijn stuk", "flat"], ["de band 
        ["гумата е счупена", "flat"], ["padanga sugedusi", "flat"], ["padanga sugadinta", "tyre"], ["riepa ir salūzusi", "flat"], ["riepa ir sabojāta", "tyre"], ["goma është prishur", "flat"],
        ["kumm on rikkis", "flat"], ["tyre kharab ho gaya", "flat"], ["tyre damage ho gaya", "tyre"], ["sira ang gulong", "flat"],
        ["шина сломалась", "flat"], ["шина зламалась", "flat"], ["резина порвана", "flat"], ["гума се покварила", "flat"], ["гумата е расипана", "flat"], ["гумата е оштетена", "tyre"],
-       ["опона зламалася", "flat"], ["шына зламалася", "flat"], ["шина бұзылды", "flat"], ["шина бузулду", "flat"], ["shina buzildi", "flat"], ["шина вайрон шуд", "flat"], ["şin xarab oldu", "flat"]]
+       ["опона зламалася", "flat"], ["шына зламалася", "flat"], ["шина бұзылды", "flat"], ["шина бузулду", "flat"], ["shina buzildi", "flat"], ["шина вайрон шуд", "flat"], ["şin xarab oldu", "flat"],
+       ["χάλασε το λάστιχο", "flat"], ["το λάστιχο είναι κατεστραμμένο", "tyre"], ["საბურავი გაფუჭდა", "flat"], ["საბურავი დაზიანებულია", "tyre"], ["անվադողը փչացել է", "flat"], ["անվադողը վնասվել է", "tyre"]]
 NO=["de band is niet kapot", "le pneu n'est pas cassé", "la llanta no está rota", "de band moet vervangen worden", "il faut changer le pneu", "de reserveband is kapot", "la rueda de repuesto está rota",
     "gumb je pokvaren", "de radio is kapot", "o pneu sobresselente está estragado",
-    "гумата не е счупена", "резервната гума е счупена", "riepa nav salūzusi", "goma nuk është prishur", "stepney tyre kharab hai", "hindi sira ang gulong", "шина не сломана", "колесо сломалось", "запасная шина сломана", "гумата не е расипана", "опона не зламана", "дөңгелек бұзылды", "shina buzilmadi", "ehtiyat şin xarab oldu"]
+    "гумата не е счупена", "резервната гума е счупена", "riepa nav salūzusi", "goma nuk është prishur", "stepney tyre kharab hai", "hindi sira ang gulong", "шина не сломана", "колесо сломалось", "запасная шина сломана", "гумата не е расипана", "опона не зламана", "дөңгелек бұзылды", "shina buzilmadi", "ehtiyat şin xarab oldu", "δεν χάλασε το λάστιχο", "το εφεδρικό λάστιχο χάλασε", "საბურავი არ გაფუჭებულა", "ბორბალი გაფუჭდა", "անվադողը չի փչացել", "անիվը փչացել է"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -45,7 +47,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('le pneu est cassé','la goma está dañada','sira ang gulong','шина зламалась','шина бұзылды'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/rkf-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('le pneu est cassé','la goma está dañada','sira ang gulong','шина зламалась','шина бұзылды','საბურავი გაფუჭდა'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/rkf-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
