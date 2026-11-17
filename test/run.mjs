@@ -43704,7 +43704,7 @@ await test('Backlog 1538 (Blickwinkel „Fahrer schreibt Hindi/Punjabi in latein
   eq([...hiKinds('brake kaam nahi kar raha, tel tapak raha hai')].sort().join(','), 'brake,leak', 'zwei Sätze, zwei Hinweise');
   eq([...hiKinds('ब्रेक काम नहीं कर रहा। tyre phat gaya')].join(','), 'flat', 'Devanagari-Satzzeichen „।“ trennt Sätze');
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Hindi-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1538"); let rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); for (const n of ['1539', '1540', '1541', '1549']) { const j = rest.indexOf("\nawait test('Backlog " + n) + 1; rest = rest.slice(0, j) + rest.slice(rest.indexOf('\nawait test(', j + 10)); } // 1539–1541: weitere Hinglish-Beispiele
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1538"); let rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); for (const n of ['1539', '1540', '1541', '1549', '1552']) { const j = rest.indexOf("\nawait test('Backlog " + n) + 1; rest = rest.slice(0, j) + rest.slice(rest.indexOf('\nawait test(', j + 10)); } // 1539–1541: weitere Hinglish-Beispiele
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (hiKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Hindi-Tabelle');
@@ -43856,7 +43856,7 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
     "malamig sa labas", "traffic sa highway", "nasa ospital ang anak ko", "naiwan ko ang susi sa loob ng truck"];
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Tagalog-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1543"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1543"); const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const k = rest0.indexOf("\nawait test('Backlog 1552 ("); const rest = rest0.slice(0, k) + rest0.slice(rest0.indexOf('\nawait test(', k + 10)); // Backlog 1552: Tagalog-Reifensätze
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (tlKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Tagalog-Tabelle');
@@ -44276,6 +44276,41 @@ await test('Backlog 1550 (Blickwinkel „Ausländischer Fahrer meldet: Reifen ka
     for (const x of ['de band moet vervangen worden', 'de reserveband is kapot', 'gumb je pokvaren']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-reifen-kaputt-fremd.py'), 'UI-Prüfung in pruefen.sh');
 });
+
+await test('Backlog 1552 (Blickwinkel „Ausländischer Fahrer meldet: Reifen kaputt“, Stufe 2 zu 1550, Backlog 195): „гумата е счупена“, „padanga sugedusi“, „riepa ir salūzusi“, „goma është prishur“, „kumm on rikkis“, „tyre kharab ho gaya“, „sira ang gulong“ → Reifenpanne wie „Reifen kaputt“ (vorher kein Hinweis); „padanga sugadinta“, „riepa ir sabojāta“, „tyre damage ho gaya“ → Reifenschaden; verneint, Ersatzrad, Reparaturvermerk, Wischergummi ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const load = (src) => new Function(src.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang);
+  const CASES = [["гумата е счупена", "flat"], ["гумата е развалена", "flat"], ["гумата се развали", "flat"], ["развали се гумата", "flat"], ["гумата е повредена", "tyre"],
+    ["padanga sugedusi", "flat"], ["padanga sugedo", "flat"], ["padanga sulūžo", "flat"], ["padanga sugadinta", "tyre"], ["padanga yra sugadinta", "tyre"],
+    ["riepa ir salūzusi", "flat"], ["riepa salūza", "flat"], ["riepa ir beigta", "flat"], ["riepa ir sabojāta", "tyre"],
+    ["goma është prishur", "flat"], ["goma u prish", "flat"], ["u prish goma", "flat"], ["goma është e prishur", "flat"],
+    ["kumm on rikkis", "flat"], ["rehv läks rikki", "flat"], ["rehv on katki", "flat"],
+    ["tyre kharab ho gaya", "flat"], ["tayar kharab hai", "flat"], ["tyre toot gaya", "flat"], ["tyre damage ho gaya", "tyre"],
+    ["sira ang gulong", "flat"], ["nasira ang gulong", "flat"], ["may sira ang gulong", "flat"], ["sira na ang gulong ko", "flat"], ["ang gulong ay sira", "flat"],
+    ["гумата е счупена и огледалото е счупено", "flat,mirror"]];
+  for (const [x, k] of CASES) eq([...await fk(x)].sort().join(','), k, x);
+  const NO = ["гумата не е счупена", "гумата не е развалена", "гумата трябва да се смени", "резервната гума е счупена", "гумата е сменена", "гумичката на чистачката е развалена",
+    "padanga nesugedusi", "padanga nėra sugedusi", "padanga pakeista, viskas gerai", "riepa nav salūzusi", "rezerves riepa ir salūzusi", "goma nuk është prishur", "goma rezervë është prishur",
+    "rehv ei ole rikkis", "varuratta rehv on rikkis", "tyre kharab nahi hai", "tyre nahi tuta", "stepney tyre kharab hai", "tyre badal diya", "hindi sira ang gulong", "sira ang reserbang gulong", "napalitan na ang gulong"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  const ilaw = await fk('nasira ang ilaw malapit sa gulong'); ok(!ilaw.has('flat') && !ilaw.has('tyre'), 'Tagalog: anderes Teil „sira“ neben „gulong“ → kein Reifen-Hinweis');
+  // Gegenprobe: ohne die neuen Einträge liefern alle übrigen Testsätze dasselbe Ergebnis
+  const L = app.split('\n'), E = []; L.forEach((l, i) => { if (/Backlog 1552/.test(l)) { let j = i + 1; while (/^\s+\/\//.test(L[j] || '')) j++; while (/^  \['(?:flat|tyre)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 10, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1552 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const diff = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) diff.push(x + ' → ' + b + ' / ' + a); }
+  eq(diff.slice(0, 5).join(' | '), '', 'übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes('(?:suged|suluz|sulauz)') && lang.includes('(?:suged|suluz|sulauz)'), 'nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['гумата е счупена', 'padanga sugedusi', 'riepa ir salūzusi', 'goma është prishur', 'kumm on rikkis', 'tyre kharab ho gaya', 'sira ang gulong']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'flat', 'Hilfe nennt Reifenpanne: ' + l + ' ' + x);
+    for (const x of ['padanga sugadinta', 'riepa ir sabojāta', 'tyre damage ho gaya']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'tyre', 'Hilfe nennt Reifenschaden: ' + l + ' ' + x);
+    for (const x of ['goma nuk është prishur', 'hindi sira ang gulong']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

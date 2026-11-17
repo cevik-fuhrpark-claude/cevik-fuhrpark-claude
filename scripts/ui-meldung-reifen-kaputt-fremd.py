@@ -2,6 +2,7 @@
 # Meldeformular zeigt bei „de band is kapot“, „le pneu est cassé“, „la llanta está rota“, „o pneu está estragado“, „il pneumatico è rotto“, „lastik bozuk“, „opona jest zepsuta“,
 # „cauciucul e stricat“, „guma je pokvarena“, „a gumi tönkrement“, „pneumatika je rozbitá“ den Reifenpanne-Hinweis (wie „Reifen kaputt“ auf Deutsch), bei „beschädigt“
 # („le pneu est abîmé“, „la goma está dañada“, „de band is beschadigd“) den Reifenschaden-Hinweis; Verneinung, „muss erneuert werden“, Ersatzrad, Wischergummi und Knopf („gumb“) ohne.
+# Stufe 2 (Backlog 1552): Bulgarisch, Litauisch, Lettisch, Albanisch, Estnisch, Hinglish, Tagalog.
 # DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -11,9 +12,12 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 CASES=[["de band is kapot", "flat"], ["de banden zijn stuk", "flat"], ["de band is beschadigd", "tyre"], ["le pneu est cassé", "flat"], ["mon pneu est foutu", "flat"], ["le pneu est abîmé", "tyre"],
        ["la llanta está rota", "flat"], ["se rompió la goma", "flat"], ["la goma está dañada", "tyre"], ["o pneu está estragado", "flat"], ["o pneu está danificado", "tyre"],
        ["il pneumatico è rotto", "flat"], ["la gomma è danneggiata", "tyre"], ["lastik bozuk", "flat"], ["lastik hasarlı", "tyre"], ["opona jest zepsuta", "flat"], ["cauciucul e stricat", "flat"],
-       ["guma je pokvarena", "flat"], ["a gumi tönkrement", "flat"], ["pneumatika je rozbitá", "flat"], ["il carico si è ribaltato e la gomma è rotta", "flat,load"]]
+       ["guma je pokvarena", "flat"], ["a gumi tönkrement", "flat"], ["pneumatika je rozbitá", "flat"], ["il carico si è ribaltato e la gomma è rotta", "flat,load"],
+       ["гумата е счупена", "flat"], ["padanga sugedusi", "flat"], ["padanga sugadinta", "tyre"], ["riepa ir salūzusi", "flat"], ["riepa ir sabojāta", "tyre"], ["goma është prishur", "flat"],
+       ["kumm on rikkis", "flat"], ["tyre kharab ho gaya", "flat"], ["tyre damage ho gaya", "tyre"], ["sira ang gulong", "flat"]]
 NO=["de band is niet kapot", "le pneu n'est pas cassé", "la llanta no está rota", "de band moet vervangen worden", "il faut changer le pneu", "de reserveband is kapot", "la rueda de repuesto está rota",
-    "gumb je pokvaren", "de radio is kapot", "o pneu sobresselente está estragado"]
+    "gumb je pokvaren", "de radio is kapot", "o pneu sobresselente está estragado",
+    "гумата не е счупена", "резервната гума е счупена", "riepa nav salūzusi", "goma nuk është prishur", "stepney tyre kharab hai", "hindi sira ang gulong"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -37,7 +41,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('le pneu est cassé','la goma está dañada'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/rkf-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('le pneu est cassé','la goma está dañada','sira ang gulong'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/rkf-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
