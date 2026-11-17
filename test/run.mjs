@@ -43746,7 +43746,7 @@ await test('Backlog 1539 (Blickwinkel „Fahrer verneint Unfall, Brand oder Dieb
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1539") + 1; const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const hit = []; for (const x of strs) if (fkNeg(x) !== x) hit.push(x);
-  ok(hit.length < 35, 'nur wenige andere Zeichenketten betroffen: ' + hit.slice(0, 35).join(' | ')); // Backlog 1546: Grenze 25 → 35 (Italienisch); Backlog 1545: Grenze 15 → 25 – die Treffer sind echte Verneinungen der Sprachtests (Hinglish, Tagalog, Spanisch, Portugiesisch)
+  ok(hit.length < 50, 'nur wenige andere Zeichenketten betroffen: ' + hit.slice(0, 50).join(' | ')); // Backlog 1547: Grenze 35 → 50 (Französisch); Backlog 1546: Grenze 25 → 35 (Italienisch); Backlog 1545: Grenze 15 → 25 – die Treffer sind echte Verneinungen der Sprachtests (Hinglish, Tagalog, Spanisch, Portugiesisch)
   const src = app.slice(app.indexOf('\nconst FK_NEG'), app.indexOf('\nasync function foreignKinds'));
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   ok(app.includes('async function foreignKinds(v0) { const v = fkNeg(v0);'), 'foreignKinds ersetzt vor allen Tabellen');
@@ -44043,7 +44043,7 @@ await test('Backlog 1546 (Blickwinkel „Fahrer aus Italien schreibt Italienisch
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|itCo|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
-  ok(app.includes('...esKinds(v), ...ptKinds(v), ...itKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...esKinds(v), ...ptKinds(v), ...itKinds(v)'), 'in foreignKinds aufgenommen'); // Backlog 1547: danach ...frKinds(v)
   ok(!main.includes('const IT_KINDS') && lang.includes('const IT_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['i freni non funzionano', 'la gomma è bucata', 'il motore non parte', 'la cabina sta bruciando', 'perde olio', 'ho avuto un incidente', 'si è accesa la spia del motore', 'il frigo non raffredda']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
@@ -44055,6 +44055,72 @@ await test('Backlog 1546 (Blickwinkel „Fahrer aus Italien schreibt Italienisch
   // pruefen.sh: Liste UI_SKRIPTE steht in einfachen Anführungszeichen – ein Apostroph („can't“) machte das Skript unbrauchbar (gefunden 17.11.2026)
   const { execFileSync } = await import('node:child_process'); let shErr = ''; try { execFileSync('sh', ['-n', new URL('../scripts/pruefen.sh', import.meta.url).pathname], { stdio: 'pipe' }); } catch (e) { shErr = String(e.stderr || e.message); }
   eq(shErr, '', 'pruefen.sh syntaktisch gültig (sh -n)');
+});
+await test('Backlog 1547 (Blickwinkel „Fahrer aus Frankreich/Belgien schreibt Französisch“, Backlog 195): „les freins ne marchent pas“, „le pneu est crevé“, „le moteur ne démarre pas“, „la cabine brûle“, „il perd de l’huile“, „j’ai eu un accident“, „le frigo ne refroidit pas“, „on m’a volé le gasoil“ u. a. → dieselben Hinweise (FR_KINDS über frFold, Akzente/Apostroph/Bindestrich egal, „ne … pas“ auch umgangssprachlich ohne „ne“); Reparaturvermerk („déjà réparé“, „le pneu a été changé“, „tout va bien“), Verneinung („il ne perd pas d’huile“, „pas de fuite“, „il n’y a pas eu d’accident“) und Alltagssätze ohne; „sans freins“/„sans feux“ und „pas encore réparé“ sind Mängel; „les feux“ = Licht, „feu rouge“/„au volant“/„en direction de“/„boîte à gants“/„siège social“ ohne; Auspuffrauch Motor; andere Sprachen unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { frKinds, itKinds, esKinds, ptKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { frKinds, itKinds, esKinds, ptKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...frKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [["les freins ne marchent pas", "brake"], ["le frein ne marche plus", "brake"], ["le camion ne freine pas", "brake"], ["sans freins", "brake"], ["les freins sont mous", "brake"], ["les freins grincent beaucoup", "brake"],
+  ["le frein ne marche pas bien", "brake"], ["la pression d'air baisse", "brake"], ["le frein à main ne se desserre pas", "parkbrake"], ["le frein de parking est bloqué", "parkbrake"], ["le camion est parti tout seul", "parkbrake"], ["le pneu est crevé", "flat"],
+  ["j'ai crevé", "flat"], ["un pneu a éclaté", "flat"], ["le pneu de la remorque a éclaté", "flat"], ["la roue est à plat", "flat"], ["la roue avant perd de l'air", "flat"], ["le pneu est dégonflé", "flat"],
+  ["le pneu est lisse", "tyre"], ["le pneu a une hernie", "tyre"], ["les pneus sont très usés", "tyre"], ["la direction est dure", "steer"], ["le volant a du jeu", "steer"], ["le volant vibre beaucoup", "steer"],
+  ["le camion tire à droite", "steer"], ["il perd de l'huile", "leak"], ["le moteur perd de l'huile", "leak"], ["il y a une fuite de gasoil", "leak"], ["le gasoil coule", "leak"], ["l'adblue fuit par en dessous", "leak"],
+  ["le radiateur fuit", "leak"], ["la cabine brûle", "fire"], ["le moteur a pris feu", "fire"], ["de la fumée sort de la cabine", "fire"], ["il y a de la fumée au tableau de bord", "fire"], ["ça sent le brûlé dans la cabine", "fire"],
+  ["le camion est en feu", "fire"], ["j'ai eu un accident", "acc"], ["j'ai percuté un poteau", "acc"], ["on m'a tamponné", "acc"], ["le camion s'est couché", "acc"], ["j'ai eu un accident mais pas de blessés", "acc"],
+  ["je suis blessé", "injury"], ["je me suis fait mal", "injury"], ["le moteur ne démarre pas", "nostart"], ["le camion ne démarre plus", "nostart"], ["il refuse de démarrer", "nostart"], ["le moteur s'arrête tout seul", "nostart"],
+  ["le moteur cale", "nostart"], ["le moteur chauffe", "engine"], ["le moteur est en surchauffe", "engine"], ["le moteur fait un bruit bizarre", "engine"], ["le camion perd de la puissance", "engine"], ["le camion ne tire plus", "engine"],
+  ["fumée noire à l'échappement", "engine"], ["le moteur fume beaucoup", "engine"], ["le turbo siffle", "engine"], ["le moteur est en mode dégradé", "engine"], ["le rétro est cassé", "mirror"], ["le rétroviseur est tombé", "mirror"],
+  ["le rétroviseur s'est détaché", "mirror"], ["le pare-brise est fissuré", "glass"], ["un caillou a fait un impact sur le pare-brise", "glass"], ["le pare-brise est cassé", "glass"], ["la vitre ne monte pas", "window"], ["la vitre de la portière ne descend plus", "window"],
+  ["les feux ne marchent pas", "lights"], ["le phare gauche est grillé", "lights"], ["le clignotant droit ne fonctionne pas", "lights"], ["les feux de la remorque ne s'allument pas", "lights"], ["sans feux arrière", "lights"], ["l'ampoule est grillée", "lights"],
+  ["le voyant moteur s'est allumé", "warnlight"], ["le voyant ABS est allumé", "warnlight"], ["le tableau de bord affiche une erreur", "warnlight"], ["la batterie est à plat", "batt"], ["la batterie est morte", "batt"], ["le camion n'a plus de batterie", "batt"],
+  ["le chronotachygraphe affiche une erreur", "tacho"], ["le tachygraphe ne lit pas la carte conducteur", "tacho"], ["j'ai perdu ma carte conducteur", "tacho"], ["la carte carburant est bloquée", "fuelcard"], ["la carte DKV ne passe pas", "fuelcard"], ["j'ai perdu les clés", "lost"],
+  ["je ne trouve pas les papiers du camion", "lost"], ["la remorque s'est décrochée", "coupling"], ["la sellette ne ferme pas", "coupling"], ["je suis en panne de gasoil", "dryfuel"], ["plus de gasoil", "dryfuel"], ["le réservoir est vide", "dryfuel"],
+  ["je suis en panne sèche", "dryfuel"], ["le frigo ne refroidit pas", "reefer"], ["le groupe froid est en alarme", "reefer"], ["le thermo king ne démarre pas", "reefer"], ["la clim ne marche pas", "climate"], ["la climatisation ne refroidit pas", "climate"],
+  ["le chauffage ne chauffe pas", "climate"], ["la webasto ne fonctionne pas", "climate"], ["le siège chauffant ne chauffe pas", "cabkit"], ["la bâche est déchirée", "tarp"], ["la bâche a un trou", "tarp"], ["le pot d'échappement est tombé", "exhaust"],
+  ["l'échappement s'est détaché", "exhaust"], ["l'essuie-glace ne marche pas", "visib"], ["les balais n'essuient plus", "visib"], ["le lave-glace ne gicle pas", "visib"], ["la ceinture ne s'attache pas", "seat"], ["le siège descend tout seul", "seat"],
+  ["la porte ne ferme pas", "door"], ["les portes arrière de la remorque ne ferment pas", "door"], ["la serrure est bloquée", "door"], ["le camion est embourbé", "stuck"], ["je suis bloqué dans la neige", "stuck"], ["la plaque est tombée", "numplate"],
+  ["la plaque d'immatriculation s'est détachée", "numplate"], ["les vitesses ne passent pas", "gear"], ["l'embrayage patine", "gear"], ["la boîte craque", "gear"], ["les écrous de roue sont desserrés", "wheel"], ["le roulement chauffe", "wheel"],
+  ["le coussin d'air de la suspension a éclaté", "susp"], ["la suspension est affaissée", "susp"], ["le radar affiche une erreur", "adas"], ["le capteur ne marche pas", "adas"], ["le camion freine tout seul", "adas"], ["on m'a volé le gasoil", "theft"],
+  ["ils ont siphonné le réservoir", "theft"], ["ils ont forcé la cabine", "theft"], ["quelqu'un a rayé la porte", "vandal"], ["le camion a été tagué", "vandal"]];
+  for (const [x, k] of CASES) { eq([...frKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x);
+    ok([...await others(x)].every((o) => o === k), 'übrige Tabellen höchstens derselbe Hinweis: ' + x); }
+  eq([...frKinds('les pneus sont crevés et la remorque s’est décrochée')].sort().join(','), 'coupling,flat', '„et“ vor Artikel trennt Satzteile, zwei Hinweise');
+  eq([...frKinds('le moteur fait du bruit et il perd de l’huile')].sort().join(','), 'engine,leak', 'Motor + Leck');
+  eq([...frKinds('le frein est déjà réparé mais les feux ne marchent pas')].sort().join(','), 'lights', '„mais“ trennt Satzteile: Reparaturvermerk gilt nur für die Bremse');
+  for (const x of ['le frein ne marche pas bien', 'le frein n’a pas été réparé', 'le frein est toujours pas réparé', 'le frein pas encore réparé', 'sans freins', 'les freins marchent plus']) eq([...frKinds(x)].join(), 'brake', 'Mangel trotz „bien“/„réparé“/„sans“/ohne „ne“: ' + x);
+  eq([...frKinds('il y a une fuite d’huile')].join(), 'leak', 'Apostroph: „d’huile“'); eq([...frKinds('LE PARE-BRISE EST FISSURÉ')].join(), 'glass', 'Großschrift/Bindestrich');
+  eq([...frKinds('fumée noire à l’échappement')].join(), 'engine', 'Auspuffrauch = Motor, kein Brand'); eq([...frKinds('le feu arrière est cassé')].join(), 'lights', '„feu arrière“ = Licht, kein Brand');
+  eq([...frKinds('quelqu’un a crevé les pneus')].join(), 'vandal', 'mutwillig zerstochen = Vandalismus, keine Panne');
+  const NO = ["le frein est déjà réparé", "les freins marchent à nouveau", "le pneu a été changé", "tout va bien", "tout est ok, aucun problème", "il ne perd pas d'huile", "pas de fuite", "sans fuite", "il n'y a pas eu d'accident", "aucun accident", "pas de blessés", "on ne m'a rien volé", "pas de fumée", "merci", "je rentre au dépôt", "je suis sur le parking", "mon fils est à l'hôpital", "il fait très chaud aujourd'hui", "il y a beaucoup de bouchons sur l'autoroute", "je suis dans les bouchons", "je vais en direction de Lyon", "j'ai laissé les clés dans la cabine", "le frein marche parfaitement", "demain vidange", "le chauffeur est malade", "mon téléphone n'a plus de batterie", "il ne répond pas", "le ferry ne part pas", "il fait très froid aujourd'hui", "j'ai payé le péage", "le rétro gauche va bien", "j'étais au volant toute la journée", "le camion porte la marchandise à Lyon", "le déchargement est terminé", "j'ai fait le plein de gasoil", "le voyant s'est éteint", "la boîte à gants est pleine", "le feu rouge est long", "excès de vitesse sur la route", "le siège social est à Paris"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Französisch-Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1547 (");
+  const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (frKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Französisch-Tabelle');
+  // Italienisch/Spanisch/Portugiesisch auf französischen Sätzen: höchstens derselbe Hinweis
+  const blk = t.slice(i, t.indexOf('\nawait test(', i + 10)); let nrel = 0;
+  for (const m of blk.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)) { const x = m[2]; const r = [...itKinds(x), ...esKinds(x), ...ptKinds(x)]; if (!r.length) continue; nrel++; ok(r.every((k) => frKinds(x).has(k)), 'Italienisch/Spanisch/Portugiesisch gleicher Hinweis: ' + x); }
+  ok(nrel < 10, 'nur wenige französische Sätze mit italienischem/spanischem/portugiesischem Treffer: ' + nrel);
+  const src = app.slice(app.indexOf('\nconst frFold'), app.indexOf('\nfunction frKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|frCo|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...ptKinds(v), ...itKinds(v), ...frKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const FR_KINDS') && lang.includes('const FR_KINDS'), 'Tabelle nur in app-sprachen.js');
+  for (const x of ['il n’y a pas eu d’accident', 'pas de blessés', 'on ne m’a rien volé', 'personne n’est blessé']) eq([...await fk(x)].join(','), '', 'verneint (FK_NEG): ' + x);
+  eq([...await fk('aucun accident, mais le rétro est cassé')].join(','), 'mirror', 'Verneinung ersetzt nur die Wendung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['les freins ne marchent pas', 'le pneu est crevé', 'le moteur ne démarre pas', 'la cabine brûle', 'il perd de l’huile', 'j’ai eu un accident', 'le voyant moteur s’est allumé', 'le frigo ne refroidit pas', 'les feux ne marchent pas']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['déjà réparé', 'le pneu a été changé', 'tout va bien', 'il ne perd pas d’huile', 'il n’y a pas eu d’accident']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('sans freins') && [...await fk('sans freins')].join() === 'brake', 'Hilfe „sans freins“ = Bremse: ' + l);
+    ok(STRINGS[l].help_report_s.includes('sans feux') && [...await fk('sans feux')].join() === 'lights', 'Hilfe „sans feux“ = Licht: ' + l);
+    ok(STRINGS[l].help_report_s.includes('fumée noire à l’échappement') && [...await fk('fumée noire à l’échappement')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-franzoesisch.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
