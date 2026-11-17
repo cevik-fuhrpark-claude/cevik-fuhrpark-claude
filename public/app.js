@@ -3587,6 +3587,8 @@ const TR_KINDS = [['brake', /\bfren(?:ler|im|leri|lerim)?\s+(?:\S+\s+)?(?:tutmuy
   ['steer', /\bdireksiyon\S*\s+(?:\S+\s+)?(?:kilitlen|kitlen|agir|sert|bosluk|tutmuyor|donmuyor|cekiyor)|\b(?:arac|kamyon|tir)\s+(?:\S+\s+)?(?:saga|sola)\s+cekiyor/],
   ['leak', /\b(?:yag|mazot|motorin|dizel|antifriz|hidrolik|adblue)\S*\s+(?:\S+\s+)?(?:kacir|akiyor|sizdir|sizinti|damli|kacag)/],
   ['acc', /\bkaza\s+(?:yaptim|yaptik|yapti|oldu|gecir)|\bcarp(?:tim|tik|ti|isti|isma)/, /\btas\b|\bcam\b/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:devril(?!me)|takla\s+att|yan\s+yatt|yoldan\s+cikt|sarampol)/, /\b(?:yuk|yukler|yuku|palet|paletler|koli|kasa)\b|devrilme|cikmad/],
   ['injury', /\byaralan|\byarali\b|\bambulans/],
   ['nostart', /\b(?:motor|arac|kamyon|tir)\s+(?:\S+\s+)?(?:calismiyor|calismadi|baslamiyor)|\bmars\s+(?:\S+\s+)?(?:basmiyor|almiyor)/],
   ['mirror', /\bayna\S*\s+(?:\S+\s+)?(?:kiri|kirdim|dustu|koptu|catla|yok\b|ayarlanmiyor|oynuyor|gevse)/],
@@ -3630,6 +3632,8 @@ const PL_KINDS = [['brake', /\bhamul(?:ce|ec|ca|cy|cow)\s+(?:\S+\s+)?(?:nie\s+(?
   ['steer', /\bkierownic\S*\s+(?:\S+\s+)?(?:zablokow|zaciel|ciezk|chodzi\s+ciezko|luz|nie\s+(?:kreci|skreca|dziala))|\bukl\S*\s+kierownicz\S*\s+(?:\S+\s+)?(?:nie\s+dziala|awari)|\b(?:auto|samochod|ciezarowka|ciagnik)\s+(?:\S+\s+)?(?:sciaga|ciagnie)\s+(?:w\s+|na\s+)?(?:prawo|lewo)/],
   ['leak', /\b(?:olej|ropa|ropy|paliwo|plyn|diesel|adblue)\S*\s+(?:\S+\s+)?(?:cieknie|kapie|wycieka|leci|ucieka|sie\s+leje)|\bwyciek\S*\s+(?:\S+\s+)?(?:olej|paliw|ropy|plyn|adblue|diesl)|\b(?:cieknie|kapie|wycieka|leje\s+sie)\s+(?:\S+\s+)?(?:olej|ropa|paliwo|plyn|diesel|adblue)/],
   ['acc', /\b(?:mialem|mielismy|zdarzyl\S*|spowodowal\S*)\s+(?:\S+\s+)?(?:wypadek|kolizj|stluczk)|\bwypadek\b|\bkolizj|\bstluczk|\b(?:uderzyl|walnal|wjechal|najechal|otarl|zarysowal|cofajac\s+uderzyl)\S*/, /kamien|kamyk/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:przewrocil|wywrocil|dachowal)\S*|\b(?:zjechal|wypadl)\S*\s+(?:\S+\s+)?z\s+(?:drogi|jezdni|trasy)|\b(?:wpadl|wjechal|zjechal|zsunal)\S*\s+(?:\S+\s+)?do\s+rowu|\bw\s+rowie\b/, /ladun|towar|palet|skrzyn|karton|\bnie\s+(?:\S+\s+)?(?:przewroc|wywroc|zjechal|wpadl|dachowal)/],
   ['injury', /\branny\b|\branna\b|\bzranion|\bzranil|\bkaretk|\bambulans/],
   ['parkbrake', /\bhamul\S*\s+reczn\S*\s+(?:\S+\s+)?(?:nie\s+(?:trzyma|dziala|puszcza|zaciaga)|zepsut|zaciel)|\b(?:auto|samochod|ciezarowka|naczepa|ciagnik)\s+(?:sie\s+|mi\s+)?(?:stoczyl|zjechal)/],
   ['nostart', /\b(?:silnik|auto|samochod|ciezarowka|ciagnik)\s+(?:\S+\s+)?nie\s+(?:odpala|zapala|startuje|chce\s+odpalic)|\brozrusznik\S*\s+(?:\S+\s+)?nie\s+(?:kreci|dziala)|\bnie\s+(?:moge|mozna)\s+odpalic/],
@@ -3674,6 +3678,8 @@ const RO_KINDS = [['brake', /\bfran(?:a|e|ele)\s+(?:\S+\s+)?(?:nu\s+(?:mai\s+)?(
   ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:blocat|greu|are\s+joc|nu\s+(?:merge|se\s+invarte|vireaza))|\bdirecti\S*\s+(?:\S+\s+)?(?:blocat|defect|nu\s+functioneaza|are\s+joc)|\btrage\s+(?:\S+\s+)?(?:dreapta|stanga)/],
   ['leak', /\b(?:ulei|motorina|combustibil|lichid|antigel|adblue)\S*\s+(?:\S+\s+)?(?:curge|picura|se\s+scurge)|\b(?:curge|picura|pierde|se\s+scurge)\s+(?:\S+\s+)?(?:ulei|motorina|combustibil|lichid|antigel|adblue)|\bscurgere\s+de/],
   ['acc', /\b(?:am\s+(?:avut|facut)|s-a\s+produs)\s+(?:\S+\s+)?(?:accident|tamponare)|\baccident\b|\btampona|\bam\s+(?:lovit|atins|zgariat|agatat)|\bm-a\s+lovit/, /piatr|pietricic/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:s-a\s+rasturnat|m-am\s+rasturnat|rasturnat)|\b(?:am\s+iesit|a\s+iesit|iesit)\s+(?:\S+\s+){0,2}?(?:de\s+pe|din)\s+(?:drum|sosea|carosabil)|\b(?:in|intr-un)\s+sant\b|\bin\s+rapa\b/, /marf|incarcatur|palet|colet|\bnu\s+(?:\S+\s+)?(?:s-a\s+rasturnat|am\s+iesit|a\s+iesit)/],
   ['injury', /\branit[ia]?\b|\bambulant/],
   ['parkbrake', /\bfran\S*\s+de\s+(?:mana|parcare)\s+(?:\S+\s+)?(?:nu\s+(?:tine|functioneaza|se\s+elibereaza)|defect|blocat)|\b(?:camionul|masina|remorca|semiremorca|tractorul)\s+(?:\S+\s+)?(?:a\s+luat-o\s+la\s+vale|a\s+plecat\s+singur)/],
   ['nostart', /\b(?:motorul|camionul|masina|tractorul)\s+(?:\S+\s+)?nu\s+(?:mai\s+)?(?:porneste|vrea\s+sa\s+porneasca)|\bdemaror\S*\s+(?:\S+\s+)?nu\s+(?:merge|functioneaza)|\bnu\s+pot\s+sa\s+pornesc/],
@@ -3718,6 +3724,8 @@ const HR_KINDS = [['brake', /\bkocnic\S*\s+(?:\S+\s+)?(?:ne\s+(?:rade|radi|koce|
   ['steer', /\bvolan\S*\s+(?:\S+\s+)?(?:blokiran|zakljucan|tezak|tesko|ima\s+(?:zazor|luft)|ne\s+(?:okrece|radi))|\bvuce\s+(?:\S+\s+)?(?:desno|lijevo|levo)/],
   ['leak', /\b(?:ulj|goriv|naft|dizel|tecnost|tekucin|antifriz|adblue)\S*\s+(?:\S+\s+)?(?:curi|kapa|cure|ide\s+van)|\b(?:curi|kapa|gubi)\s+(?:\S+\s+)?(?:ulj|goriv|naft|dizel|tecnost|tekucin|antifriz|adblue)/],
   ['acc', /\b(?:imao|imala|imali)\s+(?:sam\s+|smo\s+)?(?:\S+\s+)?(?:nesrec|sudar|udes)|\bnesreca|\bsudar|\budes\b|\b(?:udario|udarila|lupio|ogrebao|okrznuo|zakacio)\b|\budario\s+me/, /kamen/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\bprevrnu\S*|\bsleti\S*\s+(?:\S+\s+)?(?:s|sa)\s+(?:ceste|puta|druma|kolnika)|\bsleti\S*\s+(?:\S+\s+)?u\s+(?:jarak|provaliju)|\bu\s+(?:jarku|jarak)\b/, /teret|palet|tovar|\bnije\s+(?:se\s+)?(?:prevrnu|sleti)/],
   ['injury', /\b(?:povrijed|povred|ozlijed|ozled)\S*|\bhitn\S*\s+pomoc|\bambulant/, /^(?!.*\b(?:vozac\S*|suvozac\S*|covjek|covek|osoba|pjesak|pesak|biciklist\S*|kolega|sam|smo|ja|jas|sum)\b)(?!.*\b(?:hitn|ambulant))(?=.*\b(?:povrijed|povred)).*\b(?:gum|kabin|prikolic|stakl|felg|branik|vrat|karoserij|cerad|retrovizor|ogledal|far|blatobran|kamion|tegljac|auto|sleper|ceradu)/], // Backlog 1466: „povredena guma“ (bulgarisch/mazedonisch lateinisch = beschädigt) ohne Person keine Verletzung
   ['parkbrake', /\brucn\S*\s+(?:kocnic\S*\s+)?(?:\S+\s+)?(?:ne\s+(?:drzi|radi|otpusta)|pokvaren|zaglavil)|\b(?:kamion|auto|prikolica|tegljac|sleper)\S*\s+(?:se\s+)?(?:otkotrlja|sam\s+krenu)/],
   ['nostart', /\b(?:motor|kamion|auto|tegljac)\S*\s+(?:\S+\s+)?(?:ne\s+(?:pali|upaljuje|vata)|nece\s+(?:da\s+)?(?:upali|pali))|\banlaser\S*\s+(?:\S+\s+)?ne\s+radi/],
@@ -3764,6 +3772,8 @@ const HU_KINDS = [['brake', /\bfek(?:ek|et|nek|rendszer\S*|betet\S*|tarcs\S*)?\s
   ['steer', /\bkormany\S*\s+(?:\S+\s+)?(?:beragadt|blokkol|zarol|nehez|nem\s+(?:fordul|mukodik)|kotyog|holtjatek)|\b(?:beragadt|blokkolt|nehez)\s+(?:a\s+)?kormany|\bhuz\s+(?:\S+\s+)?(?:jobbra|balra)/],
   ['leak', /\b(?:olaj|uzemanyag|gazolaj|dizel|diesel|hutoviz|hutofolyadek|folyadek|fagyallo|adblue)\S*\s+(?:\S+\s+)?(?:folyik|csopog|szivarog|ereszt)|\b(?:folyik|csopog|szivarog|ereszt)\s+(?:az?\s+)?(?:\S+\s+)?(?:olaj|uzemanyag|gazolaj|dizel|hutoviz|folyadek|fagyallo|adblue)/],
   ['acc', /\bbaleset|\butkoz|\bosszeutkoz|\bnekimen|\bnekem\s+jott|\bbelem\s+jott|\bkoccan|\bmeghuztam\b|\bsurolt/, /\bko\b|kavics/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\bfelborul|\boldalara\s+(?:dolt|borult|fordult)|\b(?:letert|lesodrod|lecsusz|kisodrod)\S*\s+(?:\S+\s+)?az\s+utrol|\barokba\s+(?:\S+\s+)?(?:csusz|hajt|kerul|borul|fordul|ment)|\b(?:csusz|hajt|kerul|borul|fordul)\S*\s+(?:\S+\s+)?(?:az\s+)?arokba/, /rakomany|raklap|\baru\b|\bnem\s+(?:\S+\s+)?(?:borult|felborul|tert|csusz)/],
   ['injury', /\bmegserultem\b|\bmegsebesul|\bmento(?:t|k|hoz)?\b|\bkorhaz|\bverzik|\bvereztem|\beltort\s+a\s+(?:lab|kez|kar|bord)/],
   ['parkbrake', /\b(?:kezifek|rogzitofek)\S*\s+(?:\S+\s+)?(?:nem\s+(?:fog|tart|mukodik|old|enged)|elromlott|beragadt)|\belgurult/],
   ['nostart', /\b(?:motor|kamion|auto|vontato)\S*\s+(?:\S+\s+)?nem\s+(?:indul|akar\s+(?:be)?indulni)|\bnem\s+(?:akar\s+)?(?:be)?indul(?:ni)?\b|\bonindito\S*\s+(?:\S+\s+)?(?:nem\s+mukodik|rossz|elromlott)/, /huto|agregat|aggregat|klima|futes|webasto|lift|hatfal/],
@@ -3807,6 +3817,8 @@ const CS_KINDS = [['brake', /\bbrzd\S*\s+(?:\S+\s+)?(?:nefunguj|nejd|nebrzd|nedr
   ['steer', /\bvolant\S*\s+(?:\S+\s+)?(?:zablokov|zasek|tezk|tazk|ma\s+vul|nejde|nefunguj)|\b(?:tahne|taha)\s+(?:\S+\s+)?(?:doprava|doleva|vpravo|vlevo|vlavo)/],
   ['leak', /\b(?:olej|naft|palivo|paliva|chladic|chladiac|kapalin|kvapalin|nemrz|adblue|diesel)\S*\s+(?:\S+\s+)?(?:tece|tecie|kape|kvapka|unika|vytek|vytiek)|\b(?:tece|tecie|kape|kvapka|unika|vytek|vytiek)\S*\s+(?:\S+\s+)?(?:olej|naft|palivo|chladic|chladiac|kapalin|kvapalin|nemrz|adblue)/],
   ['acc', /\bnehod|\bhavar|\bsrazk|\bzrazk|\bnaboural|\bnabural|\bnarazil|\bodrel|\bvrazil/, /rezim|kamen|kamienk|kaminek/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:prevratil|prevratila|prevratilo|prevratili|prevraceny|prevrateny)\b|\bsjel\S*\s+(?:\S+\s+)?(?:ze?)\s+(?:silnice|cesty|vozovky|dalnice)|\bzisiel\S*\s+(?:\S+\s+)?z\s+(?:cesty|vozovky|dialnice)|\b(?:do|v)\s+(?:prikopu|priekopy|priekope|prikope)\b/, /naklad|palet/],
   ['injury', /\bzran(?:en|il|ila|ili)\S*|\bzachrank|\bsanitk|\bnemocnic/],
   ['parkbrake', /\b(?:rucni|rucna|parkovaci|parkovacia)\s+brzd\S*\s+(?:\S+\s+)?(?:nedrz|nefunguj|neuvoln|zasekl|nejde)|\b(?:rozjel|rozbehol|pohol|odjel)\S*\s+(?:sa\s+|se\s+)?sam/],
   ['nostart', /\bnenastartuj|\bnestartuj|\b(?:nejde|neda\s+sa)\s+(?:\S+\s+)?nastartovat|\bstarter\S*\s+(?:\S+\s+)?nefunguj/, /agregat|chlad|klim|topen|kurenie|webasto/],
@@ -4274,6 +4286,8 @@ const GE_KINDS = [['brake', /\b(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)
   ['leak', /\b(?:zet|satsvav|dizel|antifriz|tosol|adblu|siti)\S*\s+(?:\S+\s+)?(?:zhonav|gamodis|ighvr|gaedin|chamodis)|\bgazhonv|\bzhonav\S*\s+(?:\S+\s+)?(?:zet|satsvav|dizel|antifriz)/],
   ['fire', /\bitsvis\b|\btsetskhl(?!makr)|\bkhandzar(?!satsin)|\bkvaml/, /\b(?:maquch|gamonabolkv|glushitel|vikhlop)/],
   ['acc', /\bavari(?!ul)|\b(?:davejakh|shemejakh|daejakh|shevejakh|gadabrund|gadavbrund)|\bsagzao\s+(?:\S+\s+)?shemtkhvev/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\bgzidan\s+(?:\S+\s+)?(?:gadavid|gadavard|gadakhd)|\b(?:gadavid|gadavard)\S*\s+(?:\S+\s+)?gzidan|\b(?:arkh|tkhril)\S*\s+(?:\S+\s+)?chavard|\bchavard\S*\s+(?:\S+\s+)?(?:arkh|tkhril)/, /\btvirt|palet|\bar\s+(?:gadavid|gadavard|chavard)/],
   ['injury', /\b(?:dashav|davshav|travm)/],
   ['nostart', /\b(?:dzrav|motor|mankan)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:irtveb|ikokeb)|chakr)|\bver\s+(?:davkok|vkok|gavkok)/],
   ['engine', /\b(?:gadakhurd|khurdeb)|\bdzrav\S*\s+(?:\S+\s+)?(?:simdzlavr|aklebs|khmaur|kakun|kankal)|\b(?:maquch|gamonabolkv)\S*\s+(?:\S+\s+)?kvaml|\bkvaml\S*\s+(?:\S+\s+)?(?:maquch|gamonabolkv)|\bturbin\S*\s+(?:\S+\s+)?(?:gapuch|stvens|khmaur)/],
@@ -4754,6 +4768,8 @@ const HY_KINDS = [['brake', /\b(?:argelak|tormuz|tormoz)\S*\s+(?:\S+\s+)?(?:ch[e
   ['leak', /\b(?:yugh|varelik|dizel|solyar|antifriz|tosol|adblu|jur)\S*\s+(?:\S+\s+)?(?:hos|katum|kat\S*\s+e|artahos)|\bartahos/],
   ['fire', /\bvarvum\s+e\b|\bayrv|\bkrak(?!mar)|\bhrdeh|\btsukh|\bpozhar/, /\b(?:khlatsutsich|glushitel|vikhlop|chek|lamp|indikator|luys|far)/],
   ['acc', /\bvtar(?!ayin)|\bavaria(?:\s|$)|\bavariayi\s+entark|\bbakhv|\bkhpets|\bkhpel\s+em/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:bernatar|mekena|trak|kamaz|kisakts|pritsep|avtomeken)\S*\s+(?:\S+\s+)?(?:shur\s+e\s+ek|shur\s+ekav|shrjv)|\bdurs\s+e\s+ek\S*\s+chanaparh|\bchanaparhits\s+durs|\b(?:arun|arvi|kharam)\b/, /\bber[yi]?\b|palet|\bchi\s+(?:shrjv|shur)/],
   ['injury', /\b(?:viravor|travm|vnasvatsk)/],
   ['nostart', /\b(?:sharzhich|motor|mekena)\S*\s+(?:\S+\s+)?chi\s+(?:mian|varv)|\b(?:sharzhich|motor)\S*\s+(?:\S+\s+)?(?:anjat|hangav)/],
   ['engine', /\b(?:gertakats|takanum|erum\b)|\b(?:sharzhich|motor)\S*\s+(?:\S+\s+)?(?:aghmk|takum|uzh\s+chuni|dzayn)|\b(?:khlatsutsich|glushitel|vikhlop)\S*\s+(?:\S+\s+)?tsukh|\btsukh\S*\s+(?:\S+\s+)?(?:khlatsutsich|glushitel|vikhlop)|\bturbin\S*\s+(?:\S+\s+)?(?:pchats|svvum|dzayn)/],
@@ -4814,6 +4830,8 @@ const GR_KINDS = [['brake', grCo('fren', `den\\s+(?:\\S+\\s+)?(?:pian|krat|stama
   ['leak', /\bdiarro/],
   ['fire', /\b(?:fotia|flog|kaigetai|kaigontai|pyrkagi|kapn)/, /\b(?:pyrosvest|exatmis|eksatmis|kapniz)/],
   ['acc', /\b(?:atychim|trochai|trakar|sygkrus|chtypis(?:a|ame|e)\b|epesa\s+pano)/, /\b(?:petr|chalaz)/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:anatrap|anapodogyris|ekane\s+takla|ektos\s+dromu)|\bvgik\S*\s+(?:\S+\s+){0,2}?apo\s+ton\s+dromo|\bchantak/, /fortio|fortiu|palet|kivoti|\bden\s+(?:\S+\s+)?(?:anatrap|anapodogyris|vgik)/],
   ['injury', /\b(?:travmat|aimorag|kopika\b|traumat)/],
   ['nostart', grCo('kinitir|michan|motor|amaxi|forti|tirakt', 'den\\s+(?:\\S+\\s+)?(?:xekin|anav)|esvise|svinei')],
   ['nostart', /\bden\s+(?:\S+\s+)?pairn\S*\s+(?:\S+\s+)?mpros/],
@@ -5014,6 +5032,8 @@ const ES_KINDS = [['brake', esCo('frenos?', '@|no\\s+frenan?|sin\\s+frenos?|floj
   ['fire', /\b(?:fuego|incendio|se\s+(?:esta\s+)?(?:quema|quemando|incendio|incendia|prendio\s+fuego)|en\s+llamas|ardiendo|llamas|se\s+quemo\s+(?:el|la)\s+(?:camion|cabina|motor|trailer|remolque|carga|troca))\b/, /embrague|clutch|fusible|bombill|foco|comida|cigarr|cerillas|extintor|\bluz|\bluces/],
   ['fire', esCo('cabina|motor|camion|troca|cables?|cableado|bateria|asiento|tablero|salpicadero|trailer|remolque', 'humo|sale\\s+humo|echa\\s+humo|echando\\s+humo|humea|huele\\s+a\\s+quemado|olor\\s+a\\s+quemado'), /escape|tubo|negro|blanco|azul|embrague|frenos?/],
   ['acc', /\b(?:accidente|choque|chocamos|chocado|choco|chocaron|colision|colisione|atropell\S*|me\s+dieron\s+(?:por\s+detras|un\s+golpe)|me\s+golpearon|por\s+alcance|siniestro|vuelco|volque|volcamos|se\s+volco)\b/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:volco|volcado|volcada)\b|\b(?:me\s+sali|se\s+salio|nos\s+salimos)\s+de\s+la\s+(?:carretera|via|calzada|autopista|autovia)|\bcuneta\b/, /carga|palet|mercancia|\bno\s+(?:se\s+)?(?:volco|sali)/],
   ['injury', /\b(?:herid[oa]s?|lesionad[oa]s?|sangr\S*|ambulancia|me\s+(?:lastime|hice\s+dano))\b/],
   ['nostart', /\b(?:no\s+(?:me\s+)?(?:arranca|arrancan|enciende|prende|quiere\s+(?:arrancar|encender|prender)|da\s+contacto|hace\s+contacto)|se\s+(?:me\s+)?(?:apaga|apago|cala|calo)\s+(?:el\s+|solo\s+)?(?:motor|camion|troca)|(?:motor|camion|troca)\s+(?:\S+\s+)?se\s+(?:apaga|apago|cala|calo|muere|murio))\b/, /frigo|equipo\s+de\s+frio|grupo\s+(?:de\s+)?frio|unidad\s+de\s+frio|thermo|termo|carrier|reefer|aire\s+acondicionado|\bclima|calefac|webasto|\bluz|\bluces|faro|foco|pantalla|tablet|movil|telefono|radio/],
   ['engine', esCo('motor', 'se\\s+(?:calienta|recalienta|sobrecalienta|esta\\s+calentando)|recalentad[oa]|sobrecalentad[oa]|calentandose|temperatura\\s+alta|hace\\s+(?:un\\s+)?ruido|ruido\\s+(?:raro|extrano|fuerte)|suena\\s+(?:raro|mal)|golpetea|pierde\\s+(?:fuerza|potencia)|sin\\s+(?:fuerza|potencia)|no\\s+tiene\\s+(?:fuerza|potencia)|no\\s+tira|tironea|da\\s+tirones|modo\\s+(?:de\\s+)?emergencia|vibra|@'), /humo|testigo|chivato|\bluz|arranca|enciende|prende|\bse\s+(?:apaga|apago|cala|calo)\b|muere|murio/],
@@ -5090,6 +5110,8 @@ const PT_KINDS = [['brake', ptCo('travoes|travao|freios?|travagem', '@|nao\\s+(?
   ['fire', /\b(?:fogo|incendio|pegou\s+fogo|pegando\s+fogo|a\s+pegar\s+fogo|(?:esta|estao)\s+a\s+arder|ardendo|em\s+chamas|chamas|labaredas|queimou-?(?:se)?\s+(?:o|a)\s+(?:camiao|caminhao|cabine|cabina|motor|reboque|carga))\b/, /embraiagem|embreagem|fusivel|lampada|comida|cigarr|fosforo|isqueiro|extintor|\bluz|\bluzes/],
   ['fire', ptCo('cabine|cabina|motor|camiao|caminhao|cabos?|cablagem|fiacao|fios|bateria|bancos?|assentos?|painel|tablier|reboque', 'fumo|fumaca|sai\\s+(?:fumo|fumaca)|deita\\s+fumo|solta\\s+fumaca|cheira\\s+a\\s+queimado|cheiro\\s+(?:a|de)\\s+queimado|cheirando\\s+a\\s+queimado'), /escape|escapamento|tubo|pret[oa]|branc[oa]|azul|muito\s+fum|muita\s+fum|embraiagem|embreagem|travoes|travao|freios?|cigarro/],
   ['acc', /\b(?:acidente|bati|batemos|bateram|batida|colisao|colidi|colidiu|choquei|chocamos|choque\s+com|embati|embateu|embate|abalroad[oa]|atropel\S*|capotou|capotei|tombou|tombei|tombamento|despistei|despistou|sinistro)\b/, /biela|ponto|porta|meta|recorde|coracao|sino|bateria/],
+  // [CLAUDE] Backlog 1563: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (wie „Lkw ist umgekippt“); Ladung umgekippt und Verneinung ohne
+  ['acc', /\b(?:sai|saiu|saimos)\s+(?:\S+\s+)?da\s+(?:estrada|pista|via|autoestrada|rodovia)|\b(?:na|numa)\s+(?:vala|valeta|ribanceira)\b/, /carga|palet|\bnao\s+(?:\S+\s+)?(?:sai|caiu)/],
   ['injury', /\b(?:ferid[oa]s?|magoad[oa]s?|machucad[oa]s?|me\s+machuquei|machuquei-?me|magoei-?me|me\s+magoei|sangr\S*|sangue|ambulancia|lesionad[oa]s?)\b/],
   ['nostart', /\b(?:nao\s+(?:me\s+)?(?:pega|arranca|liga|da\s+(?:partida|ignicao|arranque|sinal\s+de\s+vida)|quer\s+(?:pegar|arrancar|ligar|trabalhar))|(?:motor|camiao|caminhao)\s+(?:\S+\s+)?(?:morreu|morre|desliga\s+sozinho|desligou\s+sozinho|apaga|apagou|vai\s+abaixo|foi\s+abaixo|parou\s+(?:de\s+repente|sozinho|em\s+andamento))|(?:desliga|desligou|apaga|apagou|morre|morreu|foi\s+abaixo|vai\s+abaixo)\s+(?:o\s+)?(?:motor|camiao|caminhao))\b/, /frio|frigorific|maquina\s+de\s+frio|thermo|termo|carrier|reefer|ar\s+condicionado|ar-condicionado|climatiz|aquecimento|webasto|sofagem|\bluz|\bluzes|farol|farois|pisca|seta|ecra|tela|tablet|telemovel|celular|telefone|radio|gps|wifi|computador|cartao|tacografo|ninguem|chefe|cliente|escritorio|despacho|\bele\b|\bela\b/],
   ['engine', ptCo('motor', 'aquece|aquecendo|a\\s+aquecer|sobreaquec\\S*|superaquec\\S*|temperatura\\s+alta|faz\\s+(?:um\\s+)?(?:barulho|ruido)|barulho\\s+(?:estranho|esquisito|forte)|ruido\\s+(?:estranho|esquisito)|bate|batendo|a\\s+bater|(?:perde|perdendo|a\\s+perder)\\s+(?:forca|potencia)|sem\\s+(?:forca|potencia)|nao\\s+(?:tem\\s+)?(?:forca|potencia)|nao\\s+puxa|engasga|engasgando|a\\s+engasgar|modo\\s+de\\s+emergencia|@'), /(?:nao|sem)\s+(?:me\s+)?(?:pega|arranca|liga|da)|morreu|morre|desliga|apaga|abaixo|fumo|fumaca|cheir|pinga|vaza|verte|perde\s+(?:oleo|agua|gasoleo|diesel|refrigerante|adblue)|fuga|vazamento|\bluz|testemunho|frio|frigorific|thermo|carrier|reefer/],
