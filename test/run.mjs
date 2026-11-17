@@ -44110,7 +44110,7 @@ await test('Backlog 1547 (Blickwinkel „Fahrer aus Frankreich/Belgien schreibt 
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|frCo|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
-  ok(app.includes('...ptKinds(v), ...itKinds(v), ...frKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...ptKinds(v), ...itKinds(v), ...frKinds(v)'), 'in foreignKinds aufgenommen'); // Backlog 1548: danach ...nlKinds(v)
   ok(!main.includes('const FR_KINDS') && lang.includes('const FR_KINDS'), 'Tabelle nur in app-sprachen.js');
   for (const x of ['il n’y a pas eu d’accident', 'pas de blessés', 'on ne m’a rien volé', 'personne n’est blessé']) eq([...await fk(x)].join(','), '', 'verneint (FK_NEG): ' + x);
   eq([...await fk('aucun accident, mais le rétro est cassé')].join(','), 'mirror', 'Verneinung ersetzt nur die Wendung');
@@ -44121,6 +44121,69 @@ await test('Backlog 1547 (Blickwinkel „Fahrer aus Frankreich/Belgien schreibt 
     ok(STRINGS[l].help_report_s.includes('sans feux') && [...await fk('sans feux')].join() === 'lights', 'Hilfe „sans feux“ = Licht: ' + l);
     ok(STRINGS[l].help_report_s.includes('fumée noire à l’échappement') && [...await fk('fumée noire à l’échappement')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-franzoesisch.py'), 'UI-Prüfung in pruefen.sh');
+});
+await test('Backlog 1548 (Blickwinkel „Fahrer aus den Niederlanden/Belgien schreibt Niederländisch/Flämisch“, Backlog 195): „de remmen werken niet“, „de band is lek“, „de motor start niet“, „de cabine staat in brand“, „hij verliest olie“, „ik heb een ongeluk gehad“, „de frigo koelt niet“, „ze hebben de diesel gestolen“ u. a. → dieselben Hinweise (NL_KINDS über nlFold, Akzente/Apostroph/Bindestrich egal, „werkt niet“ auch mit Objekt dazwischen und flämisch „ni/nie“); Reparaturvermerk („al gerepareerd“, „de band is vervangen“, „alles in orde“), Verneinung („hij verliest geen olie“, „het lekt niet“, „er was geen ongeluk“) und Alltagssätze ohne; „zonder remmen“/„zonder achterlicht“ und „nog niet gerepareerd“ sind Mängel; „het motorlampje brandt“ = Warnleuchte (kein Brand), „achter het stuur“/„ik stuur je een foto“/„op slot“/„bakwagen“ ohne; Auspuffrauch Motor; andere Sprachen unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { nlKinds, frKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { nlKinds, frKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...nlKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [["de remmen werken niet", "brake"], ["de rem werkt niet meer", "brake"], ["de vrachtwagen remt niet", "brake"], ["zonder remmen", "brake"], ["de remmen zijn slap", "brake"], ["de remmen piepen heel erg", "brake"],
+["de rem werkt niet goed", "brake"], ["de luchtdruk zakt", "brake"], ["de handrem gaat niet los", "parkbrake"], ["de parkeerrem zit vast", "parkbrake"], ["de vrachtwagen is vanzelf weggerold", "parkbrake"], ["de band is lek", "flat"],
+["ik heb een lekke band", "flat"], ["een band is geklapt", "flat"], ["de band van de oplegger is ontploft", "flat"], ["het wiel is plat", "flat"], ["de band voor verliest lucht", "flat"], ["de band loopt leeg", "flat"],
+["de band is kaal", "tyre"], ["de band heeft een bult", "tyre"], ["de banden zijn erg versleten", "tyre"], ["het stuur is zwaar", "steer"], ["het stuur heeft speling", "steer"], ["het stuur trilt heel erg", "steer"],
+["de vrachtwagen trekt naar rechts", "steer"], ["hij verliest olie", "leak"], ["de motor lekt olie", "leak"], ["er is een lek in de dieselleiding, de diesel lekt", "leak"], ["de diesel loopt eruit", "leak"], ["de adblue druppelt eronder", "leak"],
+["de radiateur lekt", "leak"], ["de cabine staat in brand", "fire"], ["de motor heeft vlam gevat", "fire"], ["er komt rook uit de cabine", "fire"], ["het dashboard rookt", "fire"], ["het ruikt naar verbrand in de cabine", "fire"],
+["de vrachtwagen staat in brand", "fire"], ["ik heb een ongeluk gehad", "acc"], ["ik heb een paal geraakt", "acc"], ["ik ben aangereden", "acc"], ["de vrachtwagen is gekanteld", "acc"], ["ik heb een aanrijding gehad maar geen gewonden", "acc"],
+["ik ben gewond", "injury"], ["ik heb me pijn gedaan", "injury"], ["de motor start niet", "nostart"], ["de vrachtwagen start niet meer", "nostart"], ["hij wil niet starten", "nostart"], ["de motor slaat af", "nostart"],
+["de motor valt steeds uit", "nostart"], ["de motor wordt te warm", "engine"], ["de motor is oververhit", "engine"], ["de motor maakt een raar geluid", "engine"], ["de vrachtwagen verliest vermogen", "engine"], ["de vrachtwagen trekt niet meer", "engine"],
+["zwarte rook uit de uitlaat", "engine"], ["de motor rookt heel veel", "engine"], ["de turbo fluit", "engine"], ["de motor staat in noodloop", "engine"], ["de spiegel is kapot", "mirror"], ["de spiegel is eraf gevallen", "mirror"],
+["de buitenspiegel hangt los", "mirror"], ["de voorruit is gebarsten", "glass"], ["steenslag in de voorruit", "glass"], ["de voorruit is kapot", "glass"], ["het raam gaat niet omhoog", "window"], ["het raam van de deur gaat niet meer naar beneden", "window"],
+["de lichten werken niet", "lights"], ["de linker koplamp is doorgebrand", "lights"], ["de rechter knipperlicht doet het niet", "lights"], ["de achterlichten van de oplegger branden niet", "lights"], ["zonder achterlicht", "lights"], ["de lamp is kapot", "lights"],
+["het motorlampje brandt", "warnlight"], ["het ABS lampje is aangegaan", "warnlight"], ["het dashboard geeft een foutmelding", "warnlight"], ["de accu is leeg", "batt"], ["de accu is dood", "batt"], ["de vrachtwagen heeft een lege accu", "batt"],
+["de tachograaf geeft een foutmelding", "tacho"], ["de tachograaf leest de chauffeurskaart niet", "tacho"], ["ik ben mijn chauffeurskaart kwijt", "tacho"], ["de tankkaart is geblokkeerd", "fuelcard"], ["de DKV-kaart werkt niet", "fuelcard"], ["ik ben de sleutels kwijt", "lost"],
+["ik vind de papieren van de vrachtwagen niet", "lost"], ["de oplegger is losgeraakt", "coupling"], ["de koppelschotel sluit niet", "coupling"], ["ik sta zonder diesel", "dryfuel"], ["geen diesel meer", "dryfuel"], ["de tank is leeg", "dryfuel"],
+["de diesel is op", "dryfuel"], ["de frigo koelt niet", "reefer"], ["de koelmachine staat in alarm", "reefer"], ["de thermo king start niet", "reefer"], ["de airco werkt niet", "climate"], ["de airco koelt niet", "climate"],
+["de verwarming wordt niet warm", "climate"], ["de standkachel doet het niet", "climate"], ["de stoelverwarming wordt niet warm", "cabkit"], ["het zeil is gescheurd", "tarp"], ["er zit een gat in de huif", "tarp"], ["de uitlaat is eraf gevallen", "exhaust"],
+["de uitlaat hangt los", "exhaust"], ["de ruitenwisser werkt niet", "visib"], ["de wissers wissen niet meer", "visib"], ["de ruitensproeier spuit niet", "visib"], ["de gordel klikt niet vast", "seat"], ["de stoel zakt vanzelf naar beneden", "seat"],
+["de deur gaat niet dicht", "door"], ["de achterdeuren van de oplegger sluiten niet", "door"], ["het slot zit vast", "door"], ["de vrachtwagen zit vast in de modder", "stuck"], ["ik zit vast in de sneeuw", "stuck"], ["de kentekenplaat is eraf gevallen", "numplate"],
+["de nummerplaat is losgeraakt", "numplate"], ["de versnellingen schakelen niet", "gear"], ["de koppeling slipt", "gear"], ["de versnellingsbak kraakt", "gear"], ["de wielmoeren zitten los", "wheel"], ["het wiellager wordt heet", "wheel"],
+["de luchtbalg van de vering is geklapt", "susp"], ["de vering is ingezakt", "susp"], ["de radar geeft een foutmelding", "adas"], ["de sensor werkt niet", "adas"], ["de vrachtwagen remt vanzelf", "adas"], ["ze hebben de diesel gestolen", "theft"],
+["de tank is afgetapt", "theft"], ["er is ingebroken in de cabine", "theft"], ["iemand heeft de deur bekrast", "vandal"], ["de vrachtwagen is beklad", "vandal"]];
+  for (const [x, k] of CASES) { eq([...nlKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x);
+    ok([...await others(x)].every((o) => o === k), 'übrige Tabellen höchstens derselbe Hinweis: ' + x); }
+  eq([...nlKinds('de band is lek en de oplegger is losgeraakt')].sort().join(','), 'coupling,flat', '„en“ vor Artikel trennt Satzteile, zwei Hinweise');
+  eq([...nlKinds('de motor maakt lawaai en hij verliest olie')].sort().join(','), 'engine,leak', 'Motor + Leck');
+  eq([...nlKinds('de rem is al gerepareerd maar de lichten werken niet')].sort().join(','), 'lights', '„maar“ trennt Satzteile: Reparaturvermerk gilt nur für die Bremse');
+  for (const x of ['de rem werkt niet goed', 'de rem is nog niet gerepareerd', 'de rem is nog steeds niet gemaakt', 'zonder remmen', 'de remmen werken nog steeds niet', 'de remmen pakken nie']) eq([...nlKinds(x)].join(), 'brake', 'Mangel trotz „goed“/„gerepareerd“/„zonder“/flämisch: ' + x);
+  eq([...nlKinds("m'n band is plat")].join(), 'flat', 'Apostroph: „m’n“'); eq([...nlKinds('DE VOORRUIT IS GEBARSTEN')].join(), 'glass', 'Großschrift');
+  eq([...nlKinds('zwarte rook uit de uitlaat')].join(), 'engine', 'Auspuffrauch = Motor, kein Brand'); eq([...nlKinds("'t lampje brandt")].join(), 'warnlight', '„brandt“ = Warnleuchte, kein Brand');
+  eq([...nlKinds('de pinkers werken ni')].join(), 'lights', 'flämisch „pinkers“/„ni“'); eq([...nlKinds('de DKV-kaart werkt niet')].join(), 'fuelcard', 'Bindestrich: „DKV-kaart“');
+  eq([...nlKinds('iemand heeft de banden lek gestoken')].join(), 'vandal', 'mutwillig zerstochen = Vandalismus, keine Panne');
+  const NO = ["de rem is al gerepareerd", "de remmen werken weer", "de band is vervangen", "alles in orde", "alles ok, geen problemen", "hij verliest geen olie", "geen lekkage", "het lekt niet", "er was geen ongeluk", "geen aanrijding", "geen gewonden", "er is niets gestolen", "geen rook", "dank je", "ik rij terug naar het depot", "ik sta op de parking", "mijn zoon ligt in het ziekenhuis", "het is heel warm vandaag", "er staat veel file op de snelweg", "ik sta in de file", "ik rij richting Antwerpen", "ik heb de sleutels in de cabine gelaten", "de rem werkt perfect", "morgen olie verversen", "de chauffeur is ziek", "mijn telefoon heeft geen batterij meer", "hij neemt niet op", "de veerboot vertrekt niet", "het is erg koud vandaag", "ik heb de tol betaald", "de linker spiegel is goed", "ik zat de hele dag achter het stuur", "ik stuur je een foto", "het lossen is klaar", "ik heb diesel getankt", "het lampje is uit", "de deur zit op slot", "de bakwagen is geladen", "het motorlampje brandt niet meer"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Niederländisch-Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1548 (");
+  const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (nlKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Niederländisch-Tabelle');
+  const src = app.slice(app.indexOf('\nconst nlFold'), app.indexOf('\nfunction nlKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|nlCo|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...itKinds(v), ...frKinds(v), ...nlKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const NL_KINDS') && lang.includes('const NL_KINDS'), 'Tabelle nur in app-sprachen.js');
+  for (const x of ['er was geen ongeluk', 'geen gewonden', 'er is niets gestolen', 'niemand is gewond', 'geen aanrijding']) eq([...await fk(x)].join(','), '', 'verneint (FK_NEG): ' + x);
+  eq([...await fk('geen aanrijding, maar de spiegel is kapot')].join(','), 'mirror', 'Verneinung ersetzt nur die Wendung');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['de remmen werken niet', 'de band is lek', 'de motor start niet', 'de cabine staat in brand', 'hij verliest olie', 'ik heb een ongeluk gehad', 'het motorlampje brandt', 'de frigo koelt niet', 'de lichten werken niet']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['al gerepareerd', 'de band is vervangen', 'alles in orde', 'hij verliest geen olie', 'er was geen ongeluk']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('zonder remmen') && [...await fk('zonder remmen')].join() === 'brake', 'Hilfe „zonder remmen“ = Bremse: ' + l);
+    ok(STRINGS[l].help_report_s.includes('nog niet gerepareerd') && [...await fk('de rem is nog niet gerepareerd')].join() === 'brake', 'Hilfe „nog niet gerepareerd“ = Mangel: ' + l);
+    ok(STRINGS[l].help_report_s.includes('zwarte rook uit de uitlaat') && [...await fk('zwarte rook uit de uitlaat')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-niederlaendisch.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
