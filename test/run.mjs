@@ -44460,7 +44460,7 @@ await test('Backlog 1557 (Blickwinkel „Fahrer schreibt die Meldung auf Kurdisc
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|kuRx|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   ok(ids.length >= 21, 'mindestens 21 Hinweisarten (Stufe 2: Test 1558)'); eq(new Set(CASES.map((c) => c[1])).size, 21, 'jede Hinweisart mit mindestens einem Beispiel');
-  ok(app.includes('...nlKinds(v), ...kuKinds(v), ...lxRun('), 'in foreignKinds aufgenommen');
+  ok(app.includes('...nlKinds(v), ...kuKinds(v), '), 'in foreignKinds aufgenommen');
   ok(!main.includes('const KU_KINDS') && lang.includes('const KU_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['fren naxebite', 'lastîk teqiya', 'motor dest pê nake', 'kabîn dişewite', 'rûn diherike', 'min qeza kir', 'derî venabe', 'mazot hat dizîn', 'frîgo sar nake']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
@@ -44504,6 +44504,39 @@ await test('Backlog 1558 (Kurmancî Stufe 2, Backlog 195): „takograf naxebite�
   for (const l of ['de', 'uk', 'en']) { for (const x of ['takograf naxebite', 'dorse girê nabe', 'vites nakeve', 'branda qetiya', 'mifte winda bû', 'karta mazotê naxebite', 'kamyon di heriyê de asê ma', 'bar şemitî', 'qayîşa barê qetiya']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
     ok(STRINGS[l].help_report_s.includes('qayîşa motorê qetiya') && (await fk('qayîşa motorê qetiya')).size === 0, 'Hilfe Keilriemen ohne Hinweis: ' + l); }
   const ui = readFileSync(new URL('../scripts/ui-meldung-kurmanci.py', import.meta.url), 'utf8'); ok(ui.includes('Backlog 1558') && ui.includes('"qayîşa barê qetiya", "lashgear"'), 'UI-Prüfung Stufe 2');
+});
+await test('Backlog 1559 (Blickwinkel „Fahrer schreibt die Meldung auf Sorani (Zentralkurdisch, arabische Schrift)“, Backlog 195): „بریک کار ناکات“, „تایەکە تەقی“, „ئاگر کەوتە لۆرییەکە“, „ڕۆن دەڕژێت“, „ڕووداوێکم کرد“, „شووشەی پێشەوە شکا“, „دەرگاکە ناکرێتەوە“, „گازوایل تەواو بوو“ u. a. → dieselben Hinweise wie auf Deutsch (SO_KINDS über soLat; vorher kein Hinweis); Reparaturvermerk, Verneinung, Ersatzrad ohne; persische/arabische Sätze ohne Hinweis aus der Tabelle', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { soKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { soKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...soKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [['بریکەکان کار ناکەن', 'brake'], ['بریک کار ناکات', 'brake'], ['بریکی دەست ناگرێت', 'parkbrake'], ['تایەکە تەقی', 'flat'], ['تایەی دواوە تەقییەوە', 'flat'], ['تایه تەقی', 'flat'],
+    ['ستێرنەکە قورسە', 'steer'], ['ڕۆن دەڕژێت', 'leak'], ['ئاگر کەوتە لۆرییەکە', 'fire'], ['دووکەڵ لە کابینەکە دێت', 'fire'], ['ڕووداوێکم کرد', 'acc'], ['بریندار بووم', 'injury'],
+    ['ماتۆڕەکە دەست پێ ناکات', 'nostart'], ['ماتۆڕەکە ئیش ناکات', 'engine'], ['ماتۆڕەکە زۆر گەرم بووە', 'engine'], ['ئاوێنەکە شکا', 'mirror'], ['شووشەی پێشەوە شکا', 'glass'],
+    ['گڵۆپەکان کار ناکەن', 'lights'], ['گڵۆپی سوور هەڵکرد', 'warnlight'], ['باتری بەتاڵە', 'batt'], ['گازوایل دزرا', 'theft'], ['دەرگاکە ناکرێتەوە', 'door'], ['موکەیەف سارد ناکاتەوە', 'climate'],
+    ['ساردکەرەوە سارد ناکاتەوە', 'reefer'], ['گازوایل تەواو بوو', 'dryfuel']];
+  for (const [x, k] of CASES) { eq([...soKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); eq([...await others(x)].join(','), '', 'vorher ohne Hinweis: ' + x); }
+  eq([...soKinds('بریکەکان کار ناکەن و ڕۆن دەڕژێت')].sort().join(','), 'brake,leak', '„و“ trennt Satzteile');
+  const NO = ['بریک چاککرا', 'هیچ ڕووداوێک نییە', 'شووشەکە نەشکاوە', 'ڕۆن ناڕژێت', 'تایەی یەدەگ تەقی', 'ماتۆڕەکە ئیش دەکات', 'سڵاو', 'من لە ڕێگام'];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: übrige Test-Zeichenketten (auch Persisch/Arabisch aus 1503/1504) bekommen aus der Sorani-Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1559 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (soKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Sorani-Tabelle');
+  for (const x of ['ترمز کار نمی‌کند', 'لاستیک پنچر شد', 'الفرامل لا تعمل', 'الإطار انفجر']) eq(soKinds(x).size, 0, 'persisch/arabisch nicht über Sorani: ' + x);
+  const src = app.slice(app.indexOf('\nconst SO_MAP'), app.indexOf('\nfunction soKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|soRx|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 20, '20 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 20, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...kuKinds(v), ...soKinds(v), ...lxRun('), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const SO_KINDS') && lang.includes('const SO_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['بریک کار ناکات', 'تایەکە تەقی', 'ئاگر کەوتە لۆرییەکە', 'ڕۆن دەڕژێت', 'ڕووداوێکم کرد', 'دەرگاکە ناکرێتەوە']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['چاککرا', 'هیچ ڕووداوێک نییە']) ok(STRINGS[l].help_report_s.includes(x), 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-sorani.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
