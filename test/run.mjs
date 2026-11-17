@@ -44347,6 +44347,32 @@ await test('Backlog 1553 (Blickwinkel „Ausländischer Fahrer meldet: Reifen ka
     for (const x of ['колесо сломалось', 'шина не сломана']) ok(STRINGS[l].help_report_s.includes(x) && !flat(x), 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
 });
 
+await test('Backlog 1554 (Blickwinkel „Ausländischer Fahrer meldet verrutschte Ladung oder gerissene Spanngurte“, Stufe 4 zu 1549, Backlog 195): Bulgarisch „товарът се измести“, „палетите паднаха“, „се измести товарът“ → Ladung, „коланът за товара е скъсан“, „спанзетът е скъсан“, „тресчотката е счупена“ → Sicherungsmittel (vorher kein Hinweis); Verneinung, Nachsichern, Sicherheitsgurt, umgekippter Lkw ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const load = (code) => new Function(code.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang);
+  const CASES = [['товарът се измести', 'load'], ['товарът падна', 'load'], ['палетите паднаха', 'load'], ['стоката се разпадна', 'load'], ['се измести товарът', 'load'], ['паднаха палетите', 'load'], ['кашоните се срутиха', 'load'],
+    ['коланът за товара е скъсан', 'lashgear'], ['колан за товара скъсан', 'lashgear'], ['спанзетът е скъсан', 'lashgear'], ['скъса се колан за товара', 'lashgear'], ['тресчотката е счупена', 'lashgear'], ['ремъците са скъсани', 'lashgear'],
+    ['товарът се измести и огледалото е счупено', 'load,mirror']];
+  for (const [x, k] of CASES) eq([...await fk(x)].sort().join(','), k, x);
+  for (const x of ['товарът не се измести', 'товарът не падна', 'спанзетът не е скъсан', 'товарът е тежък', 'палетите са наред', 'камионът се обърна', 'товарът се измести и го укрепих отново'])
+    eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  for (const x of ['предпазният колан е скъсан', 'колани са скъсани']) ok(!(await fk(x)).has('lashgear'), 'Sicherheitsgurt kein Ladungssicherungsmittel: ' + x);
+  const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1554/.test(l) && /^\s+\/\//.test(l)) { let j = k + 1; while (/^  \['(?:load|lashgear)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 2, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1554 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ' → ' + b + ' / ' + a); }
+  eq(d.slice(0, 5).join(' | '), '', 'übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes('izmest\\S*|premest') && lang.includes('izmest\\S*|premest'), 'nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['товарът се измести', 'палетите паднаха']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'load', 'Hilfe nennt Ladung: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('коланът за товара е скъсан') && [...await fk('коланът за товара е скъсан')].join() === 'lashgear', 'Hilfe nennt Sicherungsmittel: ' + l);
+    ok(STRINGS[l].help_report_s.includes('товарът не се измести') && (await fk('товарът не се измести')).size === 0, 'Hilfe nennt Verneinung: ' + l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
