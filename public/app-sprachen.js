@@ -671,6 +671,8 @@ const BE_KINDS = [['brake', /\b(?:tarmaz|tormaz)\S*\s+(?:\S+\s+)?(?:ne\s+(?:prat
   ['dryfuel', /\b(?:skonchyl|zakonchyl)\S*\s+(?:\S+\s+)?(?:paliv|saliark|dyzel)|\b(?:paliv|saliark|dyzel)\S*\s+(?:\S+\s+)?(?:skonchyl|zakonchyl)|\bniama\s+(?:bolsh\s+)?(?:paliv|saliark)/, /aharehat|khaladz|refryzh/],
   ['engine', /\b(?:rukhavik|mator)\S*\s+(?:\S+\s+)?(?:perahra|hlokhne|zahlokh|ne\s+tsiahne|tsiahne\s+drenna|traschae)|\bavaryin\S*\s+rezhym|\b(?:hlushyts|vykhlap)\S*\s+(?:\S+\s+)?dymits|\bdym\S*\s+(?:\S+\s+)?(?:z|sa)\s+(?:\S+\s+)?(?:hlushyts|vykhlap)/],
   ['tyre', /\bshyn\S*\s+(?:\S+\s+)?(?:pashkodzhan|parezan|zatsert|hryzh|tratsits\s+pavetr|spuskae\s+pavetr)/, /lopnul|prabit/],
+
+  ['flat', /\b(?:shyn|pakryshk)\S*\s+(?:\S+\s+)?(?:zlamal|zlaman|sapsaval|sapsavan|paramal|paraman)|\b(?:zlamal|sapsaval)\S*\s+(?:\S+\s+)?(?:shyn|pakryshk)/, /zapasn|\bne\s+(?:zlamal|sapsaval|paramal)/],
   ['reefer', /\b(?:khaladziln|refryzh|aharehat|termo\s*kin|carrier)\S*\s+(?:\S+\s+)?(?:ne\s+(?:khalodz|pratsu|zavodz)|pamylk|alarm|spynius|zahlokh)/],
   ['susp', /\b(?:padushk|pneumapadushk|pnevmapadushk|pneumaresor)\S*\s+(?:\S+\s+)?(?:spuska|lopnul|tratsits|prapuska|travits)|\bpadviesk\S*\s+(?:\S+\s+)?(?:ne\s+pratsu|zlaman)/, /siadz|krasl/],
   ['gear', /\bperadach\S*\s+(?:\S+\s+)?ne\s+(?:ukliuch|uklia|ida|uvakho)|\bkarobk\S*\s+(?:\S+\s+)?(?:pamylk|zlaman|ne\s+pratsu|ne\s+pierakliuch)|\bschaplenn\S*\s+(?:\S+\s+)?(?:buksu|ne\s+pratsu|zharel|zhareu|zhare)/],
@@ -855,6 +857,8 @@ const UZ_KINDS = [['brake', uzRx('tormoz|tormaz', '@|ushlama\\S*|tutma\\S*|yoq\\
   ['parkbrake', /\b(?:qol\s+tormoz\S*|ruchnik\S*)\s+(?:\S+\s+){0,2}?(?:ishlama|ushlama|tutma|buzil|buzuq)\S*|\bozi\s+(?:\S+\s+)?(?:yurib|dumalab|siljib)\s+ket\S*/],
   ['flat', uzRx('shina|balon|ballon|gildirak|koles|pokrishka', 'teshil\\S*|yoril\\S*|portla\\S*|dami\\s+chiq\\S*|havosi\\s+(?:chiq|ket|tush)\\S*|pachaq\\S*|prokol\\S*', '\\b(?:teshil|portla|yoril)\\S*\\s+(?:\\S+\\s+)?(?:shina|balon|ballon|gildirak)|\\bprokol\\s+bol\\S*'), /podushka|yostig|yostiq|tent/],
   ['tyre', uzRx('shina|balon|ballon|pokrishka|protektor', 'yeyil\\S*|kesil\\S*|shish\\S*|grija\\S*|gryja\\S*|tekis\\s+bol\\S*|siliq\\S*|darz\\S*'), /teshil|portla|yoril|dami\s+chiq|havosi/],
+
+  ['flat', uzRx('shina|balon|ballon|pokrishka', '@'), /zapas|ehtiyot|podushka|yostig|yostiq|tent/],
   ['steer', uzRx('rul', '@|qattiq\\S*|ogir\\S*|aylanma\\S*|tiqil\\S*|qimirla\\S*|bush\\S*', '\\b(?:ongga|onga|chapga)\\s+(?:\\S+\\s+)?tort(?:yapti|ib|adi|ayapti|moqda)\\S*'), /podushka|xavfsizlik/],
   ['leak', uzRx('moy|maslo|solyarka|salyarka|dizel|yoqilgi|antifriz|tosol|sovutish\\s+suyuq|adblue|gidravlik', 'oq(?:yapti|ayapti|moqda|ib|di|yabdi)\\b|tomchila\\S*|tom(?:yapti|ib)\\b|siz(?:ib|yapti|moqda)\\b|ketyapti|ketib\\s+qolyapti', '\\b(?:oqyapti|oqib\\s+yotibdi)\\s+(?:\\S+\\s+)?(?:moy|solyarka|antifriz|dizel)'), /tugadi|tugab|qolmadi|chiroq|chirog|lampochka/],
   ['fire', uzRx(UZ_FIRE_N, 'yon(?:yapti|ayapti|ib\\s+ket\\S*|ib\\s+qol\\S*|moqda|di)\\b|olov\\S*', '\\byongin\\S*|\\b(?:tutun|dud)\\S*\\s+(?:\\S+\\s+)?(?:chiq|ket)\\S*|\\bolov\\s+(?:\\S+\\s+)?(?:chiq|ol)\\S*|\\bot\\s+ket(?:di|ib)\\b'), /glushitel|glushak|vyxlop|vixlop|truba|ochirgich|ognetush|chiro|lampochka|indikator|check|chek|panel|sigaret|chiqma/],
@@ -905,6 +909,8 @@ const AZ_KINDS = [['brake', azRx('eylec|tormoz', '@|tutmur\\S*|saxlamir\\S*|yoxd
   ['parkbrake', /\b(?:el\s+eylec\S*|rucnik\S*)\s+(?:\S+\s+){0,2}?(?:isleme|islemir|tutmur|saxlamir|xarab)\S*|\b(?:oz\s+ozune|ozbasina)\s+(?:\S+\s+)?(?:getdi|diyirlendi|surusdu|yurudu)\b/],
   ['flat', azRx('teker|sin(?:ler|i|in|lerin)?(?![a-z])|balon|kolyos|pokriska', 'partla(?:di|yib|yibdi|mis)\\b|desil\\S*|havasi\\s+(?:cix|get|dus)\\S*|yatib\\b|yatdi\\b|prokol\\S*', '\\bprokol\\s+(?:oldu|olub)\\b|\\b(?:partladi|desildi)\\s+(?:\\S+\\s+)?(?:teker|sin\\b)'), /podus|yastiq|tent/],
   ['tyre', azRx('teker|sin(?:ler|i|in|lerin)?(?![a-z])|protektor|pokriska', 'yeyil\\S*|kesil\\S*|sisib\\S*|qabar\\S*|hamarla\\S*|cat(?:la\\S*|\\s+var)'), /partla|desil|havasi|prokol/],
+
+  ['flat', azRx('sin(?:ler|i|in|lerin)?(?![a-z])|pokriska', '@'), /ehtiyat|zapas|olmay|olmad|podus|yastiq|tent/],
   ['steer', azRx('sukan|rul', '@|agir\\S*|berk\\S*|firlanmir\\S*|oynayir\\S*|ilis\\S*', '\\b(?:saga|sola)\\s+(?:\\S+\\s+)?cek(?:ir|ib|di)\\b'), /tehlukesizlik|podus/],
   ['leak', azRx('yag|maslo|solyarka|dizel|yanacaq|antifriz|tosol|soyuducu\\s+maye|adblue|hidravlik|gidravlik', 'ax(?:ir|di|ib|idir)\\b|siz(?:ir|di|ib)\\b|damcila\\S*|damir\\b|tokul(?:ur|ub|du)\\b|gedir\\b', '\\bax(?:ir|ib)\\s+(?:\\S+\\s+)?(?:yag|solyarka|antifriz|dizel)'), /qurtar|bitdi|qalmadi|lampa|isiq|indikator|kart/],
   ['fire', azRx(AZ_FIRE_N, 'yan(?:ir|di|ib\\s+(?:gedir|getdi))\\b|alis(?:di|ib|ir)\\b|od\\s+tut\\S*', '\\byangin\\S*|\\btustu\\S*\\s+(?:\\S+\\s+)?(?:cix|gel)\\S*|\\bod\\s+(?:tutdu|tutub|aldi)\\b|\\balov\\S*'), /egzoz|qlusitel|glusitel|vixlop|vyxlop|truba|sondurucu|ognetus|lampa|isiq|indikator|check|cek|panel|siqaret/],
@@ -956,6 +962,8 @@ const KZ_KINDS = [['brake', kzRx('tejegish|tormoz|tormaz', '@|ustamay\\S*|joq\\b
   ['parkbrake', /\b(?:qol\s+tejegish|ruchnik)\S*\s+(?:\S+\s+){0,2}?(?:istemey|ustamay|buzyl)\S*|\b(?:ozdiginen|oz\s+ozinen)\s+(?:\S+\s+)?(?:jurip\s+ketti|domalap\s+ketti|jyljyp\s+ketti)\b/],
   ['flat', kzRx('dongelek|dongalaq|shina|balon|ballon|koles|pokryshk', 'jaryl(?:dy|yp|ypty|gan)\\b|tesil(?:di|ip|ipti|gen)\\b|auasy\\s+(?:shyg|ket|tus)\\S*|prokol\\S*', '\\bprokol\\s+(?:boldy|bolyp)\\S*|\\b(?:jaryldy|tesildi)\\s+(?:\\S+\\s+)?(?:dongelek|shina|balon)'), /podushka|jastyq|tent/],
   ['tyre', kzRx('dongelek|shina|protektor|pokryshk|rezina', 'toz(?:dy|yp|gan)\\S*|kesil\\S*|isin(?:ip|di|gen)\\S*|jaryqshaq\\S*|tegis\\s+bol\\S*'), /jaryl|tesil|auasy|prokol/],
+
+  ['flat', kzRx('shina|balon|ballon|pokryshk', '@'), /zapas|qosalq|podushka|jastyq|tent/],
   ['steer', kzRx('rul|rol(?!ik)', '@|auyr\\S*|qatty\\S*|aynalmay\\S*|kepti\\S*|solqyl\\S*', '\\b(?:onga|solga)\\s+(?:\\S+\\s+)?tart(?:ady|yp|ty)\\b'), /podushka|qauipsizdik/],
   ['leak', kzRx('may|maslo|solyarka|dizel|janarmay|otyn|antifriz|tosol|salqyndatqysh\\s+suyyq|adblue|gidravlik', 'ag(?:yp|ady|ypty)\\b|aqty\\b|tamshyla\\S*|tamyp\\b|syzyp\\b|ketip\\s+jatyr', '\\bagyp\\s+(?:jatyr|tur)\\s+(?:\\S+\\s+)?(?:may|solyarka|antifriz|dizel)'), /bitti|tausyl|qalmady|sham|lampoch|indikator|karta/],
   ['fire', kzRx(KZ_FIRE_N, 'jan(?:yp\\s+(?:jatyr|ketti|tur)|dy|ypty)\\b|ort\\s+(?:shyq|shyg|ald)\\S*|tutin\\S*\\s+(?:\\S+\\s+)?(?:shyg|bur)\\S*', '\\bort\\s+(?:shyq|shyg|ket|ald)\\S*|\\borten\\S*|\\btutin\\S*\\s+(?:\\S+\\s+)?(?:shyg|bur)\\S*'), /glushitel|vyhlop|shygaru|sondirgish|ognetush|sham|lampoch|indikator|check|chek|panel|siga/],
@@ -1005,6 +1013,8 @@ const KY_KINDS = [['brake', kyRx('tormoz|tormuz', '@|karmabay\\S*|jok\\b|alsyz\\
   ['parkbrake', /\b(?:kol\s+tormoz|ruchnik)\S*\s+(?:\S+\s+){0,2}?(?:ishtebe|karmabay|buzul)\S*|\b(?:ozunon\s+ozu|ozu\s+ozunon)\s+(?:\S+\s+)?(?:jylyp|jyljyp|jurup|tomolop)\s+ketti\b/],
   ['flat', kyRx('dongolok|shina|balon|ballon|koles|pokryshk', 'jaryl(?:dy|yp|gan)\\b|teshil(?:di|ip|gen)\\b|abasy\\s+(?:chyk|chyg|ket|tush)\\S*|prokol\\S*', '\\bprokol\\s+(?:boldu|bolup)\\S*|\\b(?:jaryldy|teshildi)\\s+(?:\\S+\\s+)?(?:dongolok|shina|balon)'), /podushka|jazdyk|tent/],
   ['tyre', kyRx('dongolok|shina|protektor|pokryshk|rezina', 'jeshil\\S*|kesil\\S*|shish(?:ip|ti|ken)\\S*|jaraka\\S*|tegiz\\s+bol\\S*'), /jaryl|teshil|abasy|prokol/],
+
+  ['flat', kyRx('shina|balon|ballon|pokryshk', '@'), /zapas|kosumcha|podushka|jazdyk|tent/],
   ['steer', kyRx('rul|rol(?!ik)', '@|oor\\b|oorlap\\S*|katuu\\S*|burulbay\\S*|kyst\\S*|solkul\\S*', '\\b(?:ongo|solgo)\\s+(?:\\S+\\s+)?tart(?:at|yp|ty)\\S*'), /podushka|koopsuzduk/],
   ['leak', kyRx('may|maslo|solyarka|dizel|antifriz|tosol|adblue|gidravlik', 'ag(?:yp|at|ypty)\\S*|akty\\b|tamchyla\\S*|tamyp\\b|syzyp\\b|ketip\\s+jatat', '\\bagyp\\s+(?:jatat|turat)\\s+(?:\\S+\\s+)?(?:may|solyarka|antifriz|dizel)'), /buttu|tugon|kalbady|chyra[kg]|lampoch|indikator|karta/],
   ['fire', kyRx(KY_FIRE_N, 'kuyup\\s+(?:jatat|ketti|tur)\\S*|kuydu\\b|ort\\s+(?:chyk|chyg|ald)\\S*|tutun\\S*\\s+(?:\\S+\\s+)?(?:chyg|chyk|burk)\\S*', '\\bort\\s+(?:chyk|chyg|ket|ald)\\S*|\\bortton\\S*|\\btutun\\S*\\s+(?:\\S+\\s+)?(?:chyg|chyk|burk)\\S*'), /glushitel|vyhlop|chygaruuchu|ochurguch|ognetush|chyra[kg]|lampoch|indikator|check|chek|panel|sigaret|kubaty|jarygy/],
@@ -1058,6 +1068,8 @@ const TJ_KINDS = [['brake', tjRx('tormoz|tormaz', `@|${TJ_NOT}gir\\S*|nagirift\\
   ['parkbrake', new RegExp(`\\b(?:tormoz\\S*\\s+dasti|ruchnik)\\S*\\s+(?:\\S+\\s+){0,2}?(?:kor\\s+${TJ_NOT}kun|${TJ_NOT}gir|vayron)\\S*|\\b(?:hud\\s+ba\\s+hud|hudash)\\s+(?:\\S+\\s+)?(?:harakat\\s+kard|ravon\\s+shud|gelid|gelida\\s+raft)\\S*`)],
   ['flat', tjRx('charh|shina|ballon|balon|koles|pokryshk', 'tarkid\\S*|suroh\\s+shud\\S*|havo\\S*\\s+(?:baromad|raft|holi\\s+shud)\\S*|prokol\\S*', '\\bprokol\\s+shud\\S*|\\btarkid\\S*\\s+(?:\\S+\\s+)?(?:charh|shina|ballon)|\\bhavo\\S*\\s+(?:\\S+\\s+)?(?:charh|shina|ballon)\\S*\\s+(?:baromad|raft)\\S*'), /podushka|bolisht|tent/],
   ['tyre', tjRx('charh|shina|protektor|pokryshk|rezina', 'hurda\\s+shud\\S*|sud(?:a|ida)\\s+shud\\S*|burida\\s+shud\\S*|varam\\s+kard\\S*|kafid\\S*|hamvor\\s+shud\\S*'), /tarkid|suroh|havo|prokol/],
+
+  ['flat', tjRx('shina|ballon|balon|pokryshk', '@|shikast\\S*'), /zapas|ehtiyot|nashud|podushka|bolisht|tent/],
   ['steer', tjRx('rul', `@|vaznin\\S*|${TJ_NOT}gard\\S*|bozi\\s+dor\\S*|melarz\\S*|larzid\\S*`, '\\b(?:moshin|mashin)\\S*\\s+(?:\\S+\\s+)?(?:ba\\s+)?(?:tarafi\\s+)?(?:rost|chap)\\s+mekash\\S*'), /podushka|bolisht|behatar/],
   ['leak', tjRx('ravgan|maslo|solyarka|dizel|antifriz|tosol|adblue|gidravlik', 'merez\\S*|rehta\\s+istod\\S*|chakid\\S*|mechak\\S*|tarovish\\S*', '\\bmerezad\\s+(?:\\S+\\s+)?(?:ravgan|solyarka|antifriz|dizel)'), /tamom|holi\s+shud|namond|charog|chirog|lampoch|indikator|k[ao]rt/],
   ['fire', tjRx(TJ_FIRE_N, 'mesuz\\S*|suht\\b|suhta\\s+(?:istod|ravad)\\S*|otash\\s+girift\\S*|dud\\s+(?:mebaro|baromad)\\S*', '\\botash\\s+girift\\S*|\\bsuhtor\\S*|\\bdud\\S*\\s+(?:\\S+\\s+)?(?:mebaro|baromad)\\S*'), /glushitel|vyhlop|lulai\s+dud|ognetush|charog|chirog|lampoch|indikator|check|chek|panel|sigaret|tamoku/],

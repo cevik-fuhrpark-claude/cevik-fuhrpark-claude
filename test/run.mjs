@@ -42098,7 +42098,7 @@ await test('Backlog 1506 (Blickwinkel „Fahrer schreibt die Meldung auf Usbekis
   // russische/ukrainische Sätze: usbekische Tabelle trifft nichts (die Hinweise kommen aus den RU/UK-Mustern)
   for (const x of ["тормоз не работает", "колесо пробито", "авария на дороге", "мотор перегрелся", "двигун не заводиться"]) eq([...uzKinds(x)].join(','), '', 'nicht usbekisch: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (andere Sprachen, Russisch/Ukrainisch kyrillisch und lateinisch, Türkisch …) trifft die usbekische Tabelle
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1506"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1506"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   // seit Backlog 1509: kirgisische Sätze teilen usbekische Wörter („шина тешилди“, „шина шишип кетти“) – erlaubt, solange die übrigen Tabellen denselben Hinweis zeigen
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...faKinds(v), ...uzKinds(v), ', '...faKinds(v), ') + 'return foreignKinds;')();
@@ -42129,7 +42129,7 @@ await test('Backlog 1507 (Blickwinkel „Fahrer schreibt die Meldung auf Aserbai
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Türkisch, Usbekisch, Russisch/Ukrainisch …) bekommt durch die aserbaidschanische Tabelle einen Hinweis,
   // den die übrigen Tabellen nicht ohnehin zeigen (Türkisch und Aserbaidschanisch teilen Wörter wie „partladı“/„yaralandım“ – dann gleicher Hinweis)
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1507"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1507"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...uzKinds(v), ...azKinds(v), ', '...uzKinds(v), ') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = azKinds(fkNeg(x)); if (!a.size) continue; /* Backlog 1539: foreignKinds entfernt verneinte Wendungen vor allen Tabellen */ const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -42160,7 +42160,7 @@ await test('Backlog 1508 (Blickwinkel „Fahrer schreibt die Meldung auf Kasachi
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Russisch/Ukrainisch kyrillisch, Usbekisch, Aserbaidschanisch, Türkisch …) bekommt durch die kasachische Tabelle
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1508"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1508"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...azKinds(v), ...kzKinds(v), ', '...azKinds(v), ') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = kzKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -42191,7 +42191,7 @@ await test('Backlog 1509 (Blickwinkel „Fahrer schreibt die Meldung auf Kirgisi
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Kasachisch, Russisch/Ukrainisch kyrillisch, Usbekisch, Türkisch …) bekommt durch die kirgisische Tabelle
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1509"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1509"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...kyKinds(v)', '') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = kyKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -42758,7 +42758,7 @@ await test('Backlog 1511 (Blickwinkel „Fahrer schreibt die Meldung auf Tadschi
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Kirgisisch, Kasachisch, Usbekisch, Russisch/Ukrainisch …) bekommt durch die tadschikische Tabelle
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1511"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1511"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...tjKinds(v)', '') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = tjKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -44324,7 +44324,7 @@ await test('Backlog 1553 (Blickwinkel „Ausländischer Fahrer meldet: Reifen ka
   // Gegenprobe Start-Modul: FLAT2 ohne die neuen Alternativen liefert für alle übrigen Testsätze dasselbe Ergebnis
   const s2 = src('FLAT2_HINT'), cut = s2.indexOf('(?<![a-zäöüß-])reifen'); ok(s2.startsWith('(?:(?<![а-яіїєґё])(?<!запасн') && cut > 0, 'neue Alternativen vorne in FLAT2_HINT');
   const F0 = [F[0], new RegExp('(?:' + s2.slice(cut), 'i'), F[2]], flat0 = (x) => F0.some((r) => r.test(x));
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1553 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1553 ("); const i5 = t.indexOf("\nawait test('Backlog 1555 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10), i5) + t.slice(t.indexOf('\nawait test(', i5 + 10));
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const d1 = []; for (const x of strs) if (flat(x) !== flat0(x)) d1.push(x); eq(d1.slice(0, 5).join(' | '), '', 'Start-Modul: übrige Testsätze unverändert');
   // Serbisch/Mazedonisch über foreignKinds
@@ -44371,6 +44371,41 @@ await test('Backlog 1554 (Blickwinkel „Ausländischer Fahrer meldet verrutscht
   for (const l of ['de', 'uk', 'en']) { for (const x of ['товарът се измести', 'палетите паднаха']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'load', 'Hilfe nennt Ladung: ' + l + ' ' + x);
     ok(STRINGS[l].help_report_s.includes('коланът за товара е скъсан') && [...await fk('коланът за товара е скъсан')].join() === 'lashgear', 'Hilfe nennt Sicherungsmittel: ' + l);
     ok(STRINGS[l].help_report_s.includes('товарът не се измести') && (await fk('товарът не се измести')).size === 0, 'Hilfe nennt Verneinung: ' + l); }
+});
+
+await test('Backlog 1555 (Blickwinkel „Ausländischer Fahrer meldet: Reifen kaputt“, Stufe 4, Backlog 195): ukrainisch „опона зламалася/зіпсована“, „опону порвало“, belarussisch „шына зламалася“, kasachisch „шина бұзылды“, kirgisisch „шина бузулду“, usbekisch „shina buzildi“, tadschikisch „шина вайрон шуд/шикаст“, aserbaidschanisch „şin xarab oldu“ → Reifenpanne (vorher kein Hinweis); Rad, Ersatzrad, Verneinung ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const src = (n) => app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1];
+  const F = ['FLAT_HINT', 'FLAT2_HINT', 'FLAT3_HINT'].map((n) => new RegExp(src(n), 'i')), flat = (x) => F.some((r) => r.test(x));
+  for (const x of ['опона зламалася', 'опона зламана', 'опона зіпсована', 'зламалася опона', 'опону порвало', 'порвало опону', 'опона на причепі зламалася'])
+    ok(flat(x), 'Reifenpanne: ' + x);
+  for (const x of ['опона не зламана', 'запасна опона зламалася', 'опона не порвана', 'опонент порвав', 'опона зламалася, замінили', 'шина зламалась, замінили'])
+    ok(!flat(x), 'ohne Reifenpanne: ' + x);
+  // Gegenprobe Start-Modul: FLAT2 ohne „опона“ liefert für alle übrigen Testsätze dasselbe Ergebnis
+  const s2 = src('FLAT2_HINT'); ok(s2.split('|опон(?:а|у|и|ою|і)').length === 5, 'опона in vier Alternativen');
+  const F0 = [F[0], new RegExp(s2.split('|опон(?:а|у|и|ою|і)').join(''), 'i'), F[2]], flat0 = (x) => F0.some((r) => r.test(x));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1555 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d1 = []; for (const x of strs) if (flat(x) !== flat0(x)) d1.push(x); eq(d1.slice(0, 5).join(' | '), '', 'Start-Modul: übrige Testsätze unverändert');
+  // BE/KZ/KY/UZ/TJ/AZ über foreignKinds
+  const load = (code) => new Function(code.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang);
+  for (const x of ['шына зламалася', 'шына зламаная', 'шына сапсавалася', 'пакрышка зламалася', 'зламалася шына', 'шина бұзылды', 'шина бұзылып қалды', 'шина істен шықты', 'шина бузулду', 'шина бузулуп калды',
+    'shina buzildi', 'shina buzilib qoldi', 'balon buzildi', 'шина бузилди', 'шина вайрон шуд', 'шина шикаст', 'shina vayron shud', 'şin xarab oldu', 'şin sıradan çıxdı'])
+    ok((await fk(x)).has('flat'), 'Reifenpanne: ' + x);
+  for (const x of ['шына не зламалася', 'запасная шына зламалася', 'кола зламалася', 'шина бұзылған жоқ', 'қосалқы шина бұзылды', 'дөңгелек бұзылды', 'шина бузулган жок', 'shina buzilmadi', 'zapas shina buzildi', "g'ildirak buzildi",
+    'шина вайрон нашуд', 'şin xarab olmayıb', 'ehtiyat şin xarab oldu'])
+    eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1555/.test(l) && /^\s+\/\//.test(l)) { let j = k + 1; while (/^  \['flat'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 6, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old), d2 = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d2.push(x + ' → ' + b + ' / ' + a); }
+  eq(d2.slice(0, 5).join(' | '), '', 'Sprachmodul: übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes("kzRx('shina|balon|ballon|pokryshk', '@')"), 'Kasachisch nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].help_report_s.includes('опона зламалася') && flat('опона зламалася'), 'Hilfe nennt опона: ' + l);
+    for (const x of ['шына зламалася', 'шина бұзылды', 'шина бузулду', 'shina buzildi', 'шина вайрон шуд', 'şin xarab oldu']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).has('flat'), 'Hilfe nennt Reifenpanne: ' + l + ' ' + x);
+    for (const x of ['дөңгелек бұзылды', 'shina buzilmadi']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
