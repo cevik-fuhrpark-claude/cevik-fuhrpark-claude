@@ -1789,7 +1789,7 @@ const kuFold = (s) => ' ' + String(s || '').toLowerCase().replace(/ê/g, 'e').re
   .replace(/[’'`´-]/g, ' ').replace(/\s+/g, ' ') + ' ';
 const KU_D = 'naxebit\\S*|x(?:e|i)rab?\\s+(?:bu|buye|bun|ye|e)\\b|arize\\s+(?:da|daye|heye)\\b';
 const kuRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,3}?(?:${d.split('@').join(KU_D)})${extra ? '|' + extra : ''}`);
-const KU_NEG = /\b(?:qeza|agir|duman|du|birindar\S*|problem\S*|pirsgirek\S*|xisar\S*|zirar\S*|dizi|herikin)\s+(?:\S+\s+)?(?:tune|tuneye|nebu|nebuye|cenebu|cenebuye)\b|\bne\s+(?:sikest|sikiya|teqi|herik|sewit|x(?:e|i)rab?|qewim)\S*|\bne(?:sikest|sikiya|teqi|herik|sewit|qewim)\S*|\bna(?:herik|sewit)\S*/g;
+const KU_NEG = /\b(?:qeza|agir|duman|du|birindar\S*|problem\S*|pirsgirek\S*|xisar\S*|zirar\S*|dizi|herikin)\s+(?:\S+\s+)?(?:tune|tuneye|nebu|nebuye|cenebu|cenebuye)\b|\bne\s+(?:sikest|sikiya|teqi|herik|sewit|x(?:e|i)rab?|qewim|qeti|semiti)\S*|\bne(?:sikest|sikiya|teqi|herik|sewit|qewim|qeti|semiti)\S*|\bna(?:herik|sewit)\S*/g;
 const KU_OK = /\b(?:hat|hate|hatin|hatiye|hatine)\s+(?:cekirin|guhertin|tamirkirin|tamir\s+kirin|saz\s+kirin)\b|\b(?:min|me|em|wan|wi|mekanik\S*|tamirk\S*|hosta)\s+(?:\S+\s+){0,2}?(?:cekir|guhert|tamir\s+kir|saz\s+kir)\b|\b(?:bas|bes)\s+(?:e|ye|bu)\b|\b(?:careke\s+din|disa|niha)\s+dixebit\S*|\bdixebit\S*\s+(?:careke\s+din|disa|niha)\b/;
 const KU_LAMP = 'lamba|cira|isaret|nisan|ampul|gosterge';
 const KU_KINDS = [['brake', kuRx('fren|firen', '@|nagir\\S*|qels\\S*|sist\\s+(?:bu|e|ye)\\b|tune\\b'), /\bfren\S*\s+(?:a\s+)?dest|\bdest\s+fren/],
@@ -1803,7 +1803,7 @@ const KU_KINDS = [['brake', kuRx('fren|firen', '@|nagir\\S*|qels\\S*|sist\\s+(?:
   ['nostart', /\b(?:motor|kamyon|tir|ereb)\S*\s+(?:\S+\s+){0,2}?(?:dest\s+pe\s+nake|venake|naqelib\S*|hilnaye)/],
   ['engine', kuRx('motor', '@|germ\\s+bu\\S*|zede\\s+germ\\S*|gelek\\s+germ\\S*|deng\\s+(?:dide|dike)|hez\\s+nake|kes\\s+nake', '\\b(?:egzoz|eksoz)\\S*\\s+(?:\\S+\\s+){0,2}?du(?:man)?\\s+res'), /dest\s+pe\s+nake|venake|naqelib/],
   ['mirror', kuRx('neynik|eyne|ayna|awene', '@|sikest\\S*|sikiya\\S*|ket\\b|ketiye|qelis\\S*|tirisk\\S*')],
-  ['glass', kuRx('cam|sise', 'sikest\\S*|sikiya\\S*|qelis\\S*|tirisk\\S*|derz\\S*'), /neynik|ayna|eyne|cira|far\b|pencere\s+(?:aliy|kenar)/],
+  ['glass', kuRx('cam|sise', 'sikest\\S*|sikiya\\S*|qelis\\S*|tirisk\\S*|derz\\S*'), /neynik|ayna|eyne|cira|far\b|pencere\s+(?:aliy|kenar)|silecek|paqijk/],
   ['lights', kuRx('cira|ronahi|far|stop|sinyal|ampul', '@|venab\\S*|natewe\\S*|nadin\\S*|sikest\\S*|tari\\s+(?:ye|e)\\b'), /lamba\s+sor|ronahiya\s+hisyar/],
   ['warnlight', new RegExp(`\\b(?:${KU_LAMP})\\S*\\s+(?:\\S+\\s+){0,3}?(?:veket\\S*|peket\\S*|disewit\\S*|sewiti\\S*|vebu\\b|dibiriq\\S*|biriqi\\S*)`), /naxebit|venab|natewe/],
   ['batt', kuRx('aku|aqu|bateri|akumulator', '@|vala\\s+(?:ye|e|bu|buye)\\b|mir\\b|miriye|qediya\\S*|bar\\s+nake')],
@@ -1812,6 +1812,28 @@ const KU_KINDS = [['brake', kuRx('fren|firen', '@|nagir\\S*|qels\\S*|sist\\s+(?:
   ['climate', kuRx('klima|kalorifer|germker', '@|sar\\s+nake|germ\\s+nake')],
   ['reefer', kuRx('frigo|frigorifik|sarker|sarinc|termo\\s*king|thermo\\s*king|carrier', '@|sar\\s+nake|sar\\s+nabe|germ\\s+bu\\S*')],
   ['breakdown', /\b(?:kamyon|kamyona|ereb\S*|tir|tira|maqin\S*|wesait\S*|trak\S*|otomobil\S*)\s+(?:\S+\s+){0,2}?(?:x(?:e|i)rab?\s+(?:bu|buye)\b|li\s+(?:ser\s+)?re\s+ma|di\s+re\s+de\s+ma)/],
+
+
+
+  ['tyre', /\b(?:lastik|lastiq)\S*\s+(?:\S+\s+){0,3}?(?:hatiye\s+birin|hat\s+birin|biriye|biri\s+(?:ye|e)\b|kevin\s+bu\S*|werimi\S*|zirar\s+dit\S*)|\bbaye\s+(?:\S+\s+)?(?:teker|lastik)\S*\s+(?:\S+\s+)?kem\s+(?:e|ye|bu|buye|dibe)\b/, /yedek|stepne|teker\S*\s+(?:a\s+)?zede/],
+  ['tacho', new RegExp(`\\b(?:takograf|tahograf|taxograf)\\S*\\s+(?:\\S+\\s+){0,3}?(?:${KU_D}|sikest\\S*|qeyd\\s+nak\\S*|nanivis\\S*|xelet\\S*|cewt\\S*)|\\bkart\\S*\\s+(?:a\\s+)?(?:sofer|ajokar)\\S*\\s+(?:\\S+\\s+){0,2}?(?:${KU_D}|naye\\s+xwendin|naxwin\\S*|winda\\s+bu\\S*|sikest\\S*|ase\\s+ma\\S*|dernak\\S*)|\\b(?:min|me)\\s+kart\\S*\\s+(?:a\\s+)?(?:sofer|ajokar)\\S*\\s+(?:\\S+\\s+)?winda\\s+kir`)],
+  ['coupling', /\b(?:dorse|romork|treyler)\S*\s+(?:\S+\s+){0,3}?(?:gire\s+nabe|giredan\s+nabe|naye\s+giredan|qetiya\S*|veqetiya\S*|qut\s+bu\S*|kilit\s+nab\S*|kilit\s+nak\S*)|\b(?:semer|besinci\s+teker|teker\S*\s+(?:a\s+)?pencemin|kili[td]\S*\s+(?:a\s+)?dorse)\S*\s+(?:\S+\s+){0,2}?(?:naxebit\S*|venab\S*|nagir\S*|kilit\s+nab\S*|x(?:e|i)rab?\s+bu\S*)/, /deri|branda|fren|cira|lamba|far\b|lastik|plaka|kemer|qayis/],
+  ['wheel', /\b(?:bijon|somun)\S*\s+(?:\S+\s+){0,2}?(?:sist\s+(?:bu|bun|bune|buye|e|in)\b|ket\b|ketin\b|ketine|ketiye|tune\b|winda\s+bu\S*|qetiya\S*)|\bjant\S*\s+(?:\S+\s+){0,2}?(?:sikest\S*|qelisi\S*|xwar\s+bu\S*|tirisk\S*)|\b(?:teker|rulman|poyra)\S*\s+(?:\S+\s+){0,2}?(?:dileq\S*|leqi\S*|dihej\S*|sist\s+(?:bu|e|ye)\b|germ\s+bu\S*|zede\s+germ\S*)/, /yedek|stepne|teker\S*\s+(?:a\s+)?zede\s+(?!germ)/],
+  ['gear', kuRx('vites|sanziman|sanzuman|girbox|gerbox', '@|nakev\\S*|nace\\b|nacin\\S*|naguher\\S*', '\\b(?:debriyaj|debreyaj|kavrama)\\S*\\s+(?:\\S+\\s+){0,2}?(?:' + KU_D + '|nagir\\S*|dixisik\\S*|xisiya\\S*|patinaj\\S*)')],
+  ['exhaust', kuRx('egzoz|eksoz|ekzos', '@|qetiya\\S*|ket\\b|ketiye|kun\\s+(?:bu|e|ye)\\b|deng\\s+(?:dide|dike)|sikest\\S*'), /du(?:man)?\s+res/],
+  ['window', /\b(?:pencere|cam)\S*\s+(?:\S+\s+){0,3}?(?:danakev\S*|hilnakev\S*|naye\s+(?:xwar|jor)|nace\s+(?:jor|xwar)|nacin\S*\s+(?:jor|xwar)|venab\S*|naye\s+vekirin|ase\s+ma\S*)/, /\bderi\S*\s+(?:\S+\s+)?(?:venab|venebu|naye\s+girtin)|neynik|ayna|eyne/],
+  ['tarp', kuRx('branda|cadir|tente', 'qetiya\\S*|ciri\\S*|dirriya\\S*|kun\\s+bu\\S*|firiya\\S*|vebu\\S*')],
+  ['susp', kuRx('koruk|balon|amortisor|makas|suspansiyon|suspension', '@|teqi\\S*|qetiya\\S*|sikest\\S*|daket\\S*|bay\\S*\\s+(?:\\S+\\s+)?(?:diherik\\S*|dice|cu)\\b', '\\b(?:kamyon|tir|dorse)\\S*\\s+(?:\\S+\\s+){0,3}?aliyek\\S*\\s+(?:ve\\s+)?(?:xwar|daket)\\S*'), /sukan|kursi|kemer/],
+  ['seat', /\bkemer\S*\s+(?:\S+\s+){0,2}?(?:nagir\S*|naye\s+(?:girtin|qefilandin)|qetiya\S*|sikest\S*|naxebit\S*|kilit\s+nab\S*|venab\S*)|\bkursi\S*\s+(?:\S+\s+){0,2}?(?:sikest\S*|dileq\S*|leqi\S*|daket\S*|naxebit\S*)/, /\bbar|palet|qayis|dorse|germ/],
+  ['lost', /\b(?:mifte|kilit|kilid|ruxset|ruxsat|ruhsat)\S*\s+(?:\S+\s+){0,2}?(?:winda\s+(?:bu|bun|e|ye)\S*|nabin\S*)|\b(?:min|me)\s+(?:\S+\s+)?(?:mifte|kilit|kilid|ruxset|ruxsat|ruhsat)\S*\s+(?:\S+\s+)?winda\s+kir/, /kart|dorse/],
+  ['numplate', kuRx('plaka|plake|plaqe', 'ket\\b|ketiye|ketibu|winda\\s+bu\\S*|sikest\\S*|qetiya\\S*|naye\\s+xwendin'), /cira|lamba|ronahi|ampul/],
+  ['visib', kuRx('silecek|siliker|paqijker', '@|paqij\\s+nak\\S*|sikest\\S*|qetiya\\S*|ranawest\\S*|nalivi\\S*', '\\bcam\\S*\\s+(?:\\S+\\s+){0,2}?(?:buxar|hilm|mij)\\S*\\s+(?:dibe|bu|digire|girt|dike|kir)\\b')],
+  ['stuck', /\b(?:heri|berf|qum|cemed|qesa|kamyon|tir|dorse|ereb)\S*\s+(?:\S+\s+){0,3}?ase\s+(?:ma|bu|maye|buye|mam|man|bum)\b|\bdi\s+(?:heri|berf|qum)\S*\s+de\s+(?:ma|mam|maye|man)\b|\b(?:qesa|cemed)\S*\s+(?:\S+\s+)?(?:dixisik\S*|xisiya\S*|disemit\S*|semiti\S*)/, /deri|pencere|\bcam|kart|vites/],
+  ['fuelcard', new RegExp(`\\bkart\\S*\\s+(?:a\\s+)?(?:mazot|mazut|benzin|soteme|yaqit|akaryakit)\\S*\\s+(?:\\S+\\s+){0,2}?(?:${KU_D}|winda\\s+bu\\S*|bloke\\s+(?:bu|buye|e|ye)\\b|qebul\\s+nak\\S*|naye\\s+(?:qebul|xwendin)\\S*|sikest\\S*)|\\b(?:min|me)\\s+kart\\S*\\s+(?:a\\s+)?(?:mazot|mazut|benzin|soteme)\\S*\\s+(?:\\S+\\s+)?winda\\s+kir`)],
+  ['adas', kuRx('radar|sensor|senzor|asistan', '@|xelet\\S*|cewt\\S*|nas\\s+nak\\S*', '\\b(?:kamyon|tir|ereb)\\S*\\s+(?:\\S+\\s+){0,2}?bi\\s+xwe\\s+(?:\\S+\\s+)?fren\\s+(?:dike|kir|digire|girt)\\b'), /frigo|takograf|park/],
+  ['vandal', /\b(?:kesek\S*|kesan|hinekan)\s+(?:\S+\s+){0,4}?(?:xez\s+kir\S*|kun\s+kir\S*|sikand\S*|birr?in\b|boyax\s+kir\S*)/],
+  ['load', /\b(?:bar|bare|barek|palet\S*|koli\S*)\s+(?:\S+\s+){0,2}?(?:semiti\S*|disemit\S*|hilwesiya\S*|ket\b|ketin\b|ketine|ketiye|wergeriya\S*)/, /\b(?:ji\s+nu\s+ve|disa)\s+(?:\S+\s+)?(?:gire\s*da|sabit\s+kir|sidand)/],
+  ['lashgear', /\b(?:qayis\S*|spanset\S*|spanzet\S*|sapan\S*|circir\S*|(?:zincir|kemer)\S*\s+(?:a\s+)?bar\S*)\s+(?:\S+\s+){0,2}?(?:qetiya\S*|qetiyan|sikest\S*|x(?:e|i)rab?\s+(?:bu|buye)\b|winda\s+bu\S*|tune\b|naxebit\S*)/, /motor|dinamo|alternator|ventilator|pervane|\b(?:ji\s+nu\s+ve|disa)\s+(?:\S+\s+)?(?:gire\s*da|sabit\s+kir|sidand)/],
   ['dryfuel', /\b(?:mazot|mazut|benzin|soteme\S*)\s+(?:\S+\s+){0,2}?(?:qediya\S*|xilas\s+bu\S*|nema\b|tune\b)/]];
 function kuKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+|\s(?:û|u|lê|le|lêbelê|lebele)\s/i)) { if (!/[a-zêîûçş]/i.test(raw)) continue; const p = kuFold(raw).replace(KU_NEG, ' '); if (!KU_OK.test(p)) for (const [n, rx, ex] of KU_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); if (k.has('nostart')) k.delete('breakdown'); return k; }
 

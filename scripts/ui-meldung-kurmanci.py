@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test (17.11.2026, Backlog 1557, Blickwinkel „Fahrer schreibt die Meldung auf Kurdisch (Kurmancî)“):
 # Meldeformular zeigt bei „fren naxebite“, „lastîk teqiya“, „motor dest pê nake“, „kabîn dişewite“, „rûn diherike“, „min qeza kir“,
 # „derî venabe“, „mazot hat dizîn“, „frîgo sar nake“ u. a. den passenden Hinweis; Reparaturvermerk („hat çêkirin“, „baş e“),
-# Verneinung („qeza tune“, „rûn naherike“) und Rad/Ersatzrad ohne Hinweis. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
+# Verneinung („qeza tune“, „rûn naherike“) und Rad/Ersatzrad ohne Hinweis. Stufe 2 (Backlog 1558): 19 weitere Hinweisarten, Keilriemen ohne Hinweis. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -11,9 +11,15 @@ CASES=[["fren naxebite", "brake"], ["frena kamyonê naxebite", "brake"], ["fren 
        ["sukan giran e", "steer"], ["rûn diherike", "leak"], ["kabîn dişewite", "fire"], ["agir ket kamyonê", "fire"], ["min qeza kir", "acc"], ["ez birîndar bûm", "injury"],
        ["motor dest pê nake", "nostart"], ["motor naxebite", "engine"], ["egzoz dûman reş derdikeve", "engine"], ["neynik şikest", "mirror"], ["cama pêş şikest", "glass"],
        ["çira naxebite", "lights"], ["lamba sor vêket", "warnlight"], ["akû vala ye", "batt"], ["mazot hat dizîn", "theft"], ["derî venabe", "door"], ["klîma naxebite", "climate"],
-       ["frîgo sar nake", "reefer"], ["kamyon xera bû", "breakdown"], ["mazot qediya", "dryfuel"], ["fren naxebite û rûn diherike", "brake,leak"]]
+       ["frîgo sar nake", "reefer"], ["kamyon xera bû", "breakdown"], ["mazot qediya", "dryfuel"], ["fren naxebite û rûn diherike", "brake,leak"],
+       # Stufe 2 (Backlog 1558)
+       ["lastîk hatiye birîn", "tyre"], ["takograf naxebite", "tacho"], ["karta şofêr nayê xwendin", "tacho"], ["dorse girê nabe", "coupling"], ["bijon sist bûne", "wheel"],
+       ["vites nakeve", "gear"], ["egzoz qetiya", "exhaust"], ["pencere venabe", "window"], ["branda qetiya", "tarp"], ["balon teqiya", "susp"], ["kemera ewlehiyê nagire", "seat"],
+       ["mifte winda bû", "lost"], ["plaka ket", "numplate"], ["silecek naxebite", "visib"], ["kamyon di heriyê de asê ma", "stuck"], ["karta mazotê naxebite", "fuelcard"],
+       ["radar naxebite", "adas"], ["kesekî lastîk kun kir", "vandal"], ["bar şemitî", "load"], ["qayîşa barê qetiya", "lashgear"]]
 NO=["fren hat çêkirin", "fren baş e", "lastîk hate guhertin", "motor careke din dixebite", "qeza tune", "agir tune", "rûn naherike", "neynik ne şikestiye",
-    "ez birîndar nebûm", "teker xera bû", "tekera yedek teqiya"]
+    "ez birîndar nebûm", "teker xera bû", "tekera yedek teqiya",
+    "qayîşa motorê qetiya", "mifte winda nebû", "qayîş ne qetiya", "bar şemitî min ji nû ve girê da", "takograf hat çêkirin"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -37,7 +43,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('fren naxebite','kabîn dişewite'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kur-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('fren naxebite','kabîn dişewite','qayîşa barê qetiya'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/kur-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")

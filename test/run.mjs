@@ -44451,7 +44451,7 @@ await test('Backlog 1557 (Blickwinkel „Fahrer schreibt die Meldung auf Kurdisc
     'ez li rê me', 'spas', 'ez çûm malê', 'hewa gelek germ e', 'min nan xwar'];
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, Türkisch, andere Sprachen) bekommen aus der Kurmancî-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1557 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t; for (const n of ['1557', '1558']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (kuKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Kurmancî-Tabelle');
@@ -44459,7 +44459,7 @@ await test('Backlog 1557 (Blickwinkel „Fahrer schreibt die Meldung auf Kurdisc
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|kuRx|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
-  eq(ids.length, 21, '21 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 21, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(ids.length >= 21, 'mindestens 21 Hinweisarten (Stufe 2: Test 1558)'); eq(new Set(CASES.map((c) => c[1])).size, 21, 'jede Hinweisart mit mindestens einem Beispiel');
   ok(app.includes('...nlKinds(v), ...kuKinds(v), ...lxRun('), 'in foreignKinds aufgenommen');
   ok(!main.includes('const KU_KINDS') && lang.includes('const KU_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
@@ -44469,6 +44469,42 @@ await test('Backlog 1557 (Blickwinkel „Fahrer schreibt die Meldung auf Kurdisc
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-kurmanci.py'), 'UI-Prüfung in pruefen.sh');
 });
 
+await test('Backlog 1558 (Kurmancî Stufe 2, Backlog 195): „takograf naxebite“, „dorse girê nabe“, „vites nakeve“, „egzoz qetiya“, „branda qetiya“, „mifte winda bû“, „karta mazotê naxebite“, „kamyon di heriyê de asê ma“, „bar şemitî“, „qayîşa barê qetiya“ u. a. → 19 weitere Hinweisarten (vorher kein Hinweis); Keilriemen, Verneinung, Reparaturvermerk, Nachsichern ohne; übrige Testsätze ohne Hinweis aus der Tabelle', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { kuKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { kuKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...kuKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [['lastîk hatiye birîn', 'tyre'], ['bayê lastîkê kêm e', 'tyre'], ['lastîk werimî ye', 'tyre'], ['takograf naxebite', 'tacho'], ['karta şofêr nayê xwendin', 'tacho'], ['min karta şofêr winda kir', 'tacho'],
+    ['dorse girê nabe', 'coupling'], ['dorse ji kamyonê qetiya', 'coupling'], ['kilîda dorsê nagire', 'coupling'], ['bijon sist bûne', 'wheel'], ['jant şikest', 'wheel'], ['teker dileqe', 'wheel'],
+    ['vites nakeve', 'gear'], ['debriyaj naxebite', 'gear'], ['egzoz qetiya', 'exhaust'], ['egzoz kun bû', 'exhaust'], ['pencere venabe', 'window'], ['cama derî danakeve', 'window'],
+    ['branda qetiya', 'tarp'], ['branda çiriya', 'tarp'], ['balon teqiya', 'susp'], ['amortisor şikest', 'susp'], ['kemera ewlehiyê nagire', 'seat'], ['kursî şikest', 'seat'],
+    ['mifte winda bû', 'lost'], ['min mifte winda kir', 'lost'], ['ruxset winda bû', 'lost'], ['plaka ket', 'numplate'], ['plaka winda bû', 'numplate'], ['silecek naxebite', 'visib'], ['cam buxar dibe', 'visib'],
+    ['kamyon di heriyê de asê ma', 'stuck'], ['di berfê de asê mam', 'stuck'], ['karta mazotê naxebite', 'fuelcard'], ['karta mazotê bloke bû', 'fuelcard'], ['radar naxebite', 'adas'], ['kamyon bi xwe fren dike', 'adas'],
+    ['kesekî lastîk kun kir', 'vandal'], ['kesekî kamyon xêz kir', 'vandal'], ['bar şemitî', 'load'], ['palet ketin', 'load'], ['qayîşa barê qetiya', 'lashgear'], ['spanset qetiya', 'lashgear'],
+    ['takograf naxebite', 'tacho'], ['vites nakeve', 'gear'], ['karta sofer naye xwendin', 'tacho'], ['kamyon di heriye de ase ma', 'stuck'], ['qayisa bare qetiya', 'lashgear']];
+  for (const [x, k] of CASES) { eq([...kuKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); eq([...await others(x)].join(','), '', 'vorher ohne Hinweis: ' + x); }
+  eq([...kuKinds('takograf naxebite û branda qetiya')].sort().join(','), 'tacho,tarp', '„û“ trennt Satzteile');
+  const NO = ['qayîşa motorê qetiya', 'qayîş ne qetiya', 'bar şemitî min ji nû ve girê da', 'min bar dîsa girêda', 'lastîka yedek hatiye birîn', 'takograf hat çêkirin', 'dorse baş e', 'mifte winda nebû',
+    'plaka hate guhertin', 'kursî germ nake', 'min nan xwar', 'ez li rê me'];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  eq([...await fk('frena dorsê naxebite')].join(','), 'brake', 'Bremse am Anhänger ist keine Kupplung');
+  eq([...await fk('deriyê dorsê venabe')].join(','), 'door', 'Tür am Anhänger ist keine Kupplung');
+  eq([...await fk('çira plakê naxebite')].join(','), 'lights', 'Kennzeichenleuchte = Licht');
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t;
+  for (const n of ['1557', '1558']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (kuKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Kurmancî-Tabelle');
+  const src = app.slice(app.indexOf('\nconst kuFold'), app.indexOf('\nfunction kuKinds'));
+  ok(!/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|kuRx|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 40, '40 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 19, 'jede neue Hinweisart mit Beispiel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['takograf naxebite', 'dorse girê nabe', 'vites nakeve', 'branda qetiya', 'mifte winda bû', 'karta mazotê naxebite', 'kamyon di heriyê de asê ma', 'bar şemitî', 'qayîşa barê qetiya']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('qayîşa motorê qetiya') && (await fk('qayîşa motorê qetiya')).size === 0, 'Hilfe Keilriemen ohne Hinweis: ' + l); }
+  const ui = readFileSync(new URL('../scripts/ui-meldung-kurmanci.py', import.meta.url), 'utf8'); ok(ui.includes('Backlog 1558') && ui.includes('"qayîşa barê qetiya", "lashgear"'), 'UI-Prüfung Stufe 2');
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
