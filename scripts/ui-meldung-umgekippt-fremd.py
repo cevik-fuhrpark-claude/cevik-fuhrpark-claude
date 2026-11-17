@@ -7,11 +7,13 @@ from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[["tır devrildi", "acc"], ["yoldan çıktım", "acc"], ["fura przewróciła się", "acc"], ["wpadłem do rowu", "acc"], ["camionul s-a răsturnat", "acc"], ["kamion se prevrnuo", "acc"],
+CASES=[["tır devrildi", "acc"], ["yoldan çıktım", "acc"], ["fura przewróciła się", "acc"], ["wpadłem do rowu", "acc,stuck"], ["camionul s-a răsturnat", "acc"], ["kamion se prevrnuo", "acc"],
        ["sletio sam s ceste", "acc"], ["a kamion felborult", "acc"], ["kamion se převrátil", "acc"], ["el camión volcó", "acc"], ["saí da estrada", "acc"], ["το φορτηγό ανατράπηκε", "acc"],
        ["მანქანა გზიდან გადავარდა", "acc"], ["բեռնատարը շուռ է եկել", "acc"], ["yükler devrildi", "load"], ["ładunek się przewrócił", "load"], ["το φορτίο ανατράπηκε", "load"],
-       ["камионът се преобърна", "acc"], ["kravas auto apgāzās", "acc"], ["kamioni u përmbys", "acc"], ["tovornjak se je prevrnil", "acc"], ["жүк көлігі аударылып кетті", "acc"], ["الشاحنة انقلبت", "acc"], ["کامیون واژگون شد", "acc"], ["truck palat gaya", "acc"], ["tumaob ang trak", "acc"], ["krava apgāzās", "load"]]
-NO=["kamyon devrilmedi", "ciężarówka się nie przewróciła", "camionul nu s-a răsturnat", "kamion se nije prevrnuo", "a kamion nem borult fel", "el camión no volcó", "το φορτηγό δεν ανατράπηκε", "բեռնատարը չի շրջվել", "sürət həddini aşdı", "الشاحنة ما انقلبت", "gaadi palat lo"]
+       ["камионът се преобърна", "acc"], ["kravas auto apgāzās", "acc"], ["kamioni u përmbys", "acc"], ["tovornjak se je prevrnil", "acc"], ["жүк көлігі аударылып кетті", "acc"], ["الشاحنة انقلبت", "acc"], ["کامیون واژگون شد", "acc"], ["truck palat gaya", "acc"], ["tumaob ang trak", "acc"], ["krava apgāzās", "load"],
+       ["krovinys apsivertė", "load"], ["paletes apvēlās", "load"], ["kastid läksid ümber", "load"], ["yük ters döndü", "load"], ["saman ulta ho gaya", "load"], ["tumaob ang mga pallet", "load"], ["tır ters döndü", "acc"], ["truck ulta ho gaya", "acc"],  # Backlog 1565
+       ["le camion est dans le fossé", "acc,stuck"], ["il camion è finito nel fosso", "acc,stuck"], ["a kamion az árokban van", "stuck"], ["kamion je zapeo u blatu", "stuck"]]  # Backlog 1566
+NO=["kamyon devrilmedi", "ciężarówka się nie przewróciła", "camionul nu s-a răsturnat", "kamion se nije prevrnuo", "a kamion nem borult fel", "el camión no volcó", "το φορτηγό δεν ανατράπηκε", "բեռնատարը չի շրջվել", "sürət həddini aşdı", "الشاحنة ما انقلبت", "gaadi palat lo", "krovinys neapsivertė", "yük ters dönmedi"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -35,7 +37,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('tır devrildi','το φορτηγό ανατράπηκε','yükler devrildi','الشاحنة انقلبت'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/umk-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('tır devrildi','το φορτηγό ανατράπηκε','yükler devrildi','الشاحنة انقلبت','krovinys apsivertė','truck ulta ho gaya','le camion est dans le fossé'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/umk-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
