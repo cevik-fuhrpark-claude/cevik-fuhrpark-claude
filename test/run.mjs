@@ -43743,7 +43743,7 @@ await test('Backlog 1539 (Blickwinkel „Fahrer verneint Unfall, Brand oder Dieb
   eq(fkNeg('nebyla to nehoda, jen zrcátko je rozbité'), ' ok , jen zrcátko je rozbité', 'nur die verneinte Wendung wird ersetzt');
   eq(fkNeg('Pankaza yokları'), 'Pankaza yokları', 'Wortgrenzen: kein Treffer mitten im Wort');
   // Gegenprobe: Zeichenketten der übrigen Tests werden nicht verändert (außer echten verneinten Wendungen)
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1539") + 1; const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1539") + 1; const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const j = rest0.indexOf("\nawait test('Backlog 1549 ("); const rest = j < 0 ? rest0 : rest0.slice(0, j) + rest0.slice(rest0.indexOf('\nawait test(', j + 10)); // Backlog 1549: Ladungs-Sätze ersetzt fkNeg absichtlich
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const hit = []; for (const x of strs) if (fkNeg(x) !== x) hit.push(x);
   ok(hit.length < 50, 'nur wenige andere Zeichenketten betroffen: ' + hit.slice(0, 50).join(' | ')); // Backlog 1547: Grenze 35 → 50 (Französisch); Backlog 1546: Grenze 25 → 35 (Italienisch); Backlog 1545: Grenze 15 → 25 – die Treffer sind echte Verneinungen der Sprachtests (Hinglish, Tagalog, Spanisch, Portugiesisch)
@@ -43874,6 +43874,8 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
     ok(STRINGS[l].help_report_s.includes('maitim na usok sa tambutso') && [...await fk('maitim na usok sa tambutso')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-taglish.py'), 'UI-Prüfung in pruefen.sh');
 });
+// [CLAUDE] Backlog 1549: Gegenproben der Sprachtabellen ohne die Sätze des Ladungs-Tests (dort erzeugen Einzeltabellen bewusst Treffer, die foreignKinds über fkNeg/lxRun entfernt)
+const lx1549 = (r) => { const j = r.indexOf("\nawait test('Backlog 1549 ("); return j < 0 ? r : r.slice(0, j) + r.slice(r.indexOf('\nawait test(', j + 10)); };
 await test('Backlog 1544 (Blickwinkel „Fahrer aus Spanien/Lateinamerika schreibt Spanisch“, Backlog 195): „los frenos no funcionan“, „se pinchó la rueda“, „el motor no arranca“, „se está quemando la cabina“, „pierde aceite“, „tuve un accidente“, „el frigo no enfría“, „me robaron el gasoil“ u. a. → dieselben Hinweise (ES_KINDS über esFold, Akzente egal, Hauptwort und Befund in beliebiger Reihenfolge); Reparaturvermerk („ya está arreglado“, „funciona bien“), Verneinung („no pierde aceite“, „sin fugas“, „no hubo accidente“) und Alltagssätze ohne; „sin frenos“/„sin luces“ sowie „no está bien“/„no funciona bien“ sind Mängel; Auspuffrauch Motor; andere Sprachen unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -43906,7 +43908,7 @@ await test('Backlog 1544 (Blickwinkel „Fahrer aus Spanien/Lateinamerika schrei
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Spanisch-Tabelle keinen Hinweis
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1544"); const j = t.indexOf("\nawait test('Backlog 1545 ("); const k = t.indexOf("\nawait test('Backlog 1546 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10), j) + t.slice(t.indexOf('\nawait test(', j + 10), k) + t.slice(t.indexOf('\nawait test(', k + 10)); // Backlog 1546: Italienisch ausgenommen (eigene Prüfung „höchstens derselbe Hinweis“ dort); Backlog 1545: Portugiesisch ausgenommen (verwandte Sprache – „la lona está rota“ ergibt dort denselben Hinweis)
-  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const strs = new Set([...lx1549(rest).matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (esKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Spanisch-Tabelle');
   const src = app.slice(app.indexOf('\nconst esFold'), app.indexOf('\nfunction esKinds'));
@@ -43965,7 +43967,7 @@ await test('Backlog 1545 (Blickwinkel „Fahrer aus Portugal/Brasilien schreibt 
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen außer dem verwandten Spanisch) bekommen aus der Portugiesisch-Tabelle keinen Hinweis
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1545 ("), j = t.indexOf("\nawait test('Backlog 1544 (");
   const k = t.indexOf("\nawait test('Backlog 1546 ("); const rest = t.slice(0, j) + t.slice(t.indexOf('\nawait test(', j + 10), i) + t.slice(t.indexOf('\nawait test(', i + 10), k) + t.slice(t.indexOf('\nawait test(', k + 10)); // Backlog 1546: Italienisch ausgenommen (eigene Prüfung „höchstens derselbe Hinweis“ dort)
-  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const strs = new Set([...lx1549(rest).matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (ptKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Portugiesisch-Tabelle');
   // Spanisch-Beispiele: höchstens derselbe Hinweis wie die Spanisch-Tabelle (verwandte Wörter wie „lona“, „barro“, „impacto“)
@@ -44031,7 +44033,7 @@ await test('Backlog 1546 (Blickwinkel „Fahrer aus Italien schreibt Italienisch
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Italienisch-Tabelle keinen Hinweis
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1546 (");
   const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
-  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const strs = new Set([...lx1549(rest).matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (itKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Italienisch-Tabelle');
   // Spanisch/Portugiesisch auf italienischen Sätzen: höchstens derselbe Hinweis (verwandte Wörter wie „graffiti“, „adblue“)
@@ -44098,7 +44100,7 @@ await test('Backlog 1547 (Blickwinkel „Fahrer aus Frankreich/Belgien schreibt 
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Französisch-Tabelle keinen Hinweis
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1547 (");
   const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
-  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const strs = new Set([...lx1549(rest).matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (frKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Französisch-Tabelle');
   // Italienisch/Spanisch/Portugiesisch auf französischen Sätzen: höchstens derselbe Hinweis
@@ -44165,7 +44167,7 @@ await test('Backlog 1548 (Blickwinkel „Fahrer aus den Niederlanden/Belgien sch
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Niederländisch-Tabelle keinen Hinweis
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1548 (");
   const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
-  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const strs = new Set([...lx1549(rest).matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (nlKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Niederländisch-Tabelle');
   const src = app.slice(app.indexOf('\nconst nlFold'), app.indexOf('\nfunction nlKinds'));
@@ -44173,7 +44175,7 @@ await test('Backlog 1548 (Blickwinkel „Fahrer aus den Niederlanden/Belgien sch
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|nlCo|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
   eq(ids.length, 38, '38 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 38, 'jede Hinweisart mit mindestens einem Beispiel');
-  ok(app.includes('...itKinds(v), ...frKinds(v), ...nlKinds(v)]'), 'in foreignKinds aufgenommen');
+  ok(app.includes('...itKinds(v), ...frKinds(v), ...nlKinds(v)'), 'in foreignKinds aufgenommen'); // Backlog 1549: danach Ladung/Spanngurte (lxRun)
   ok(!main.includes('const NL_KINDS') && lang.includes('const NL_KINDS'), 'Tabelle nur in app-sprachen.js');
   for (const x of ['er was geen ongeluk', 'geen gewonden', 'er is niets gestolen', 'niemand is gewond', 'geen aanrijding']) eq([...await fk(x)].join(','), '', 'verneint (FK_NEG): ' + x);
   eq([...await fk('geen aanrijding, maar de spiegel is kapot')].join(','), 'mirror', 'Verneinung ersetzt nur die Wendung');
@@ -44184,6 +44186,47 @@ await test('Backlog 1548 (Blickwinkel „Fahrer aus den Niederlanden/Belgien sch
     ok(STRINGS[l].help_report_s.includes('nog niet gerepareerd') && [...await fk('de rem is nog niet gerepareerd')].join() === 'brake', 'Hilfe „nog niet gerepareerd“ = Mangel: ' + l);
     ok(STRINGS[l].help_report_s.includes('zwarte rook uit de uitlaat') && [...await fk('zwarte rook uit de uitlaat')].join() === 'engine', 'Hilfe Auspuffrauch = Motor: ' + l); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-niederlaendisch.py'), 'UI-Prüfung in pruefen.sh');
+});
+await test('Backlog 1549 (Blickwinkel „Ausländischer Fahrer meldet verrutschte Ladung oder gerissene Spanngurte“, Backlog 195): „yük kaydı“, „ładunek się przesunął“, „marfa s-a răsturnat“, „la carga se ha movido“, „a carga tombou“, „il carico si è ribaltato“, „le chargement a bougé“, „de lading is omgevallen“ → Ladungs-Hinweis (vorher kein Hinweis bzw. „Unfall“), „spanzet koptu“, „pasy są zerwane“, „chingile sunt rupte“, „las cinchas están rotas“, „as cintas estão partidas“, „le cinghie sono rotte“, „les sangles sont cassées“, „de spanbanden zijn kapot“ und fehlende Gurte → Sicherungsmittel (LX_KINDS/lxRun, längentreue Faltung, Wendung wird in fkNeg durch „ok“ ersetzt); verneint/nachgesichert ohne Hinweis, Keilriemen/Sicherheitsgurt/Akku-Ladung ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { foreignKinds: fk, lxRun, lxFold, fkNeg } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds, lxRun, lxFold, fkNeg };')();
+  const CASES = [["yük kaydı", "load"], ["yük devrildi", "load"], ["paletler devrildi", "load"], ["yükümüz kaymış", "load"], ["spanzet koptu", "lashgear"], ["sabitleme kayışı koptu", "lashgear"], ["spanzet yok", "lashgear"], ["spanzetler koptu", "lashgear"],
+    ["ładunek się przesunął", "load"], ["towar się przewrócił", "load"], ["spadły palety", "load"], ["pas transportowy pękł", "lashgear"], ["pasy są zerwane", "lashgear"], ["brakuje pasów", "lashgear"],
+    ["marfa s-a mutat", "load"], ["marfa s-a răsturnat", "load"], ["au căzut paleții", "load"], ["chingile sunt rupte", "lashgear"], ["nu am chingi", "lashgear"],
+    ["la carga se ha movido", "load"], ["la carga se cayó", "load"], ["se cayeron unas cajas", "load"], ["la carga se ha volcado", "load"], ["las cinchas están rotas", "lashgear"], ["faltan cinchas", "lashgear"],
+    ["a carga deslocou-se", "load"], ["a carga tombou", "load"], ["caíram paletes", "load"], ["as cintas estão partidas", "lashgear"], ["faltam catracas", "lashgear"],
+    ["il carico si è spostato", "load"], ["il carico si è ribaltato", "load"], ["sono caduti due bancali", "load"], ["le cinghie sono rotte", "lashgear"], ["mancano le cinghie", "lashgear"],
+    ["le chargement a bougé", "load"], ["le chargement s'est renversé", "load"], ["la marchandise est tombée", "load"], ["les sangles sont cassées", "lashgear"], ["il manque deux sangles", "lashgear"], ["il n'y a pas de sangles", "lashgear"],
+    ["de lading is verschoven", "load"], ["de lading is omgevallen", "load"], ["er zijn twee pallets omgevallen", "load"], ["de spanbanden zijn kapot", "lashgear"], ["ik heb geen spanbanden", "lashgear"], ["de ratel werkt niet", "lashgear"],
+    ["le pneu est crevé et le chargement a bougé", "flat,load"], ["LA CARGA SE HA MOVIDO", "load"]];
+  for (const [x, k] of CASES) eq([...await fk(x)].sort().join(','), k, x);
+  const NO = ["la carga no se ha movido", "de lading is niet verschoven", "yük kaymadı", "ładunek się nie przesunął", "marfa nu s-a mișcat", "il carico non si è spostato", "a carga não se mexeu", "le chargement n'a pas bougé",
+    "de lading is opnieuw vastgezet", "les sangles ne sont pas cassées", "pas bezpieczeństwa jest zerwany", "kayış koptu", "la carga de la batería está completa", "ik heb de lading gelost", "la carga está bien asegurada", "il carico è pronto"];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  ok(![...await fk('la cinghia del motore è rotta')].includes('lashgear'), 'Keilriemen ist kein Spanngurt');
+  ok(![...await fk('la carga de la batería no funciona')].includes('load'), 'Akku-Ladung ist keine Ladung');
+  for (const x of ['il carico si è ribaltato', 'a carga tombou', "le chargement s'est renversé", 'de lading is omgevallen']) ok(!(await fk(x)).has('acc'), 'kein Unfall-Hinweis: ' + x);
+  eq([...await fk('de lading is omgevallen, de spiegel is kapot')].sort().join(','), 'load,mirror', 'nur die Wendung wird ersetzt');
+  ok(fkNeg('de lading is omgevallen').includes(' ok') && !fkNeg('de lading is omgevallen').includes('omgevallen'), 'fkNeg ersetzt die Ladungs-Wendung');
+  eq([...await fk('ik heb een ongeluk gehad en de lading is verschoven')].sort().join(','), 'acc,load', 'echter Unfall bleibt');
+  for (const x of ['İSTANBUL yük kaydı 🚚', 'ładunek się przesunął', 'l’arrière a bougé', 'Straße']) eq(lxFold(x).length, x.length, 'Faltung längentreu: ' + x);
+  // Gegenprobe: keine Zeichenkette der übrigen Tests wird von lxRun verändert
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1549 (");
+  const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (lxRun(x).rest !== x) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Zeichenketten unverändert');
+  const src = app.slice(app.indexOf('\nconst LX_MAP'), app.indexOf('\n// [CLAUDE] Backlog 1539 (Blickwinkel'));
+  ok(src.length > 3000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  ok(!main.includes('const LX_KINDS') && lang.includes('const LX_KINDS'), 'Tabelle nur in app-sprachen.js');
+  for (const id of ['load', 'lashgear']) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['yük kaydı', 'ładunek się przesunął', 'marfa s-a răsturnat', 'la carga se ha movido', 'a carga tombou', 'il carico si è ribaltato', 'le chargement a bougé', 'de lading is omgevallen']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'load', 'Hilfe nennt Ladung: ' + l + ' ' + x);
+    for (const x of ['spanzet koptu', 'pasy są zerwane', 'las cinchas están rotas', 'les sangles sont cassées', 'de spanbanden zijn kapot', 'il manque deux sangles']) ok(STRINGS[l].help_report_s.includes(x) && [...await fk(x)].join() === 'lashgear', 'Hilfe nennt Sicherungsmittel: ' + l + ' ' + x);
+    for (const x of ['la carga no se ha movido', 'de lading is opnieuw vastgezet']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-ladung-fremd.py'), 'UI-Prüfung in pruefen.sh');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

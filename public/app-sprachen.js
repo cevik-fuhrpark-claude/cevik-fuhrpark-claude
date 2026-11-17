@@ -1717,6 +1717,73 @@ function nlKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
+
+
+
+const LX_MAP = { 'ı': 'i', 'ł': 'l', '’': ' ', "'": ' ', '`': ' ', '´': ' ', '-': ' ', 'ß': 's' };
+const lxFold = (s) => { let o = ''; for (let i = 0; i < s.length; i++) { const c = s[i], l = c.toLowerCase(); o += LX_MAP[l] || l.normalize('NFD')[0] || c; } return o; };
+const LX_G = '(?:[^\\s.,;!?]+\\s+){0,3}?';
+const lxRx = (n, v, rev) => new RegExp(`\\b(?:${n})\\s+${LX_G}(?:${v})\\b` + (rev ? `|\\b(?:${rev})\\b` : ''), 'g');
+const LX_BELT = /motor|alternat|dinamo|triger|vantilat|distribu|ventil|ventola|servizi|bezpiecz|seguridad|sicurezza|securite|ceinture|cintura|cinto|klinow|rozrzad|zebat|veiligheid|autogordel/;
+const LX_KINDS = [
+
+  ['load', lxRx('yuk|yuku|yukum|yukumuz|yukler|yukleri|mallar|mallari|palet|paletler|paletleri|koliler|kutular|esyalar', 'kaydi|kaymis|kayiyor|kaydilar|kaymislar|kaymaya\\s+basladi|devrildi|devrilmis|devrildiler|dustu|dusmus|dustuler|yikildi|yikilmis|dagildi|dagilmis|dokuldu|dokulmus|oynadi|oynamis|oynuyor|yer\\s+degistirdi|yerinden\\s+(?:oynadi|kaydi|cikti)|egildi|yamuldu'), null,
+    /(?:tekrar|yeniden)\s+(?:bagla|sabitle|yerles|duzelt|topla)|duzelttim|duzelttik|duzeltildi|sabitledim/],
+  ['lashgear', lxRx('spanzet\\S*|spanset\\S*|span\\s+kayis\\S*|sabitleme\\s+kayis\\S*|baglama\\s+kayis\\S*|yuk\\s+kayis\\S*|circir\\S*|gerdirme\\s+kayis\\S*', 'koptu|kopmus|koptular|kopuk|yirtildi|yirtilmis|yirtik|kirildi|kirik|bozuk|bozuldu|eksik|kayip|yok|asinmis|parcalandi'), null, /yenisini\s+(?:taktim|aldim)|degistirdim|degistirildi/, LX_BELT],
+
+  ['load', lxRx('ladunek|ladunku|towar|towaru|palety|paleta|palet|kartony|skrzynie|skrzynia|paczki', 'przesun\\S*|przewroci\\S*|przewalil\\S*|spadl\\S*|wypadl\\S*|zsunal\\S*|zsunel\\S*|rozsypal\\S*|przechylil\\S*|przemiesci\\S*|pojechal\\S*|runal\\S*|runel\\S*|zawalil\\S*',
+    `(?:przesunal|przesunel|przewrocil|spadl|spadly|spadla|wypadl|wypadly|zsunal|zsunel)\\S*\\s+(?:sie\\s+)?(?:[^\\s.,;!?]+\\s+){0,2}?(?:ladunek|towar|palety|paleta|kartony|skrzynie)`), /\bnie\b/,
+    /ponownie\s+(?:zabezpiecz|zapi|przymocow|ulozy)|zabezpieczyl\S*\s+(?:ponownie|jeszcze\s+raz)|poprawil\S*|poprawion\S*|juz\s+(?:jest\s+)?zabezpieczon\S*|przelozyl\S*/],
+  ['lashgear', lxRx('pas(?:y|ow)?\\s+(?:transportow|mocujac|ladunkow|spinajac)\\S*|pasy|spanzet\\S*|spanset\\S*|lancuch\\S*\\s+(?:do\\s+)?mocowan\\S*|grzechotk\\S*', 'pekl\\S*|peka|pekniet\\S*|zerwal\\S*|zerwan\\S*|urwal\\S*|urwan\\S*|uszkodzon\\S*|rozerwan\\S*|przetart\\S*|zepsut\\S*|zepsul\\S*',
+    '(?:brakuje|nie\\s+ma|nie\\s+mam)\\s+(?:[^\\s.,;!?]+\\s+)?(?:pasow|spanzet\\S*|spanset\\S*|grzechotek)'), /\bnie\s+(?!ma\b|mam\b)/, /wymienil\S*|wymienion\S*|nowe\s+pasy/, /ruchu|zieleni|zjazd|bezpiecz|klinow|rozrzad|silnik|alternat|wentylat/],
+
+  ['load', lxRx('marfa|marfuri|marfurile|incarcatura|incarcaturii|paletii|paletele|palete|paleti|cutiile|coletele|colete|baxurile|baxuri', '(?:s\\s+a|s\\s+au|se)\\s+(?:mutat|miscat|deplasat|rasturnat|daramat|prabusit|surpat|inclinat|misca|deplaseaza|rastoarna|varsat)|a\\s+alunecat|au\\s+alunecat|aluneca|a\\s+cazut|au\\s+cazut|cazut|a\\s+picat|au\\s+picat|rasturnat\\S*',
+    '(?:s\\s+a|s\\s+au)\\s+(?:mutat|miscat|deplasat|rasturnat|daramat)\\s+(?:toata\\s+)?(?:marfa|incarcatura|paletii|paletele)|(?:au|a)\\s+cazut\\s+(?:[^\\s.,;!?]+\\s+)?(?:paletii|paletele|cutiile|coletele|marfa)'), /\bnu\b/,
+    /(?:am|a)\s+(?:re)?asigurat|reasigurat|am\s+refacut|am\s+(?:re)?aranjat|am\s+fixat\s+din\s+nou|din\s+nou\s+(?:asigurat|fixat|legat)/],
+  ['lashgear', lxRx('chingi|chingile|chinga|chingii|curele(?:le)?\\s+de\\s+(?:ancorare|fixare|legare|asigurare)|spanset\\S*|spanzet\\S*|lanturi(?:le)?\\s+de\\s+(?:ancorare|fixare)|clichet\\S*', 'rupt\\S*|s\\s+a\\s+rupt|s\\s+au\\s+rupt|defect\\S*|stricat\\S*|lipsesc|lipseste|deteriorat\\S*|uzat\\S*|tocit\\S*|desfacut\\S*',
+    '(?:lipsesc|lipseste|nu\\s+am|nu\\s+sunt|nu\\s+avem)\\s+(?:[^\\s.,;!?]+\\s+)?(?:chingi\\S*|clichet\\S*)'), /\bnu\s+(?!am\b|sunt\b|avem\b)/, /schimbat\S*|inlocuit\S*|chingi\s+noi/],
+
+  ['load', lxRx('carga|mercancia|mercaderia|palets|palet|paletas|pales|cajas|bultos|tarimas', 'se\\s+(?:ha|han)\\s+(?:movido|desplazado|corrido|caido|volcado|derrumbado|venido\\s+abajo|ladeado|inclinado)|se\\s+(?:movio|movieron|desplazo|desplazaron|corrio|corrieron|cayo|cayeron|volco|volcaron|vuelca|derrumbo|derrumbaron|mueve|mueven|ladeo|inclino|vino\\s+abajo)|(?:esta|estan)\\s+(?:movid|desplazad|caid|volcad|tirad|ladead)\\S*|(?:ha|han)\\s+caido|cayo|cayeron',
+    'se\\s+(?:ha\\s+|han\\s+)?(?:movido|movio|desplazado|desplazo|caido|cayo|cayeron|volcado|volco|corrido|corrio)\\s+(?:toda\\s+)?(?:la|el|los|las|una|unos|unas)\\s+(?:carga|mercancia|palets|paletas|pales|cajas|bultos)'), /\bno\b/,
+    /(?:vuelto|volvi|volvimos)\s+a\s+(?:asegurar|amarrar|sujetar|colocar|cargar)|re\s*asegur|reamarr|ya\s+(?:esta|estan)\s+(?:asegurad|amarrad|sujet)|recoloc/, /bateria|electric|cargador|movil|telefono|aceite|aire\s+acondicionado/],
+  ['lashgear', lxRx('cinchas?|eslingas?|correas?\\s+de\\s+(?:amarre|sujecion|carga)|trinquetes?|carracas?|cadenas?\\s+de\\s+(?:amarre|sujecion)|spanset', 'rot[oa]s?|se\\s+(?:ha|han)\\s+roto|se\\s+rompi\\S*|partid[oa]s?|se\\s+(?:ha|han)\\s+partido|rajad[oa]s?|desgastad[oa]s?|deshilachad[oa]s?|faltan|danad[oa]s?|estropead[oa]s?',
+    '(?:faltan|no\\s+hay|no\\s+tengo|no\\s+tenemos)\\s+(?:[^\\s.,;!?]+\\s+)?(?:cinchas|eslingas|carracas|trinquetes)'), /\bno\s+(?!hay\b|tengo\b|tenemos\b)/, /cambiad[oa]s|cambie|nuevas/, LX_BELT],
+
+  ['load', lxRx('carga|mercadoria|mercadorias|paletes|palete|paletas|caixas|volumes', '(?:se\\s+)?(?:deslocou|moveu|mexeu|mexeram|moveram|deslocaram|deslizou|escorregou|escorregaram)(?:\\s+se)?|caiu|cairam|tombou|tombaram|virou|viraram|desabou|desabaram|desmoronou|(?:esta|estao)\\s+(?:deslocad|tombad|caid)\\S*',
+    '(?:cairam|caiu|tombaram|tombou)\\s+(?:[^\\s.,;!?]+\\s+)?(?:paletes|caixas|volumes|a\\s+carga)'), /\bnao\b/,
+    /(?:voltei|voltamos)\s+a\s+(?:amarrar|prender|segurar|arrumar)|ja\s+(?:esta|estao)\s+(?:amarrad|pres|segur|arrumad)|reamarr|rearrum/, /bateria|eletric|electric|carregador|telemovel|celular|oleo/],
+  ['lashgear', lxRx('cintas?|cintas?\\s+de\\s+(?:amarracao|carga)|correias?\\s+de\\s+(?:amarracao|carga)|catracas?|roquetes?|spanset', 'partid[oa]s?|partiu|partiram|rebentad[oa]s?|rebentou|rebentaram|rompeu|romperam|rompid[oa]s?|rasgad[oa]s?|rasgou|estragad[oa]s?|danificad[oa]s?|faltam|gast[oa]s?',
+    '(?:faltam|nao\\s+ha|nao\\s+tenho|nao\\s+temos)\\s+(?:[^\\s.,;!?]+\\s+)?(?:cintas|catracas|roquetes)'), /\bnao\s+(?!ha\b|tenho\b|temos\b)/, /troquei|trocad[oa]s|substitu|novas/, LX_BELT],
+
+  ['load', lxRx('carico|merce|merci|bancali|bancale|pedane|pedana|pallet|colli|scatoloni|cartoni', '(?:si\\s+)?(?:e|sono)\\s+(?:spostat|moss|scivolat|cadut|crollat|ribaltat|rovesciat|inclinat|sbilanciat)\\S*|(?:spostat|ribaltat|rovesciat|crollat)[oaie]|scivola|si\\s+sposta|si\\s+muove|si\\s+muovono|si\\s+spostano|caduto|caduta|cadute|caduti',
+    '(?:e|sono|si\\s+e|si\\s+sono)\\s+(?:cadut|spostat|ribaltat|scivolat)\\S*\\s+(?:[^\\s.,;!?]+\\s+){0,2}?(?:il|la|lo|i|le|gli|un|una|dei|delle|alcuni|alcune|due|tre)\\s+(?:carico|merce|bancali|bancale|pedane|colli|scatoloni|cartoni)'), /\bnon\b/,
+    /(?:ho|abbiamo)\s+(?:[^\s.,;!?]+\s+)?(?:sistemat|rifissat|riassicurat|rilegat)\S*|(?:fissat|assicurat|legat)\S*\s+(?:di\s+nuovo|nuovamente)|gia\s+(?:fissat|sistemat|assicurat)/, /batteri|elettric|caricabatter/],
+  ['lashgear', lxRx('cinghi[ae]|fasce|fascia\\s+di\\s+(?:ancoraggio|fissaggio)|cricchett[io]|tenditori|tenditore|catene\\s+di\\s+(?:ancoraggio|fissaggio)|spanset', 'rott[aeoi]|si\\s+(?:e|sono)\\s+rott\\S*|spezzat\\S*|strappat\\S*|lacerat\\S*|danneggiat\\S*|consumat\\S*|logor\\S*|sfilacciat\\S*|mancano',
+    '(?:mancano|non\\s+ci\\s+sono|non\\s+ho|non\\s+abbiamo)\\s+(?:le\\s+|abbastanza\\s+)?(?:cinghie|fasce|cricchetti)'), /\bnon\s+(?!ci\s+sono\b|ho\b|abbiamo\b)/, /cambiat[ei]|sostituit[ei]|nuove/, LX_BELT],
+
+  ['load', lxRx('chargement|cargaison|marchandises?|palettes?|colis|cartons|caisses|la\\s+charge', '(?:a|ont)\\s+(?:bouge|glisse|ripe|bascule|chute|verse)|(?:s\\s+est|se\\s+sont)\\s+(?:deplace|renverse|effondre|ecroule|couche|affaisse|decale|incline|mis\\s+a\\s+glisser)\\S*|(?:est|sont)\\s+(?:tombe|renverse|deplace|decale|parti)\\S*|bouge|glisse|tombe|tombent',
+    '(?:sont|est)\\s+tombe\\S*\\s+(?:[^\\s.,;!?]+\\s+){0,2}?(?:des|les|la|le|une|un|deux|trois)\\s+(?:palettes?|colis|cartons|caisses)'), /\b(?:ne|n|pas|jamais|rien)\b/,
+    /(?:re\s*)?(?:sangle|arrime|cale|attache)\S*\s+(?:a|de)\s+nouveau|resangl|rearrim|j\s+ai\s+(?:tout\s+)?(?:resangle|rearrime|recale|refait|remis)|remis\s+en\s+place/, /batterie|electri|recharge|prise\s+en\s+charge|en\s+charge|charge\s+utile/],
+  ['lashgear', lxRx('sangles?|cliquets?|tendeurs?|chaines?\\s+d\\s+arrimage|courroies?\\s+d\\s+arrimage|spanset', 'cassee?s?|se\\s+sont\\s+cassee?s|s\\s+est\\s+cassee?|dechiree?s?|abimee?s?|rompue?s?|usee?s?|effilochee?s?|a\\s+lache|ont\\s+lache|lachee?s?|manquent|defectueu\\S*|hs',
+    '(?:n\\s+)?y\\s+a\\s+(?:pas|plus)\\s+(?:assez\\s+)?(?:de|d)\\s+(?:sangles|cliquets)|il\\s+manque\\s+(?:des\\s+|de\\s+|les\\s+|une\\s+|deux\\s+)?(?:sangles?|cliquets?)|(?:pas|plus)\\s+(?:assez\\s+)?de\\s+sangles'), /\b(?:ne|n)\s+(?!y\s+a\b)(?:[^\s.,;!?]+\s+)?(?:sont|est|pas)\b/, /changee?s|remplacee?s|neuves/, LX_BELT],
+
+  ['load', lxRx('lading|vracht|pallets?|goederen|dozen|rolcontainers?|kratten|colli|bigbags?', 'verschoven|verschuift|verschuiven|schuift|gaan\\s+(?:schuiven|verschuiven|lopen)|omgevallen|omgekiept|gekanteld|gevallen|eruit\\s+gevallen|eraf\\s+gevallen|ingestort|ingezakt|scheef|losgeraakt|losgekomen',
+    '(?:is|zijn)\\s+(?:er\\s+)?(?:[^\\s.,;!?]+\\s+){0,2}?(?:pallets?|dozen|kratten|colli|rolcontainers?)\\s+(?:omgevallen|gevallen|verschoven|uitgevallen)'), /\b(?:niet|geen|niets|niks|nergens)\b/,
+    /opnieuw\s+(?:vastgezet|gezekerd|gesjord|vastgemaakt|gestapeld|geladen)|weer\s+(?:vastgezet|gezekerd|gesjord|vastgemaakt|recht)|herladen|rechtgezet|recht\s+gezet|al\s+(?:vastgezet|gezekerd)/, /accu|batterij|elektrisch|laadpaal|vrachtbrief|vrachtprijs/],
+  ['lashgear', lxRx('spanbanden?|sjorbanden?|spanriemen|sjorriemen|ratels?|sjorkettingen|spankettingen|spanset', 'kapot|stuk|gescheurd|gebroken|geknapt|gesprongen|versleten|beschadigd|ontbreken|ontbreekt|kwijt|werken\\s+niet|werkt\\s+niet|houden\\s+niet|houdt\\s+niet|sluit\\s+niet',
+    '(?:geen|te\\s+weinig|niet\\s+genoeg)\\s+(?:spanbanden|sjorbanden|spanriemen|ratels)'), /\bniet\s+(?:kapot|stuk|gescheurd|gebroken|versleten|beschadigd)|\bgeen\s+(?:schade|probleem)/, /vervangen|nieuwe\s+(?:spanbanden|sjorbanden|ratels)/, LX_BELT]];
+
+function lxRun(v) { const s = String(v || ''), f = lxFold(s), k = new Set(), cut = s.split(''); let any = false;
+  for (const [n, rx, neg, ok, ex] of LX_KINDS) for (const m of f.matchAll(rx)) { const a = m.index, b = a + m[0].length;
+    let p = a; while (p > 0 && !/[.,;!?\n]/.test(f[p - 1])) p--; let q = b; while (q < f.length && !/[.,;!?\n]/.test(f[q])) q++;
+    const part = f.slice(p, q); if (ex && ex.test(part)) continue; any = true;
+    if (!(neg && neg.test(f.slice(p, b))) && !(ok && ok.test(part))) k.add(n);
+    for (let i = a; i < b; i++) cut[i] = i === a + 1 ? 'o' : i === a + 2 ? 'k' : ' '; }
+  return { k, rest: any ? cut.join('') : s }; }
+
+
+
+
 const FK_NEG = new RegExp('(?:^|[^\\p{L}])(?:' + [
   'kaza\\s+(?:olmad[ıi]|yok|yapmad[ıi][mk]?)', '(?:yang[ıi]n|duman|h[ıi]rs[ıi]zl[ıi]k|soygun)\\s+(?:yok|[çc][ıi]kmad[ıi]|olmad[ıi])', 'hi[çc]bir\\s+[şs]ey\\s+[çc]al[ıi]nmad[ıi]',
   '(?:nie\\s+by[łl]o|bez|brak)\\s+(?:wypadku|kolizji|st[łl]uczki|po[żz]aru|ognia|dymu|kradzie[żz]y|w[łl]amania)', 'nic\\s+nie\\s+(?:zosta[łl]o\\s+)?(?:skradzione|ukradzione|ukradli|zgin[ęe][łl]o)',
@@ -1737,7 +1804,7 @@ const FK_NEG = new RegExp('(?:^|[^\\p{L}])(?:' + [
   '(?:pas\\s+(?:eu\\s+)?(?:d[\'’]\\s*|de\\s+)|sans\\s+|aucun[e]?\\s+)(?:accident|accrochage|collision|incendie|feu|fum[ée]e|vol|bless\\p{L}*)', 'rien\\s+(?:n[\'’]\\s*a\\s+[ée]t[ée]\\s+)?vol[ée]', '(?:on\\s+)?(?:ne\\s+)?m[\'’]\\s*a\\s+rien\\s+vol[ée]', 'personne\\s+(?:n[\'’]\\s*)?(?:est|a\\s+[ée]t[ée])\\s+bless\\p{L}*',
   '(?:geen|zonder)\\s+(?:enkel(?:e)?\\s+)?(?:ongeluk\\p{L}*|ongeval\\p{L}*|aanrijding\\p{L}*|botsing|brand|vuur|rook|diefstal|inbraak|gewond\\p{L}*)', '(?:het\\s+)?(?:was|is)\\s+geen\\s+(?:ongeluk|ongeval|aanrijding)', '(?:er\\s+(?:is|was|werd)\\s+)?(?:niets|niks)\\s+(?:is\\s+|werd\\s+)?gestolen', 'niemand\\s+(?:is\\s+|raakte\\s+|werd\\s+)?gewond'
 ].join('|') + ')(?!\\p{L})', 'giu');
-const fkNeg = (v) => String(v || '').replace(FK_NEG, ' ok ');
-async function foreignKinds(v0) { const v = fkNeg(v0); const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v), ...hiKinds(v), ...tlKinds(v), ...esKinds(v), ...ptKinds(v), ...itKinds(v), ...frKinds(v), ...nlKinds(v)]); if (k.has('acc')) k.delete('injury'); return k; }
+const fkNeg = (v) => lxRun(String(v || '').replace(FK_NEG, ' ok ')).rest;
+async function foreignKinds(v0) { const v = fkNeg(v0); const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v), ...hiKinds(v), ...tlKinds(v), ...esKinds(v), ...ptKinds(v), ...itKinds(v), ...frKinds(v), ...nlKinds(v), ...lxRun(String(v0 || '').replace(FK_NEG, ' ok ')).k]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
