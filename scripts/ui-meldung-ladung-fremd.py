@@ -1,4 +1,5 @@
 # [CLAUDE] UI-Test (17.11.2026, Backlog 1549, Blickwinkel „Ausländischer Fahrer meldet verrutschte Ladung oder gerissene Spanngurte“):
+# Stufe 3 (17.11.2026, Backlog 1551): auch Litauisch, Lettisch, Albanisch, Estnisch, Hinglish und Tagalog („krovinys pasislinko“, „rihmad on katki“, „maal shift ho gaya“, „naputol ang strap“).
 # Meldeformular zeigt bei „yük kaydı“, „ładunek się przesunął“, „marfa s-a răsturnat“, „la carga se ha movido“, „a carga tombou“, „il carico si è ribaltato“,
 # „le chargement a bougé“, „de lading is omgevallen“ den Ladungs-Hinweis (kein Unfall), bei „spanzet koptu“, „pasy są zerwane“, „las cinchas están rotas“, „les sangles sont cassées“,
 # „de spanbanden zijn kapot“ u. a. den Hinweis Ladungssicherungsmittel; Verneinung („la carga no se ha movido“), Nachsichern („de lading is opnieuw vastgezet“) und fremde Bedeutungen
@@ -12,9 +13,10 @@ CASES=[["yük kaydı", "load"], ["paletler devrildi", "load"], ["spanzet koptu",
        ["chingile sunt rupte", "lashgear"], ["la carga se ha movido", "load"], ["las cinchas están rotas", "lashgear"], ["a carga tombou", "load"], ["as cintas estão partidas", "lashgear"],
        ["il carico si è ribaltato", "load"], ["mancano le cinghie", "lashgear"], ["le chargement s'est renversé", "load"], ["il manque deux sangles", "lashgear"], ["de lading is omgevallen", "load"],
        ["de spanbanden zijn kapot", "lashgear"], ["le pneu est crevé et le chargement a bougé", "flat,load"],
-       ["teret se pomaknuo", "load"], ["elszakadt a heveder", "lashgear"], ["náklad se posunul", "load"], ["popruh praskl", "lashgear"]]
+       ["teret se pomaknuo", "load"], ["elszakadt a heveder", "lashgear"], ["náklad se posunul", "load"], ["popruh praskl", "lashgear"],
+       ["krovinys pasislinko", "load"], ["siksnas ir saplīsušas", "lashgear"], ["ngarkesa u zhvendos", "load"], ["rihmad on katki", "lashgear"], ["maal shift ho gaya", "load"], ["naputol ang strap", "lashgear"]]
 NO=["la carga no se ha movido", "de lading is niet verschoven", "yük kaymadı", "ładunek się nie przesunął", "il carico non si è spostato", "le chargement n'a pas bougé",
-    "de lading is opnieuw vastgezet", "les sangles ne sont pas cassées", "pas bezpieczeństwa jest zerwany", "kayış koptu", "teret se nije pomaknuo", "a rakomány nem csúszott el", "náklad se neposunul"]
+    "de lading is opnieuw vastgezet", "les sangles ne sont pas cassées", "pas bezpieczeństwa jest zerwany", "kayış koptu", "teret se nije pomaknuo", "a rakomány nem csúszott el", "náklad se neposunul", "krovinys nepasislinko", "koorem ei nihkunud", "maal nahi gira", "hindi gumalaw ang karga"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
