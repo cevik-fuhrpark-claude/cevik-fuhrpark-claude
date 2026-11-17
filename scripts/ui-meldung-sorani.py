@@ -1,5 +1,6 @@
 # [CLAUDE] UI-Test (17.11.2026, Backlog 1559, Blickwinkel „Fahrer schreibt die Meldung auf Sorani (Zentralkurdisch, arabische Schrift)“):
 # Meldeformular zeigt bei „بریک کار ناکات“, „تایەکە تەقی“, „ئاگر کەوتە لۆرییەکە“, „ڕۆن دەڕژێت“, „ڕووداوێکم کرد“, „دەرگاکە ناکرێتەوە“ u. a. den passenden Hinweis;
+# Stufe 2 (Backlog 1560): Reifenschaden, Fahrtenschreiber, Kupplung, Plane, Ladung, Spanngurt, Schlüssel, Getriebe, Auspuff; Keilriemen ohne.
 # Reparaturvermerk („چاککرا“), Verneinung („هیچ ڕووداوێک نییە“, „نەشکاوە“) und Ersatzrad ohne Hinweis. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 import os, uuid
 from playwright.sync_api import sync_playwright
@@ -10,8 +11,11 @@ CASES=[["بریکەکان کار ناکەن", "brake"], ["بریک کار ناک
        ["ڕۆن دەڕژێت", "leak"], ["ئاگر کەوتە لۆرییەکە", "fire"], ["دووکەڵ لە کابینەکە دێت", "fire"], ["ڕووداوێکم کرد", "acc"], ["بریندار بووم", "injury"],
        ["ماتۆڕەکە دەست پێ ناکات", "nostart"], ["ماتۆڕەکە ئیش ناکات", "engine"], ["ئاوێنەکە شکا", "mirror"], ["شووشەی پێشەوە شکا", "glass"], ["گڵۆپەکان کار ناکەن", "lights"],
        ["گڵۆپی سوور هەڵکرد", "warnlight"], ["باتری بەتاڵە", "batt"], ["گازوایل دزرا", "theft"], ["دەرگاکە ناکرێتەوە", "door"], ["موکەیەف سارد ناکاتەوە", "climate"],
-       ["ساردکەرەوە سارد ناکاتەوە", "reefer"], ["گازوایل تەواو بوو", "dryfuel"], ["بریکەکان کار ناکەن و ڕۆن دەڕژێت", "brake,leak"]]
-NO=["بریک چاککرا", "هیچ ڕووداوێک نییە", "شووشەکە نەشکاوە", "ڕۆن ناڕژێت", "تایەی یەدەگ تەقی", "ماتۆڕەکە ئیش دەکات"]
+       ["ساردکەرەوە سارد ناکاتەوە", "reefer"], ["گازوایل تەواو بوو", "dryfuel"], ["بریکەکان کار ناکەن و ڕۆن دەڕژێت", "brake,leak"],
+       # Stufe 2 (Backlog 1560)
+       ["تایەکە بڕاوە", "tyre"], ["تاکۆگراف کار ناکات", "tacho"], ["کارتی شۆفێر ون بوو", "tacho"], ["تریلەکە نابەسترێت", "coupling"], ["چادرەکە دڕا", "tarp"],
+       ["بارەکە کەوت", "load"], ["قایشی بار پچڕا", "lashgear"], ["کلیلەکە ون بوو", "lost"], ["گێرەکە ناچێتە", "gear"], ["ئەگزۆزەکە پچڕا", "exhaust"]]
+NO=["بریک چاککرا", "هیچ ڕووداوێک نییە", "شووشەکە نەشکاوە", "ڕۆن ناڕژێت", "تایەی یەدەگ تەقی", "ماتۆڕەکە ئیش دەکات", "قایشی ماتۆڕ پچڕا", "کلیلەکە ون نەبوو"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -35,7 +39,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('ئاگر کەوتە لۆرییەکە',): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/so-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('ئاگر کەوتە لۆرییەکە','قایشی بار پچڕا'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/so-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")

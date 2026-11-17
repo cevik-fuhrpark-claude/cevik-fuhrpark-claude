@@ -44521,7 +44521,7 @@ await test('Backlog 1559 (Blickwinkel „Fahrer schreibt die Meldung auf Sorani 
   const NO = ['بریک چاککرا', 'هیچ ڕووداوێک نییە', 'شووشەکە نەشکاوە', 'ڕۆن ناڕژێت', 'تایەی یەدەگ تەقی', 'ماتۆڕەکە ئیش دەکات', 'سڵاو', 'من لە ڕێگام'];
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: übrige Test-Zeichenketten (auch Persisch/Arabisch aus 1503/1504) bekommen aus der Sorani-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1559 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t; for (const n of ['1559', '1560']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (soKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Sorani-Tabelle');
@@ -44530,13 +44530,36 @@ await test('Backlog 1559 (Blickwinkel „Fahrer schreibt die Meldung auf Sorani 
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|soRx|new RegExp)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
-  eq(ids.length, 20, '20 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 20, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(ids.length >= 20, 'mindestens 20 Hinweisarten (Stufe 2: Test 1560)'); eq(new Set(CASES.map((c) => c[1])).size, 20, 'jede Hinweisart mit mindestens einem Beispiel');
   ok(app.includes('...kuKinds(v), ...soKinds(v), ...lxRun('), 'in foreignKinds aufgenommen');
   ok(!main.includes('const SO_KINDS') && lang.includes('const SO_KINDS'), 'Tabelle nur in app-sprachen.js');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['بریک کار ناکات', 'تایەکە تەقی', 'ئاگر کەوتە لۆرییەکە', 'ڕۆن دەڕژێت', 'ڕووداوێکم کرد', 'دەرگاکە ناکرێتەوە']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
     for (const x of ['چاککرا', 'هیچ ڕووداوێک نییە']) ok(STRINGS[l].help_report_s.includes(x), 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-sorani.py'), 'UI-Prüfung in pruefen.sh');
+});
+await test('Backlog 1560 (Sorani Stufe 2, Backlog 195): „تایەکە بڕاوە“, „تاکۆگراف کار ناکات“, „کارتی شۆفێر ون بوو“, „تریلەکە نابەسترێت“, „چادرەکە دڕا“, „بارەکە کەوت“, „قایشی بار پچڕا“, „کلیلەکە ون بوو“, „گێرەکە ناچێتە“, „ئەگزۆزەکە پچڕا“ → 9 weitere Hinweisarten (vorher kein Hinweis); Keilriemen, Verneinung, Ersatzrad ohne', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { soKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { soKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...soKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [['تایەکە بڕاوە', 'tyre'], ['بای تایەکە کەمە', 'tyre'], ['تاکۆگراف کار ناکات', 'tacho'], ['کارتی شۆفێر ون بوو', 'tacho'], ['کارتی شۆفێرەکەم ون کرد', 'tacho'],
+    ['تریلەکە نابەسترێت', 'coupling'], ['تریلەکە جیا بووەوە', 'coupling'], ['چادرەکە دڕا', 'tarp'], ['بارەکە کەوت', 'load'], ['پالێتەکان کەوتن', 'load'], ['قایشی بار پچڕا', 'lashgear'],
+    ['کلیلەکە ون بوو', 'lost'], ['کلیلەکەم ون کرد', 'lost'], ['گێرەکە ناچێتە', 'gear'], ['کلەچ کار ناکات', 'gear'], ['ئەگزۆزەکە پچڕا', 'exhaust']];
+  for (const [x, k] of CASES) { eq([...soKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); eq([...await others(x)].join(','), '', 'vorher ohne Hinweis: ' + x); }
+  for (const x of ['قایشی ماتۆڕ پچڕا', 'کلیلەکە ون نەبوو', 'تایەی یەدەگ بڕاوە', 'تاکۆگراف چاککرا']) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t;
+  for (const n of ['1559', '1560']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (soKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Sorani-Tabelle');
+  const src = app.slice(app.indexOf('\nconst SO_MAP'), app.indexOf('\nfunction soKinds'));
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|soRx|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 29, '29 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 9, 'jede neue Hinweisart mit Beispiel');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of ['تاکۆگراف کار ناکات', 'چادرەکە دڕا', 'قایشی بار پچڕا', 'کلیلەکە ون بوو']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+  const ui = readFileSync(new URL('../scripts/ui-meldung-sorani.py', import.meta.url), 'utf8'); ok(ui.includes('Backlog 1560') && ui.includes('"قایشی بار پچڕا", "lashgear"'), 'UI-Prüfung Stufe 2');
 });
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');

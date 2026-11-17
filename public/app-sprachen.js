@@ -1872,6 +1872,17 @@ const SO_KINDS = [['brake', soRx('bryk|brek|fren|frene', '@|nagr\\S*|lawaz\\S*|n
   ['door', soRx('derga|dergay|dergake', '@|nakrete?w\\S*|nakrytew\\S*|dakhra\\S*|danakhr\\S*|nadakhr\\S*|shka\\S*')],
   ['climate', soRx('mwke?y?e?f|klyma|kwlyr|hyter|sobe', '@|sard\\s+nak\\S*|germ\\s+nak\\S*')],
   ['reefer', soRx('sardker\\S*|sardkerewe|frygo|frygoe|frygw|termo\\s*kyng|tyrmo\\s*kyng|karyer', '@|sard\\s+nak\\S*|sard\\s+nab\\S*|germ\\s+bww\\S*')],
+
+
+  ['tyre', /\b(?:taye|tayer|tay|tayr)\S*\s+(?:\S+\s+){0,2}?(?:brawe|bra\b|brdra\S*|zyany\s+pegeyshtwe|ziyan\S*)|\bbay\s+(?:\S+\s+)?(?:taye|tayer|tay)\S*\s+(?:\S+\s+)?kem\S*/, /yede[kg]|stepne|ysprt|teqy|pencher/],
+  ['tacho', new RegExp(`\\b(?:takograf|tachograf|tahograf)\\S*\\s+(?:\\S+\\s+){0,2}?(?:${SO_D}|shka\\S*|tomar\\s+nak\\S*)|\\bkart\\S*\\s+(?:y\\s+)?(?:shofer|shwfer|shofyr)\\S*\\s+(?:\\S+\\s+){0,2}?(?:${SO_D}|wn\\s+bww\\S*|nakhwenr\\S*|shka\\S*)|\\bkart\\S*\\s+(?:y\\s+)?(?:shofer|shwfer)\\S*\\s+(?:\\S+\\s+)?wn\\s+krd`)],
+  ['coupling', /\b(?:tryle|trylle|treyler|dorse|dwrse|romork)\S*\s+(?:\S+\s+){0,2}?(?:nabestr\S*|jya\s+bwwew\S*|jyabwwew\S*|pchra\S*|qwfl\s+nab\S*)/, /derga|chadr|bryk|glop|chra|taye/],
+  ['tarp', soRx('chadr|chader|brande|branda|tente', 'dra\\b|draw\\S*|pchra\\S*|kwn\\s+bww\\S*|frya\\S*')],
+  ['load', /\b(?:bar|bare|bareke|barekan|palet|paletek|paletekan|qwtw|qwtwekan)\s+(?:\S+\s+){0,2}?(?:kewt\S*|kewtn\S*|jwla\S*|lyskhwr\S*|wergera\S*|helgera\S*)/, /dwbare\s+(?:\S+\s+)?best/],
+  ['lashgear', /\b(?:qaysh|qayshy|qayshe|qaysh\S*|spanset|zncyr\S*)\s+(?:\S+\s+)?(?:bar|bareke|barbestn\S*)?\s*(?:\S+\s+)?(?:pchra\S*|brra\S*|shka\S*|wn\s+bww\S*|nyye\b)/, /mator|matwr|motor|dynamo|panke|dwbare\s+(?:\S+\s+)?best/],
+  ['lost', /\b(?:klyl|klylek|klylekan|klylekem|kylyl|rwkhset|rwkhsat|anwnt)\S*\s+(?:\S+\s+)?(?:wn\s+bww\S*|wnbww\S*|nyye\b)|\b(?:klyl|klylek|klylekan|kylyl|rwkhset)\S*\s+(?:\S+\s+)?wn\s+krd/, /kart/],
+  ['gear', soRx('ger|gear|gyr|geyr|gerboks|gyrboks|klach|klech|klatch', '@|nachyt\\S*|nachet\\S*|nagor\\S*|nayet\\S*')],
+  ['exhaust', soRx('egzoz|egzwz|eksoz', '@|pchra\\S*|kwn\\s+bww\\S*|kewt\\S*|deng\\s+(?:dekat|deda)'), /dwwkel/],
   ['dryfuel', /\b(?:gazwayl|gazoyl|benzyn|swwtemeny|swtemeny|dyzl|mazwt)\S*\s+(?:\S+\s+){0,2}?(?:tewaw\s+bww\S*|nemaw\S*|nema\b|nyye\b)/]];
 function soKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n،؛؟]+|\s(?:و|بەڵام|هەروەها)\s/)) { if (!/[ء-ۿ]/.test(raw)) continue; const f = soLat(raw); if (!/[ەێۆڕڵڤ]/.test(raw) && !SO_MARK.test(f)) continue; const p = f.replace(SO_NEG, ' '); if (!SO_OK.test(p)) for (const [n, rx, ex] of SO_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); if (k.has('nostart')) k.delete('engine'); return k; }
 
