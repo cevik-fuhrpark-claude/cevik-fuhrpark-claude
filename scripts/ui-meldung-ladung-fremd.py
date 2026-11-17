@@ -11,9 +11,10 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
 CASES=[["yük kaydı", "load"], ["paletler devrildi", "load"], ["spanzet koptu", "lashgear"], ["ładunek się przesunął", "load"], ["pasy są zerwane", "lashgear"], ["marfa s-a răsturnat", "load"],
        ["chingile sunt rupte", "lashgear"], ["la carga se ha movido", "load"], ["las cinchas están rotas", "lashgear"], ["a carga tombou", "load"], ["as cintas estão partidas", "lashgear"],
        ["il carico si è ribaltato", "load"], ["mancano le cinghie", "lashgear"], ["le chargement s'est renversé", "load"], ["il manque deux sangles", "lashgear"], ["de lading is omgevallen", "load"],
-       ["de spanbanden zijn kapot", "lashgear"], ["le pneu est crevé et le chargement a bougé", "flat,load"]]
+       ["de spanbanden zijn kapot", "lashgear"], ["le pneu est crevé et le chargement a bougé", "flat,load"],
+       ["teret se pomaknuo", "load"], ["elszakadt a heveder", "lashgear"], ["náklad se posunul", "load"], ["popruh praskl", "lashgear"]]
 NO=["la carga no se ha movido", "de lading is niet verschoven", "yük kaymadı", "ładunek się nie przesunął", "il carico non si è spostato", "le chargement n'a pas bougé",
-    "de lading is opnieuw vastgezet", "les sangles ne sont pas cassées", "pas bezpieczeństwa jest zerwany", "kayış koptu"]
+    "de lading is opnieuw vastgezet", "les sangles ne sont pas cassées", "pas bezpieczeństwa jest zerwany", "kayış koptu", "teret se nije pomaknuo", "a rakomány nem csúszott el", "náklad se neposunul"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
