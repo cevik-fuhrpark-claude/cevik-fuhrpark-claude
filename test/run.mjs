@@ -42098,7 +42098,7 @@ await test('Backlog 1506 (Blickwinkel „Fahrer schreibt die Meldung auf Usbekis
   // russische/ukrainische Sätze: usbekische Tabelle trifft nichts (die Hinweise kommen aus den RU/UK-Mustern)
   for (const x of ["тормоз не работает", "колесо пробито", "авария на дороге", "мотор перегрелся", "двигун не заводиться"]) eq([...uzKinds(x)].join(','), '', 'nicht usbekisch: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (andere Sprachen, Russisch/Ukrainisch kyrillisch und lateinisch, Türkisch …) trifft die usbekische Tabelle
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1506"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1506"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   // seit Backlog 1509: kirgisische Sätze teilen usbekische Wörter („шина тешилди“, „шина шишип кетти“) – erlaubt, solange die übrigen Tabellen denselben Hinweis zeigen
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...faKinds(v), ...uzKinds(v), ', '...faKinds(v), ') + 'return foreignKinds;')();
@@ -42129,7 +42129,7 @@ await test('Backlog 1507 (Blickwinkel „Fahrer schreibt die Meldung auf Aserbai
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Türkisch, Usbekisch, Russisch/Ukrainisch …) bekommt durch die aserbaidschanische Tabelle einen Hinweis,
   // den die übrigen Tabellen nicht ohnehin zeigen (Türkisch und Aserbaidschanisch teilen Wörter wie „partladı“/„yaralandım“ – dann gleicher Hinweis)
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1507"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1507"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...uzKinds(v), ...azKinds(v), ', '...uzKinds(v), ') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = azKinds(fkNeg(x)); if (!a.size) continue; /* Backlog 1539: foreignKinds entfernt verneinte Wendungen vor allen Tabellen */ const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -42160,7 +42160,7 @@ await test('Backlog 1508 (Blickwinkel „Fahrer schreibt die Meldung auf Kasachi
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Russisch/Ukrainisch kyrillisch, Usbekisch, Aserbaidschanisch, Türkisch …) bekommt durch die kasachische Tabelle
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1508"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1508"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace('...azKinds(v), ...kzKinds(v), ', '...azKinds(v), ') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = kzKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -42191,7 +42191,7 @@ await test('Backlog 1509 (Blickwinkel „Fahrer schreibt die Meldung auf Kirgisi
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Kasachisch, Russisch/Ukrainisch kyrillisch, Usbekisch, Türkisch …) bekommt durch die kirgisische Tabelle
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1509"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1509"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...kyKinds(v)', '') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = kyKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -42758,7 +42758,7 @@ await test('Backlog 1511 (Blickwinkel „Fahrer schreibt die Meldung auf Tadschi
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests (Kirgisisch, Kasachisch, Usbekisch, Russisch/Ukrainisch …) bekommt durch die tadschikische Tabelle
   // einen Hinweis, den die übrigen Tabellen nicht ohnehin zeigen
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1511"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1511"); const rest = (t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10))).replace(/\nawait test\('Backlog 1555 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1555: „Reifen kaputt“ in mehreren zentralasiatischen Sprachen – gleiche Wörter erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...tjKinds(v)', '') + 'return foreignKinds;')();
   const extra = []; for (const x of strs) { const a = tjKinds(x); if (!a.size) continue; const o = await others(x); if (o.has('acc')) a.delete('injury'); if ([...a].some((k) => !o.has(k))) extra.push(x); }
@@ -43704,7 +43704,7 @@ await test('Backlog 1538 (Blickwinkel „Fahrer schreibt Hindi/Punjabi in latein
   eq([...hiKinds('brake kaam nahi kar raha, tel tapak raha hai')].sort().join(','), 'brake,leak', 'zwei Sätze, zwei Hinweise');
   eq([...hiKinds('ब्रेक काम नहीं कर रहा। tyre phat gaya')].join(','), 'flat', 'Devanagari-Satzzeichen „।“ trennt Sätze');
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Hindi-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1538"); let rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); for (const n of ['1539', '1540', '1541', '1549', '1552']) { const j = rest.indexOf("\nawait test('Backlog " + n) + 1; rest = rest.slice(0, j) + rest.slice(rest.indexOf('\nawait test(', j + 10)); } // 1539–1541: weitere Hinglish-Beispiele
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1538"); let rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); for (const n of ['1539', '1540', '1541', '1549', '1552', '1564']) { const j = rest.indexOf("\nawait test('Backlog " + n) + 1; rest = rest.slice(0, j) + rest.slice(rest.indexOf('\nawait test(', j + 10)); } // 1539–1541: weitere Hinglish-Beispiele
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (hiKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Hindi-Tabelle');
@@ -43743,7 +43743,7 @@ await test('Backlog 1539 (Blickwinkel „Fahrer verneint Unfall, Brand oder Dieb
   eq(fkNeg('nebyla to nehoda, jen zrcátko je rozbité'), ' ok , jen zrcátko je rozbité', 'nur die verneinte Wendung wird ersetzt');
   eq(fkNeg('Pankaza yokları'), 'Pankaza yokları', 'Wortgrenzen: kein Treffer mitten im Wort');
   // Gegenprobe: Zeichenketten der übrigen Tests werden nicht verändert (außer echten verneinten Wendungen)
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1539") + 1; const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const j = rest0.indexOf("\nawait test('Backlog 1549 ("); const rest = j < 0 ? rest0 : rest0.slice(0, j) + rest0.slice(rest0.indexOf('\nawait test(', j + 10)).replace(/\nawait test\('Backlog 1563 \([\s\S]*?\n\}\);\n/, '\n'); // Backlog 1563: umgekippte Ladung (fkNeg/lxRun) // Backlog 1549: Ladungs-Sätze ersetzt fkNeg absichtlich
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1539") + 1; const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const j = rest0.indexOf("\nawait test('Backlog 1549 ("); const rest = j < 0 ? rest0 : rest0.slice(0, j) + rest0.slice(rest0.indexOf('\nawait test(', j + 10)).replace(/\nawait test\('Backlog 1563 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Backlog 1563/1564: umgekippte Ladung (fkNeg/lxRun) // Backlog 1549: Ladungs-Sätze ersetzt fkNeg absichtlich
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const hit = []; for (const x of strs) if (fkNeg(x) !== x) hit.push(x);
   ok(hit.length < 50, 'nur wenige andere Zeichenketten betroffen: ' + hit.slice(0, 50).join(' | ')); // Backlog 1547: Grenze 35 → 50 (Französisch); Backlog 1546: Grenze 25 → 35 (Italienisch); Backlog 1545: Grenze 15 → 25 – die Treffer sind echte Verneinungen der Sprachtests (Hinglish, Tagalog, Spanisch, Portugiesisch)
@@ -43856,7 +43856,7 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
     "malamig sa labas", "traffic sa highway", "nasa ospital ang anak ko", "naiwan ko ang susi sa loob ng truck"];
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, andere Sprachen) bekommen aus der Tagalog-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1543"); const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const k = rest0.indexOf("\nawait test('Backlog 1552 ("); const rest = rest0.slice(0, k) + rest0.slice(rest0.indexOf('\nawait test(', k + 10)); // Backlog 1552: Tagalog-Reifensätze
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1543"); const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const k = rest0.indexOf("\nawait test('Backlog 1552 ("); const rest = (rest0.slice(0, k) + rest0.slice(rest0.indexOf('\nawait test(', k + 10))).replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Backlog 1552: Tagalog-Reifensätze; Backlog 1564: Tagalog-Unfallsätze
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (tlKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Tagalog-Tabelle');
@@ -43875,7 +43875,7 @@ await test('Backlog 1543 (Blickwinkel „Fahrer aus den Philippinen schreibt Tag
   ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-taglish.py'), 'UI-Prüfung in pruefen.sh');
 });
 // [CLAUDE] Backlog 1549: Gegenproben der Sprachtabellen ohne die Sätze des Ladungs-Tests (dort erzeugen Einzeltabellen bewusst Treffer, die foreignKinds über fkNeg/lxRun entfernt)
-const lx1549 = (r) => { for (const n of ['1549', '1550', '1563']) { const j = r.indexOf("\nawait test('Backlog " + n + " ("); if (j >= 0) r = r.slice(0, j) + r.slice(r.indexOf('\nawait test(', j + 10)); } return r; }; // Backlog 1550: Reifen-kaputt-Sätze in mehreren Sprachen ebenso ausgenommen; Backlog 1563: umgekippter Lkw/umgekippte Ladung
+const lx1549 = (r) => { for (const n of ['1549', '1550', '1563', '1564']) { const j = r.indexOf("\nawait test('Backlog " + n + " ("); if (j >= 0) r = r.slice(0, j) + r.slice(r.indexOf('\nawait test(', j + 10)); } return r; }; // Backlog 1550: Reifen-kaputt-Sätze in mehreren Sprachen ebenso ausgenommen; Backlog 1563: umgekippter Lkw/umgekippte Ladung
 await test('Backlog 1544 (Blickwinkel „Fahrer aus Spanien/Lateinamerika schreibt Spanisch“, Backlog 195): „los frenos no funcionan“, „se pinchó la rueda“, „el motor no arranca“, „se está quemando la cabina“, „pierde aceite“, „tuve un accidente“, „el frigo no enfría“, „me robaron el gasoil“ u. a. → dieselben Hinweise (ES_KINDS über esFold, Akzente egal, Hauptwort und Befund in beliebiger Reihenfolge); Reparaturvermerk („ya está arreglado“, „funciona bien“), Verneinung („no pierde aceite“, „sin fugas“, „no hubo accidente“) und Alltagssätze ohne; „sin frenos“/„sin luces“ sowie „no está bien“/„no funciona bien“ sind Mängel; Auspuffrauch Motor; andere Sprachen unberührt; Tabelle nur im Modul app-sprachen.js', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -44227,7 +44227,7 @@ await test('Backlog 1549 (Blickwinkel „Ausländischer Fahrer meldet verrutscht
   for (const x of ['İSTANBUL yük kaydı 🚚', 'ładunek się przesunął', 'l’arrière a bougé', 'Straße']) eq(lxFold(x).length, x.length, 'Faltung längentreu: ' + x);
   // Gegenprobe: keine Zeichenkette der übrigen Tests wird von lxRun verändert
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1549 (");
-  const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const k = rest0.indexOf("\nawait test('Backlog 1550 ("); const rest = k < 0 ? rest0 : rest0.slice(0, k) + rest0.slice(rest0.indexOf('\nawait test(', k + 10)).replace(/\nawait test\('Backlog 1563 \([\s\S]*?\n\}\);\n/, '\n'); // Backlog 1563: umgekippte Ladung // Backlog 1550: dort Ladung + Reifen gemischt
+  const rest0 = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)); const k = rest0.indexOf("\nawait test('Backlog 1550 ("); const rest = k < 0 ? rest0 : rest0.slice(0, k) + rest0.slice(rest0.indexOf('\nawait test(', k + 10)).replace(/\nawait test\('Backlog 1563 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Backlog 1563/1564: umgekippte Ladung // Backlog 1550: dort Ladung + Reifen gemischt
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (lxRun(x).rest !== x) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Zeichenketten unverändert');
@@ -44362,7 +44362,7 @@ await test('Backlog 1554 (Blickwinkel „Ausländischer Fahrer meldet verrutscht
   const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1554/.test(l) && /^\s+\/\//.test(l)) { let j = k + 1; while (/^  \['(?:load|lashgear)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
   eq(E.length, 2, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
   const fk0 = load(old);
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1554 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1554 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1564 \([\s\S]*?\n\}\);\n/, '\n'); // Backlog 1564: umgekippte Ladung dort als Ladung erwartet
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ' → ' + b + ' / ' + a); }
   eq(d.slice(0, 5).join(' | '), '', 'übrige Testsätze unverändert');
@@ -44451,7 +44451,7 @@ await test('Backlog 1557 (Blickwinkel „Fahrer schreibt die Meldung auf Kurdisc
     'ez li rê me', 'spas', 'ez çûm malê', 'hewa gelek germ e', 'min nan xwar'];
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, Türkisch, andere Sprachen) bekommen aus der Kurmancî-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t; for (const n of ['1557', '1558']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t; for (const n of ['1557', '1558', '1564']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (kuKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Kurmancî-Tabelle');
@@ -44491,7 +44491,7 @@ await test('Backlog 1558 (Kurmancî Stufe 2, Backlog 195): „takograf naxebite�
   eq([...await fk('deriyê dorsê venabe')].join(','), 'door', 'Tür am Anhänger ist keine Kupplung');
   eq([...await fk('çira plakê naxebite')].join(','), 'lights', 'Kennzeichenleuchte = Licht');
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t;
-  for (const n of ['1557', '1558']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
+  for (const n of ['1557', '1558', '1564']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (kuKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Kurmancî-Tabelle');
@@ -44521,7 +44521,7 @@ await test('Backlog 1559 (Blickwinkel „Fahrer schreibt die Meldung auf Sorani 
   const NO = ['بریک چاککرا', 'هیچ ڕووداوێک نییە', 'شووشەکە نەشکاوە', 'ڕۆن ناڕژێت', 'تایەی یەدەگ تەقی', 'ماتۆڕەکە ئیش دەکات', 'سڵاو', 'من لە ڕێگام'];
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   // Gegenprobe: übrige Test-Zeichenketten (auch Persisch/Arabisch aus 1503/1504) bekommen aus der Sorani-Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t; for (const n of ['1559', '1560']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t; for (const n of ['1559', '1560', '1564']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (soKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Sorani-Tabelle');
@@ -44549,7 +44549,7 @@ await test('Backlog 1560 (Sorani Stufe 2, Backlog 195): „تایەکە بڕاو
   for (const [x, k] of CASES) { eq([...soKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); eq([...await others(x)].join(','), '', 'vorher ohne Hinweis: ' + x); }
   for (const x of ['قایشی ماتۆڕ پچڕا', 'کلیلەکە ون نەبوو', 'تایەی یەدەگ بڕاوە', 'تاکۆگراف چاککرا']) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); let rest = t;
-  for (const n of ['1559', '1560']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
+  for (const n of ['1559', '1560', '1564']) { const i = rest.indexOf(`\nawait test('Backlog ${n} (`); rest = rest.slice(0, i) + rest.slice(rest.indexOf('\nawait test(', i + 10)); }
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (soKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Sorani-Tabelle');
@@ -44655,6 +44655,37 @@ await test('Backlog 1563 (Blickwinkel „Lkw umgekippt / von der Straße abgekom
     for (const x of ['tır devrildi', 'fura przewróciła się', 'camionul s-a răsturnat', 'kamion se prevrnuo', 'a kamion felborult', 'το φορτηγό ανατράπηκε']) ok(STRINGS[l].help_report_s.includes(x) && (await K(x)) === 'acc', 'Hilfe nennt Unfall: ' + l + ' ' + x);
     ok(STRINGS[l].help_report_s.includes('yükler devrildi') && (await K('yükler devrildi')) === 'load', 'Hilfe nennt Ladung: ' + l);
   }
+});
+
+await test('Backlog 1564 (Blickwinkel „Lkw umgekippt / von der Straße abgekommen“, Stufe 2 zu 1563, Backlog 195): Bulgarisch, Litauisch, Lettisch, Albanisch, Estnisch, Slowenisch, Usbekisch, Aserbaidschanisch, Kasachisch, Kirgisisch, Tadschikisch, Kurmancî, Sorani, Arabisch, Persisch, Hinglish, Tagalog („камионът се преобърна“, „sunkvežimis apsivertė“, „kravas auto apgāzās“, „kamioni u përmbys“, „veok läks ümber“, „tovornjak se je prevrnil“, „yo‘ldan chiqib ketdim“, „жүк көлігі аударылып кетті“, „الشاحنة انقلبت“, „کامیون واژگون شد“, „truck palat gaya“, „tumaob ang trak“ …) → Unfall (vorher kein Hinweis; „kravas auto“ = Lkw galt als Ladung); Ladung umgekippt, Verneinung, „Tempolimit überschritten“ (aşdı) ohne Unfall; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const load = (code) => new Function(code.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang), K = async (x) => [...await fk(x)].sort().join(',');
+  const ACC = ['камионът се преобърна', 'излязох от пътя', 'паднах в канавката', 'sunkvežimis apsivertė', 'nuvažiavau nuo kelio', 'įvažiavau į griovį', 'kravas auto apgāzās', 'nobraucu no ceļa', 'iebraucu grāvī',
+    'kamioni u përmbys', 'dola nga rruga', 'rashë në kanal', 'veok läks ümber', 'sõitsin teelt välja', 'sõitsin kraavi', 'tovornjak se je prevrnil', 'zapeljal sem s ceste', 'zapeljal sem v jarek',
+    "yuk mashinasi ag'darildi", "yo'ldan chiqib ketdim", 'yük maşını aşdı', 'yoldan çıxdım', 'maşın xəndəyə düşdü', 'жүк көлігі аударылып кетті', 'жолдан шығып кеттім', 'жүк ташуучу унаа оодарылып кетти', 'жолдон чыгып кеттим',
+    'мошини боркаш чаппа шуд', 'аз роҳ баромада рафтам', 'kamyon wergeriya', 'ji rê derketim', 'لۆرییەکە وەرگەڕا', 'لە ڕێگا دەرچووم', 'الشاحنة انقلبت', 'خرجت عن الطريق', 'کامیون واژگون شد', 'از جاده منحرف شدم',
+    'truck palat gaya', 'gaadi road se utar gayi', 'tumaob ang trak', 'lumabas ako sa kalsada'];
+  for (const x of ACC) eq(await K(x), 'acc', 'Unfall: ' + x);
+  for (const x of ['товарът се преобърна', 'krava apgāzās', 'ngarkesa u përmbys', 'koorem läks ümber', 'tovor se je prevrnil', 'bar wergeriya', 'بارەکە وەرگەڕا', 'maal palat gaya'])
+    eq(await K(x), 'load', 'Ladung, kein Unfall: ' + x);
+  for (const x of ['камионът не се преобърна', 'krovinys apsivertė', 'kravas auto neapgāzās', 'kamioni nuk u përmbys', 'veok ei läinud ümber', 'tovornjak se ni prevrnil', "yuk mashinasi ag'darilmadi", "yuklar ag'darildi",
+    'yük maşını aşmadı', 'sürət həddini aşdı', 'yüklər çevrildi', 'жүк көлігі аударылмады', 'жүк аударылып кетті', 'жүк ташуучу унаа оодарылган жок', 'жүктөр оодарылып кетти', 'мошини боркаш чаппа нашуд', 'бор чаппа шуд',
+    'kamyon wernegeriya', 'لۆرییەکە وەرنەگەڕا', 'الشاحنة ما انقلبت', 'الحمولة انقلبت', 'کامیون واژگون نشد', 'بار واژگون شد', 'از سمت چپ رد شد', 'truck nahi palat gaya', 'gaadi palat lo', 'hindi tumaob ang trak', 'tumaob ang karga'])
+    eq(await K(x), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: ohne die neuen Einträge (Kommentar „Backlog 1564“) liefern alle übrigen Testsätze dasselbe Ergebnis und die Beispiele keinen Unfall
+  const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1564/.test(l) && /^\s+\/\//.test(l) && /^  \['acc'/.test(L[k + 1] || '')) E.push(L[k + 1].trim()); });
+  eq(E.length, 17, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, ''); }
+  const fk0 = load(old); for (const x of ACC) ok(!(await fk0(x)).has('acc'), 'vorher kein Unfall: ' + x);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1564 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ' → ' + b + ' / ' + a); }
+  eq(d.slice(0, 5).join(' | '), '', 'Sprachmodul: übrige Testsätze unverändert');
+  ok(lang.includes(String.raw`kravas(?!\\s+(?:auto|masin|automasin))`) && !readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes('preobar'), 'Lettisch „kravas auto“ (Lkw) nicht als Ladung; Muster nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en'])
+    for (const x of ['камионът се преобърна', 'kravas auto apgāzās', 'жүк көлігі аударылып кетті', 'الشاحنة انقلبت', 'truck palat gaya']) ok(STRINGS[l].help_report_s.includes(x) && (await K(x)) === 'acc', 'Hilfe nennt Unfall: ' + l + ' ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

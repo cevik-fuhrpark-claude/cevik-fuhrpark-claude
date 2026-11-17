@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test (17.11.2026, Backlog 1563, Blickwinkel „Lkw umgekippt / von der Straße abgekommen“ in Fremdsprachen): Meldeformular zeigt bei
+# [CLAUDE] UI-Test (17.11.2026, Backlog 1563; Stufe 2 Backlog 1564: BG/LT/LV/SQ/ET/SL/UZ/AZ/KZ/KY/TJ/KU/SO/AR/FA/Hinglish/Tagalog, Blickwinkel „Lkw umgekippt / von der Straße abgekommen“ in Fremdsprachen): Meldeformular zeigt bei
 # „tır devrildi“, „fura przewróciła się“, „camionul s-a răsturnat“, „kamion se prevrnuo“, „a kamion felborult“, „kamion se převrátil“, „el camión volcó“, „saí da estrada“,
 # „το φορτηγό ανατράπηκε“, „მანქანა გზიდან გადავარდა“, „բեռնատարը շուռ է եկել“ den Unfall-Hinweis (wie „Lkw ist umgekippt“); umgekippte Ladung zeigt nur den
 # Ladungs-Hinweis, Verneinung keinen. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
@@ -9,8 +9,9 @@ JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
 CASES=[["tır devrildi", "acc"], ["yoldan çıktım", "acc"], ["fura przewróciła się", "acc"], ["wpadłem do rowu", "acc"], ["camionul s-a răsturnat", "acc"], ["kamion se prevrnuo", "acc"],
        ["sletio sam s ceste", "acc"], ["a kamion felborult", "acc"], ["kamion se převrátil", "acc"], ["el camión volcó", "acc"], ["saí da estrada", "acc"], ["το φορτηγό ανατράπηκε", "acc"],
-       ["მანქანა გზიდან გადავარდა", "acc"], ["բեռնատարը շուռ է եկել", "acc"], ["yükler devrildi", "load"], ["ładunek się przewrócił", "load"], ["το φορτίο ανατράπηκε", "load"]]
-NO=["kamyon devrilmedi", "ciężarówka się nie przewróciła", "camionul nu s-a răsturnat", "kamion se nije prevrnuo", "a kamion nem borult fel", "el camión no volcó", "το φορτηγό δεν ανατράπηκε", "բեռնատարը չի շրջվել"]
+       ["მანქანა გზიდან გადავარდა", "acc"], ["բեռնատարը շուռ է եկել", "acc"], ["yükler devrildi", "load"], ["ładunek się przewrócił", "load"], ["το φορτίο ανατράπηκε", "load"],
+       ["камионът се преобърна", "acc"], ["kravas auto apgāzās", "acc"], ["kamioni u përmbys", "acc"], ["tovornjak se je prevrnil", "acc"], ["жүк көлігі аударылып кетті", "acc"], ["الشاحنة انقلبت", "acc"], ["کامیون واژگون شد", "acc"], ["truck palat gaya", "acc"], ["tumaob ang trak", "acc"], ["krava apgāzās", "load"]]
+NO=["kamyon devrilmedi", "ciężarówka się nie przewróciła", "camionul nu s-a răsturnat", "kamion se nije prevrnuo", "a kamion nem borult fel", "el camión no volcó", "το φορτηγό δεν ανατράπηκε", "բեռնատարը չի շրջվել", "sürət həddini aşdı", "الشاحنة ما انقلبت", "gaadi palat lo"]
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -34,7 +35,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('tır devrildi','το φορτηγό ανατράπηκε','yükler devrildi'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/umk-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('tır devrildi','το φορτηγό ανατράπηκε','yükler devrildi','الشاحنة انقلبت'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/umk-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
