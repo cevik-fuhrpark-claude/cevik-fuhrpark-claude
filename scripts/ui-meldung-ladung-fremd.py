@@ -5,18 +5,19 @@
 # „de spanbanden zijn kapot“ u. a. den Hinweis Ladungssicherungsmittel; Verneinung („la carga no se ha movido“), Nachsichern („de lading is opnieuw vastgezet“) und fremde Bedeutungen
 # („la carga de la batería“, „la cinghia del motore“, „pas bezpieczeństwa“) ohne. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
 # Backlog 1554: Bulgarisch („товарът се измести“, „палетите паднаха“, „коланът за товара е скъсан“) über BG_KINDS.
+# Backlog 1556: Russisch/Ukrainisch mit „для“ („ремінь для кріплення вантажу порвався“, „ремни для груза порваны“) über LASHGEAR2_HINT.
 import os, uuid
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
 JS = """async ([m, path, body, ct]) => { const r = await fetch(path, { method: m, headers: { 'content-type': ct || 'application/json', 'x-cfp': '1' }, body: body ? (ct ? body : JSON.stringify(body)) : undefined });
   return { s: r.status, d: await r.json().catch(() => null) }; }"""
-CASES=[["товарът се измести", "load"], ["палетите паднаха", "load"], ["коланът за товара е скъсан", "lashgear"], ["yük kaydı", "load"], ["paletler devrildi", "load"], ["spanzet koptu", "lashgear"], ["ładunek się przesunął", "load"], ["pasy są zerwane", "lashgear"], ["marfa s-a răsturnat", "load"],
+CASES=[["ремінь для кріплення вантажу порвався", "lashgear"], ["ремни для груза порваны", "lashgear"], ["товарът се измести", "load"], ["палетите паднаха", "load"], ["коланът за товара е скъсан", "lashgear"], ["yük kaydı", "load"], ["paletler devrildi", "load"], ["spanzet koptu", "lashgear"], ["ładunek się przesunął", "load"], ["pasy są zerwane", "lashgear"], ["marfa s-a răsturnat", "load"],
        ["chingile sunt rupte", "lashgear"], ["la carga se ha movido", "load"], ["las cinchas están rotas", "lashgear"], ["a carga tombou", "load"], ["as cintas estão partidas", "lashgear"],
        ["il carico si è ribaltato", "load"], ["mancano le cinghie", "lashgear"], ["le chargement s'est renversé", "load"], ["il manque deux sangles", "lashgear"], ["de lading is omgevallen", "load"],
        ["de spanbanden zijn kapot", "lashgear"], ["le pneu est crevé et le chargement a bougé", "flat,load"],
        ["teret se pomaknuo", "load"], ["elszakadt a heveder", "lashgear"], ["náklad se posunul", "load"], ["popruh praskl", "lashgear"],
        ["krovinys pasislinko", "load"], ["siksnas ir saplīsušas", "lashgear"], ["ngarkesa u zhvendos", "load"], ["rihmad on katki", "lashgear"], ["maal shift ho gaya", "load"], ["naputol ang strap", "lashgear"]]
-NO=["товарът не се измести", "спанзетът не е скъсан", "la carga no se ha movido", "de lading is niet verschoven", "yük kaymadı", "ładunek się nie przesunął", "il carico non si è spostato", "le chargement n'a pas bougé",
+NO=["ремень для груза не порвался", "ремень для груза купил", "товарът не се измести", "спанзетът не е скъсан", "la carga no se ha movido", "de lading is niet verschoven", "yük kaymadı", "ładunek się nie przesunął", "il carico non si è spostato", "le chargement n'a pas bougé",
     "de lading is opnieuw vastgezet", "les sangles ne sont pas cassées", "pas bezpieczeństwa jest zerwany", "kayış koptu", "teret se nije pomaknuo", "a rakomány nem csúszott el", "náklad se neposunul", "krovinys nepasislinko", "koorem ei nihkunud", "maal nahi gira", "hindi gumalaw ang karga"]
 fails=[]
 def check(c,m):

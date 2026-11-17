@@ -44408,6 +44408,29 @@ await test('Backlog 1555 (Blickwinkel „Ausländischer Fahrer meldet: Reifen ka
     for (const x of ['дөңгелек бұзылды', 'shina buzilmadi']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x); }
 });
 
+await test('Backlog 1556 (Sonde „Ladung/Spanngurt auf Russisch/Ukrainisch“, Folge aus 1554, Backlog 195): „ремінь для кріплення вантажу порвався“, „ремни для груза порваны“, „порвался ремень для груза“ → Sicherungsmittel (vorher kein Hinweis); Verneinung, Reparaturvermerk, Kauf, Sicherheitsgurt, Keilriemen ohne; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = (n) => app.match(new RegExp('^const ' + n + ' = \\/(.+)\\/i;$', 'm'))[1];
+  const names = ['LASHGEAR_HINT', 'LASHGEAR2_HINT', 'LASHGEAR3_HINT'], R = names.map((n) => new RegExp(src(n), 'i')), lash = (x) => R.some((r) => r.test(x));
+  for (const x of ['ремінь для кріплення вантажу порвався', 'ремені для вантажу порвані', 'ремень для крепления груза порвался', 'ремни для груза порваны', 'ремень для груза лопнул', 'порвался ремень для груза', 'порвався ремінь для вантажу', 'порвался ремень для крепления'])
+    ok(lash(x), 'Sicherungsmittel: ' + x);
+  for (const x of ['ремень для груза не порвался', 'ремінь для вантажу не порваний', 'ремень для груза порвался, заменили', 'ремень для груза купил', 'ремень безопасности порвался', 'ремінь генератора порвався', 'ремень ГРМ порвался'])
+    ok(!lash(x), 'ohne Sicherungsmittel: ' + x);
+  // Gegenprobe: LASHGEAR2 ohne die Ergänzungen aus 1556 liefert für alle übrigen Testsätze dasselbe Ergebnis
+  const s2 = src('LASHGEAR2_HINT'), cut = s2.lastIndexOf('|(?<![а-яіїєґё])(?:ремен\\S*|ремн[иеі]\\S*|ремін\\S*)\\s+для'); ok(cut > 0, 'neue Alternative am Ende');
+  const o2 = s2.slice(0, cut).replace('|ремен\\S*\\s+(?:для\\s+)?(?:креплен|на\\s+груз|груз)|ремн\\S*\\s+(?:для\\s+)?(?:креплен|груз)|ремін\\S*\\s+(?:для\\s+)?(?:кріплен|на\\s+вантаж|вантаж))', '|ремен\\S*\\s+(?:креплен|на\\s+груз)|ремін\\S*\\s+(?:кріплен|на\\s+вантаж))');
+  ok(o2 !== s2.slice(0, cut), 'Verb-vorne-Ergänzung gefunden');
+  const R0 = [R[0], new RegExp(o2, 'i'), R[2]], lash0 = (x) => R0.some((r) => r.test(x));
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1556 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d = []; for (const x of strs) if (lash(x) !== lash0(x)) d.push(x); eq(d.slice(0, 5).join(' | '), '', 'übrige Testsätze unverändert');
+  for (const x of ['ремінь для кріплення вантажу порвався', 'ремни для груза порваны']) ok(lash0(x) === false, 'vorher ohne Hinweis: ' + x);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['ремінь для кріплення вантажу порвався', 'ремни для груза порваны']) ok(STRINGS[l].help_report_s.includes(x) && lash(x), 'Hilfe nennt: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('ремень безопасности порвался') && !lash('ремень безопасности порвался'), 'Hilfe nennt Sicherheitsgurt: ' + l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
