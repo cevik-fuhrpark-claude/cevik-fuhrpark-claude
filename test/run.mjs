@@ -44431,6 +44431,44 @@ await test('Backlog 1556 (Sonde „Ladung/Spanngurt auf Russisch/Ukrainisch“, 
     ok(STRINGS[l].help_report_s.includes('ремень безопасности порвался') && !lash('ремень безопасности порвался'), 'Hilfe nennt Sicherheitsgurt: ' + l); }
 });
 
+await test('Backlog 1557 (Blickwinkel „Fahrer schreibt die Meldung auf Kurdisch (Kurmancî)“, Backlog 195): „fren naxebite“, „lastîk teqiya“, „motor dest pê nake“, „kabîn dişewite“, „rûn diherike“, „min qeza kir“, „derî venabe“, „mazot hat dizîn“, „frîgo sar nake“ u. a. → dieselben Hinweise wie auf Deutsch (KU_KINDS über kuFold, auch ohne Sonderzeichen; vorher kein Hinweis); Reparaturvermerk, Verneinung, Rad/Ersatzrad ohne; Leuchte „vêket/dişewite“ = Warnleuchte, kein Brand; übrige Testsätze ohne Hinweis aus der Tabelle', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const main = readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const { kuKinds, foreignKinds: fk } = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { kuKinds, foreignKinds };')();
+  const others = new Function(lang.replace(/^import .*$/m, '').replace(/^export .*$/m, '').replace(', ...kuKinds(v)', '') + 'return foreignKinds;')();
+  const CASES = [['fren naxebite', 'brake'], ['frena kamyonê naxebite', 'brake'], ['fren nagire', 'brake'], ['fren a dest nagire', 'parkbrake'], ['lastîk teqiya', 'flat'], ['lastîka paşîn teqiya', 'flat'], ['teker teqiya', 'flat'],
+    ['bayê tekerê çû', 'flat'], ['du teker teqiyan', 'flat'], ['lastik xera bu', 'flat'], ['sukan giran e', 'steer'], ['rûn diherike', 'leak'], ['mazot diherike', 'leak'], ['run diherike', 'leak'], ['kabîn dişewite', 'fire'], ['agir ket kamyonê', 'fire'],
+    ['dûman ji kabînê derdikeve', 'fire'], ['min qeza kir', 'acc'], ['qeza çêbû', 'acc'], ['ez birîndar bûm', 'injury'], ['motor dest pê nake', 'nostart'], ['motor dest pe nake', 'nostart'], ['motor naxebite', 'engine'], ['motor xera bû', 'engine'],
+    ['motor gelek germ bû', 'engine'], ['egzoz dûman reş derdikeve', 'engine'], ['neynik şikest', 'mirror'], ['cama pêş şikest', 'glass'], ['çira naxebite', 'lights'], ['far şikestî ye', 'lights'], ['lamba sor vêket', 'warnlight'],
+    ['çira sor dişewite', 'warnlight'], ['akû vala ye', 'batt'], ['mazot hat dizîn', 'theft'], ['derî venabe', 'door'], ['derî nayê girtin', 'door'], ['klîma naxebite', 'climate'], ['frîgo sar nake', 'reefer'], ['kamyon xera bû', 'breakdown'],
+    ['mazot qediya', 'dryfuel']];
+  for (const [x, k] of CASES) { eq([...kuKinds(x)].sort().join(','), k, x); eq([...await fk(x)].sort().join(','), k, 'alle Sprachen: ' + x); eq([...await others(x)].join(','), '', 'vorher ohne Hinweis: ' + x); }
+  eq([...kuKinds('fren naxebite û rûn diherike')].sort().join(','), 'brake,leak', '„û“ trennt Satzteile');
+  eq([...kuKinds('fren hat çêkirin lê çira naxebite')].sort().join(','), 'lights', '„lê“ trennt Satzteile: Reparaturvermerk gilt nur für die Bremse');
+  eq([...kuKinds('min qeza kir, ez birîndar bûm')].join(','), 'acc', 'Unfall schließt Verletzung ein');
+  const NO = ['fren hat çêkirin', 'fren baş e', 'lastîk hate guhertin', 'motor careke din dixebite', 'qeza tune', 'agir tune', 'rûn naherike', 'neynik ne şikestiye', 'ez birîndar nebûm', 'teker xera bû', 'tekera yedek teqiya',
+    'ez li rê me', 'spas', 'ez çûm malê', 'hewa gelek germ e', 'min nan xwar'];
+  for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: Zeichenketten der übrigen Tests (Deutsch, Englisch, Türkisch, andere Sprachen) bekommen aus der Kurmancî-Tabelle keinen Hinweis
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1557 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const extra = []; for (const x of strs) if (kuKinds(x).size) extra.push(x);
+  eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der Kurmancî-Tabelle');
+  const src = app.slice(app.indexOf('\nconst kuFold'), app.indexOf('\nfunction kuKinds'));
+  ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
+  const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|kuRx|new RegExp)/g)].map((m) => m[1]))];
+  for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
+  eq(ids.length, 21, '21 Hinweisarten'); eq(new Set(CASES.map((c) => c[1])).size, 21, 'jede Hinweisart mit mindestens einem Beispiel');
+  ok(app.includes('...nlKinds(v), ...kuKinds(v), ...lxRun('), 'in foreignKinds aufgenommen');
+  ok(!main.includes('const KU_KINDS') && lang.includes('const KU_KINDS'), 'Tabelle nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const x of ['fren naxebite', 'lastîk teqiya', 'motor dest pê nake', 'kabîn dişewite', 'rûn diherike', 'min qeza kir', 'derî venabe', 'mazot hat dizîn', 'frîgo sar nake']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 1, 'Hilfe-Beispiel mit Hinweis: ' + l + ' ' + x);
+    for (const x of ['hat çêkirin', 'baş e', 'qeza tune', 'rûn naherike', 'teker xera bû']) ok(STRINGS[l].help_report_s.includes(x) && (await fk(x)).size === 0, 'Hilfe nennt ohne Hinweis: ' + l + ' ' + x);
+    ok(STRINGS[l].help_report_s.includes('lamba sor vêket') && [...await fk('lamba sor vêket')].join() === 'warnlight', 'Hilfe Leuchte = Warnleuchte: ' + l); }
+  ok(readFileSync(new URL('../scripts/pruefen.sh', import.meta.url), 'utf8').includes('ui-meldung-kurmanci.py'), 'UI-Prüfung in pruefen.sh');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

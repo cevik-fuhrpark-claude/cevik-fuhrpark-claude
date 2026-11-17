@@ -1785,6 +1785,41 @@ function nlKinds(v) { const k = new Set(); for (const raw of String(v || '').spl
 
 
 
+const kuFold = (s) => ' ' + String(s || '').toLowerCase().replace(/ê/g, 'e').replace(/[îı]/g, 'i').replace(/[ûü]/g, 'u').replace(/ç/g, 'c').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ö/g, 'o')
+  .replace(/[’'`´-]/g, ' ').replace(/\s+/g, ' ') + ' ';
+const KU_D = 'naxebit\\S*|x(?:e|i)rab?\\s+(?:bu|buye|bun|ye|e)\\b|arize\\s+(?:da|daye|heye)\\b';
+const kuRx = (n, d, extra) => new RegExp(`\\b(?:${n})\\S*\\s+(?:\\S+\\s+){0,3}?(?:${d.split('@').join(KU_D)})${extra ? '|' + extra : ''}`);
+const KU_NEG = /\b(?:qeza|agir|duman|du|birindar\S*|problem\S*|pirsgirek\S*|xisar\S*|zirar\S*|dizi|herikin)\s+(?:\S+\s+)?(?:tune|tuneye|nebu|nebuye|cenebu|cenebuye)\b|\bne\s+(?:sikest|sikiya|teqi|herik|sewit|x(?:e|i)rab?|qewim)\S*|\bne(?:sikest|sikiya|teqi|herik|sewit|qewim)\S*|\bna(?:herik|sewit)\S*/g;
+const KU_OK = /\b(?:hat|hate|hatin|hatiye|hatine)\s+(?:cekirin|guhertin|tamirkirin|tamir\s+kirin|saz\s+kirin)\b|\b(?:min|me|em|wan|wi|mekanik\S*|tamirk\S*|hosta)\s+(?:\S+\s+){0,2}?(?:cekir|guhert|tamir\s+kir|saz\s+kir)\b|\b(?:bas|bes)\s+(?:e|ye|bu)\b|\b(?:careke\s+din|disa|niha)\s+dixebit\S*|\bdixebit\S*\s+(?:careke\s+din|disa|niha)\b/;
+const KU_LAMP = 'lamba|cira|isaret|nisan|ampul|gosterge';
+const KU_KINDS = [['brake', kuRx('fren|firen', '@|nagir\\S*|qels\\S*|sist\\s+(?:bu|e|ye)\\b|tune\\b'), /\bfren\S*\s+(?:a\s+)?dest|\bdest\s+fren/],
+  ['parkbrake', kuRx('fren\\S*\\s+(?:a\\s+)?dest|dest\\s+fren|el\\s+fren', '@|nagir\\S*|bernade\\S*|venabe\\S*', '\\b(?:kamyon|tir|ereb)\\S*\\s+(?:\\S+\\s+)?(?:bi\\s+xwe\\s+)?(?:geriya|gindir\\S*|cu\\s+pas)\\b')],
+  ['flat', /\b(?:teker|lastik|lastiq)\S*\s+(?:\S+\s+){0,3}?(?:teqi\S*|qetiya\S*|pincar\S*|kun\s+bu\S*|vala\s+bu\S*)|\b(?:lastik|lastiq)\S*\s+(?:\S+\s+){0,3}?(?:x(?:e|i)rab?\s+(?:bu|buye)\b|sikest\S*)|\bbaye\s+(?:\S+\s+)?(?:teker|lastik)\S*\s+(?:\S+\s+)?(?:cu|dice|derket|derdikeve|reviya)\b|\bteqiya\s+(?:\S+\s+)?(?:teker|lastik)/, /yedek|stepne|zede/],
+  ['steer', kuRx('sukan|direksiyon|direksyon|rul', '@|giran\\b|nazivir\\S*|naziv\\S*|dilerz\\S*|lerizi\\S*')],
+  ['leak', kuRx('run|ron|mazot|mazut|benzin|antifriz|adblue|yag|hidrolik', 'diherik\\S*|herik\\S*|dirij\\S*|rij\\S*|dilop\\s+dike|dicik\\S*|cikiya\\S*', '\\b(?:diherik|dilop\\s+dike)\\S*\\s+(?:\\S+\\s+)?(?:run|ron|mazot|antifriz|adblue)')],
+  ['fire', new RegExp(`\\bagir\\s+(?:\\S+\\s+){0,2}?(?:girt|ket|heye|pe\\s+ket|derket|hilbu)\\b|\\b(?:ket|keti)\\s+agir\\b|\\b(?:disewit|sewiti|disewiti)\\S*|\\bduman\\S*\\s+(?:\\S+\\s+){0,2}?(?:derdikev\\S*|derket|te|heye)\\b|\\bdu\\s+(?:je\\s+)?(?:derdikev\\S*|te)\\b`), new RegExp(`\\b(?:${KU_LAMP}|far|egzoz|eksoz)`)],
+  ['acc', /\bqeza\s+(?:\S+\s+){0,2}?(?:kir|kiriye|kirin|cebu|cebuye|qewimi\S*|bu)\b|\bpevket\S*|\bli\s+(?:min|me|kamyon\S*|tir\S*|ereb\S*)\s+(?:\S+\s+)?xist\b/],
+  ['injury', /\bbirindar\s+(?:bum|bu|bun|im|e|in|buye|buyin)\b|\b(?:min|ez|em|sofer)\s+(?:\S+\s+)?birindar\b/, /\bnebu|\bne\s+bu/],
+  ['nostart', /\b(?:motor|kamyon|tir|ereb)\S*\s+(?:\S+\s+){0,2}?(?:dest\s+pe\s+nake|venake|naqelib\S*|hilnaye)/],
+  ['engine', kuRx('motor', '@|germ\\s+bu\\S*|zede\\s+germ\\S*|gelek\\s+germ\\S*|deng\\s+(?:dide|dike)|hez\\s+nake|kes\\s+nake', '\\b(?:egzoz|eksoz)\\S*\\s+(?:\\S+\\s+){0,2}?du(?:man)?\\s+res'), /dest\s+pe\s+nake|venake|naqelib/],
+  ['mirror', kuRx('neynik|eyne|ayna|awene', '@|sikest\\S*|sikiya\\S*|ket\\b|ketiye|qelis\\S*|tirisk\\S*')],
+  ['glass', kuRx('cam|sise', 'sikest\\S*|sikiya\\S*|qelis\\S*|tirisk\\S*|derz\\S*'), /neynik|ayna|eyne|cira|far\b|pencere\s+(?:aliy|kenar)/],
+  ['lights', kuRx('cira|ronahi|far|stop|sinyal|ampul', '@|venab\\S*|natewe\\S*|nadin\\S*|sikest\\S*|tari\\s+(?:ye|e)\\b'), /lamba\s+sor|ronahiya\s+hisyar/],
+  ['warnlight', new RegExp(`\\b(?:${KU_LAMP})\\S*\\s+(?:\\S+\\s+){0,3}?(?:veket\\S*|peket\\S*|disewit\\S*|sewiti\\S*|vebu\\b|dibiriq\\S*|biriqi\\S*)`), /naxebit|venab|natewe/],
+  ['batt', kuRx('aku|aqu|bateri|akumulator', '@|vala\\s+(?:ye|e|bu|buye)\\b|mir\\b|miriye|qediya\\S*|bar\\s+nake')],
+  ['theft', /\b(?:hat|hate|hatin|hatine|hatiye)\s+diz(?:in|ine)\b|\bdiziy(?:e|a|in)\S*|\bdiz(?:an|ek|eke)?\s+(?:\S+\s+){0,2}?(?:bir|birin|biribu|biriye)\b/],
+  ['door', kuRx('deri|derik', '@|venab\\S*|venebu\\S*|naye\\s+girtin|nagir\\S*|qefil\\s+(?:bu|ma)\\S*|sikest\\S*')],
+  ['climate', kuRx('klima|kalorifer|germker', '@|sar\\s+nake|germ\\s+nake')],
+  ['reefer', kuRx('frigo|frigorifik|sarker|sarinc|termo\\s*king|thermo\\s*king|carrier', '@|sar\\s+nake|sar\\s+nabe|germ\\s+bu\\S*')],
+  ['breakdown', /\b(?:kamyon|kamyona|ereb\S*|tir|tira|maqin\S*|wesait\S*|trak\S*|otomobil\S*)\s+(?:\S+\s+){0,2}?(?:x(?:e|i)rab?\s+(?:bu|buye)\b|li\s+(?:ser\s+)?re\s+ma|di\s+re\s+de\s+ma)/],
+  ['dryfuel', /\b(?:mazot|mazut|benzin|soteme\S*)\s+(?:\S+\s+){0,2}?(?:qediya\S*|xilas\s+bu\S*|nema\b|tune\b)/]];
+function kuKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+|\s(?:û|u|lê|le|lêbelê|lebele)\s/i)) { if (!/[a-zêîûçş]/i.test(raw)) continue; const p = kuFold(raw).replace(KU_NEG, ' '); if (!KU_OK.test(p)) for (const [n, rx, ex] of KU_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); if (k.has('nostart')) k.delete('breakdown'); return k; }
+
+
+
+
+
+
 
 const LX_MAP = { 'ı': 'i', 'ł': 'l', '’': ' ', "'": ' ', '`': ' ', '´': ' ', '-': ' ', 'ß': 's' };
 const lxFold = (s) => { let o = ''; for (let i = 0; i < s.length; i++) { const c = s[i], l = c.toLowerCase(); o += LX_MAP[l] || l.normalize('NFD')[0] || c; } return o; };
@@ -1916,6 +1951,6 @@ const FK_NEG = new RegExp('(?:^|[^\\p{L}])(?:' + [
   '(?:geen|zonder)\\s+(?:enkel(?:e)?\\s+)?(?:ongeluk\\p{L}*|ongeval\\p{L}*|aanrijding\\p{L}*|botsing|brand|vuur|rook|diefstal|inbraak|gewond\\p{L}*)', '(?:het\\s+)?(?:was|is)\\s+geen\\s+(?:ongeluk|ongeval|aanrijding)', '(?:er\\s+(?:is|was|werd)\\s+)?(?:niets|niks)\\s+(?:is\\s+|werd\\s+)?gestolen', 'niemand\\s+(?:is\\s+|raakte\\s+|werd\\s+)?gewond'
 ].join('|') + ')(?!\\p{L})', 'giu');
 const fkNeg = (v) => lxRun(String(v || '').replace(FK_NEG, ' ok ')).rest;
-async function foreignKinds(v0) { const v = fkNeg(v0); const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v), ...hiKinds(v), ...tlKinds(v), ...esKinds(v), ...ptKinds(v), ...itKinds(v), ...frKinds(v), ...nlKinds(v), ...lxRun(String(v0 || '').replace(FK_NEG, ' ok ')).k]); if (k.has('acc')) k.delete('injury'); return k; }
+async function foreignKinds(v0) { const v = fkNeg(v0); const k = new Set([...trKinds(v), ...plKinds(v), ...roKinds(v), ...hrKinds(v), ...huKinds(v), ...csKinds(v), ...bgKinds(v), ...ltKinds(v), ...lvKinds(v), ...sqKinds(v), ...etKinds(v), ...rlKinds(v), ...ulKinds(v), ...srKinds(v), ...slKinds(v), ...beKinds(v), ...geKinds(v), ...arKinds(v), ...faKinds(v), ...uzKinds(v), ...azKinds(v), ...kzKinds(v), ...kyKinds(v), ...tjKinds(v), ...tkKinds(v), ...hyKinds(v), ...grKinds(v), ...hiKinds(v), ...tlKinds(v), ...esKinds(v), ...ptKinds(v), ...itKinds(v), ...frKinds(v), ...nlKinds(v), ...kuKinds(v), ...lxRun(String(v0 || '').replace(FK_NEG, ' ok ')).k]); if (k.has('acc')) k.delete('injury'); return k; }
 
 export { foreignKinds };
