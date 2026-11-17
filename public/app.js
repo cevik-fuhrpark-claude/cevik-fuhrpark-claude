@@ -4301,9 +4301,14 @@ const GE_KINDS = [['brake', /\b(?:mukhruch|tormoz)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)
   ['stuck', /\b(?:talakh|tovl|qinul|kvish)\S*\s+(?:\S+\s+)?(?:chavrch|chavepal|chaejd|chavjd)|\b(?:mankan|borbl|borbal)\S*\s+(?:\S+\s+)?buksa/, /\bsatsob/],
   ['numplate', /\b(?:nomer|sanomr)\S*\s+(?:\S+\s+)?(?:chamovard|dakarg|davkarg|motqd|gatqd|moipar)/],
   ['adas', /\b(?:kamer|radar|asistent|sensor|datchik)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:mushaob|achveneb)|gapuch)/],
-  ['door', /\b(?:kari|karebi|kars|saket|gidrobort|hidrobort)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:iketeb|igheb|vkhsni|vagheb|mushaob|eshveb)|gapuch)/]];
+  ['door', /\b(?:kari|karebi|kars|saket|gidrobort|hidrobort)\S*\s+(?:\S+\s+)?(?:(?:ar|ver)\s+(?:iketeb|igheb|vkhsni|vagheb|mushaob|eshveb)|gapuch)/],
+  // [CLAUDE] Backlog 1562: Ladung verrutscht/gefallen (tvirti gadaadgilda/daetsa), Ladungsgurt gerissen (tvirtis ghvedi gatsqda), Diebstahl (moipares), Vandalismus (vighatsam dakatsra)
+  ['load', /\b(?:tvirt|palet)\S*\s+(?:\S+\s+)?(?:gadaadgil|daets|datsviv|gadmovard|gadavard|gadaikhar|gadaqir|gaiqir)/, /ghved/],
+  ['lashgear', /\b(?:tvirtis\s+ghved|ghvedeb)\S*\s+(?:\S+\s+)?(?:gatsq|gaskd|gapuch|dazian)/, /dzrav|generator|usaprtkh|ventil/],
+  ['theft', /\b(?:moipar|moparul|gaqurd|qurdob)\S*/],
+  ['vandal', /\bvandal|\bvighats\S*\s+(?:\S+\s+){0,3}?(?:dakatsr|gakatsr|chamtvr|daamtvr|gachr|daghebe)/]];
 // Verneinung vor heilen Zuständen: „ზეთი არ ჟონავს“, „სარკე არ გატყდა“, „საბურავი არ არის გახვრეტილი“ – kein Hinweis.
-const GE_NEG = /\b(?:ar|ver)\s+(?:aris\s+)?(?:itsv|zhonav|gamod|ighvr|gaskd|daeshv|gaikhvrit|gakhvret|gatqd|gaibzar|dazian|dashav|davejakh|chamovard|gapuch)\S*/g;
+const GE_NEG = /\b(?:ar|ver)\s+(?:aris\s+)?(?:itsv|zhonav|gamod|ighvr|gaskd|daeshv|gaikhvrit|gakhvret|gatqd|gaibzar|dazian|dashav|davejakh|chamovard|gapuch|moipar|gadaadgil|daets|gatsq)\S*/g;
 function geKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n]+/)) { if (!/[ა-ჰᲐ-Ჰ]/.test(raw)) continue; const p = geLat(raw).replace(GE_NEG, ' '); if (!GE_OK.test(p)) for (const [n, rx, ex] of GE_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
 // [CLAUDE] Backlog 1503 (Blickwinkel „Fahrer schreibt die Meldung auf Arabisch“, Backlog 195): arabische Schrift (Hocharabisch und syrisch-levantinische
 // Umgangssprache) löste bisher keinen Hinweis aus. arLat schreibt in ein festes Konsonantengerüst um (Vokalzeichen/Tatweel entfernt, أ/إ/آ→a, ة→h, ى→a,
@@ -4776,9 +4781,14 @@ const HY_KINDS = [['brake', /\b(?:argelak|tormuz|tormoz)\S*\s+(?:\S+\s+)?(?:ch[e
   ['stuck', /\b(?:tsekh|dzyun|dzyan|avaz)\S*\s+(?:\S+\s+)?(?:khrv|mnats)|\bkhrv(?:ets|el)|\b(?:mekena|aniv)\S*\s+(?:\S+\s+)?buks/, /\b(?:khtsanum|probk)/],
   ['numplate', /\b(?:hamaranish|nomer)\S*\s+(?:\S+\s+)?(?:ynk|kortsr|korav|kotr|chi\s+erevum)/],
   ['adas', /\b(?:tesakhtsik|kamer|radar|sensor|datchik|asistent)\S*\s+(?:\S+\s+)?(?:chi\s+ashkhat|pchats|skhal)/],
-  ['door', /\b(?:dur(?:y|n|ry)?|drner\S*|(?:gidro|hidro)bort\S*)\s+(?:\S+\s+)?(?:chi\s+(?:pakv|batsv|ashkhat|bardzr|ijn)|chen\s+(?:pakv|batsv)|pchats)/]];
+  ['door', /\b(?:dur(?:y|n|ry)?|drner\S*|(?:gidro|hidro)bort\S*)\s+(?:\S+\s+)?(?:chi\s+(?:pakv|batsv|ashkhat|bardzr|ijn)|chen\s+(?:pakv|batsv)|pchats)/],
+  // [CLAUDE] Backlog 1562: Ladung verrutscht/gefallen (bery teghasharzhvel/ynkel e), Ladungsgurt gerissen (amrakman gotin ktrvel e), Diebstahl (goghatsel en), Vandalismus (inch-or meky kertsel e)
+  ['load', /\b(?:ber[yi]?|bernery?|palet(?:ner[yi]?|n[yi])?)\s+(?:\S+\s+)?(?:teghasharzh|ynk|shur\s+e\s+ek|shrjv|sahets)/, /goti|amrak/],
+  ['lashgear', /\b(?:(?:ber[yi]?|amrakm\S*)\s+(?:\S+\s+)?got|gotiner)\S*\s+(?:\S+\s+)?(?:ktrv|pokv|jardv|pchats)/, /generator|amragot|motor|sharzhich/],
+  ['theft', /\bgogh(?:ats|ut)\S*/],
+  ['vandal', /\bvandal|\binch\s*-?\s*or\s+mek\S*\s+(?:\S+\s+){0,3}?(?:kerts|jard|ktr|nerk)/]];
 // Verneinung vor heilen Zuständen: „յուղը չի հոսում“, „հայելին չի կոտրվել“, „անիվը պայթած չէ“, „չեմ բախվել“ – kein Hinweis.
-const HY_NEG = /\bch(?:i|en|em|enk|es)\s+(?:hos|kat|kotr|payt|tsakv|chakv|bakhv|vnasv|ayrv|ijel|ynk|jard|viravor|pchats|ktrv)\S*|\b(?:kotrv|payt|tsakv|chakv|vnasv|jard|pchats|ktrv)\S*\s+che\b|\bchkotrv\S*/g;
+const HY_NEG = /\bch(?:i|en|em|enk|es)\s+(?:hos|kat|kotr|payt|tsakv|chakv|bakhv|vnasv|ayrv|ijel|ynk|jard|viravor|pchats|ktrv|gogh|teghasharzh)\S*|\b(?:kotrv|payt|tsakv|chakv|vnasv|jard|pchats|ktrv|teghasharzhv)\S*\s+che\b|\bchkotrv\S*/g;
 function hyKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n։՝]+/)) { if (!/[ա-ֆԱ-Ֆ]/.test(raw)) continue; const p = hyLat(raw).replace(HY_NEG, ' '); if (!HY_OK.test(p)) for (const [n, rx, ex] of HY_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
 // [CLAUDE] Backlog 1534 (Blickwinkel „Fahrer schreibt die Meldung auf Griechisch“, Backlog 195, Folge aus 1533): griechische Schrift (Neugriechisch,
 // Akzente/Trema über NFD entfernt, ς→σ) – grLat schreibt in eine feste Lateinform um (ου→u, αυ→av, ευ→ev, η/ι→i, υ→y, ω→o, β→v, θ→th, ξ→x, φ→f,
@@ -4804,7 +4814,7 @@ const GR_KINDS = [['brake', grCo('fren', `den\\s+(?:\\S+\\s+)?(?:pian|krat|stama
   ['leak', /\bdiarro/],
   ['fire', /\b(?:fotia|flog|kaigetai|kaigontai|pyrkagi|kapn)/, /\b(?:pyrosvest|exatmis|eksatmis|kapniz)/],
   ['acc', /\b(?:atychim|trochai|trakar|sygkrus|chtypis(?:a|ame|e)\b|epesa\s+pano)/, /\b(?:petr|chalaz)/],
-  ['injury', /\b(?:travmat|aimorag|kopika|traumat)/],
+  ['injury', /\b(?:travmat|aimorag|kopika\b|traumat)/],
   ['nostart', grCo('kinitir|michan|motor|amaxi|forti|tirakt', 'den\\s+(?:\\S+\\s+)?(?:xekin|anav)|esvise|svinei')],
   ['nostart', /\bden\s+(?:\S+\s+)?pairn\S*\s+(?:\S+\s+)?mpros/],
   ['engine', grCo('kinitir|motor|michan', 'zestain|thoryv|chtypa|den\\s+(?:\\S+\\s+)?trav|adyna|chanei\\s+(?:\\S+\\s+)?dynam|kovei'), /\bden\s+(?:\S+\s+)?pairn|\bsvin|\besvise/],
@@ -4838,9 +4848,14 @@ const GR_KINDS = [['brake', grCo('fren', `den\\s+(?:\\S+\\s+)?(?:pian|krat|stama
   ['stuck', /\b(?:kollis|vuliax|spinar|glistr)\S*\s+(?:\S+\s+){0,3}(?:lasp|chion|ammo|chomat|lakk)|\b(?:lasp|chion|ammo|chomat)\S*\s+(?:\S+\s+){0,3}(?:kollis|vuliax|spinar)|\bvuliax/],
   ['numplate', grCo('pinakid', 'epese|chathik|echasa|espase|xekollise|den\\s+(?:\\S+\\s+)?(?:fainet|diavaz)|leipei|klap')],
   ['adas', grCo('kamer|radar|aisthitir|sensor', `den\\s+(?:\\S+\\s+)?(?:deichn|vlep)|sfalma|${GR_NW}`)],
-  ['door', grCo('port(?:a|es|as|aki)\\b|ydravlik|anypsotik', `den\\s+(?:\\S+\\s+)?(?:klein|anoig|kleidon|xekleid|aneva|kateva)|kollis|espase|${GR_NW}`), /\b(?:tzam|parathyr)/]];
+  ['door', grCo('port(?:a|es|as|aki)\\b|ydravlik|anypsotik', `den\\s+(?:\\S+\\s+)?(?:klein|anoig|kleidon|xekleid|aneva|kateva)|kollis|espase|${GR_NW}`), /\b(?:tzam|parathyr)/],
+  // [CLAUDE] Backlog 1562: Ladung verrutscht/gefallen (to fortio metakinithike, epesan oi paletes), Ladungsgurt/Ratsche gerissen (imantas fortiu kopike, kastania espase), Diebstahl (eklepsan, klapike), Vandalismus (vandalismos, kapoios gratzunise)
+  ['load', grCo('fortio|fortiu|palet|kivoti', 'metakinith|metatopist|glistris|epesan|epese|anatrap|gyris|xefyg'), /imant|kastani|\bxana\s+(?:\S+\s+)?(?:des|sfix)/],
+  ['lashgear', grCo('imantes|imant\\S*\\s+(?:\\S+\\s+)?(?:fortiu|prosdes|deses|sfixis)|kastani', 'kopik|espase|spas|chalas|skist'), /dynamo|alternat|chronism|kinitir|ventilat|zoni/],
+  ['theft', /\b(?:eklepsa|eklepse|klapik|klemmen|klopi)\S*/],
+  ['vandal', /\bvandal|\bkapoi(?:os|oi|a)\s+(?:\S+\s+){0,3}?(?:gratzun|charax|vapse|vapsan|eskise|espase|trypise)/]];
 // Verneinung vor heilen Zuständen: „Δεν έσπασε“, „Δεν τρέχει λάδι“, „δεν είναι σπασμένος“, „χωρίς διαρροή“ – kein Hinweis.
-const GR_NEG = /\bden\s+(?:\S+\s+)?(?:espase|ragise|eskase|trypise|trech|staz|kaigetai|chtypis|trakar|epese|chalase|chalarose|skistike|travmatist|pire\s+fotia|epiase\s+fotia|kopik)\S*|\bden\s+(?:einai|ine)\s+(?:\S+\s+)?(?:spasmen|ragismen|fagomen|chalasmen|trypim|travmatism|katestramm|kommen)\S*|\bchoris\s+(?:\S+\s+)?(?:diarro|zimi|atychim|provlim)\S*/g;
+const GR_NEG = /\bden\s+(?:\S+\s+)?(?:espase|ragise|eskase|trypise|trech|staz|kaigetai|chtypis|trakar|epese|chalase|chalarose|skistike|travmatist|pire\s+fotia|epiase\s+fotia|kopik|eklep|klapik|metakinith|epese|epesan)\S*|\bden\s+(?:einai|ine)\s+(?:\S+\s+)?(?:spasmen|ragismen|fagomen|chalasmen|trypim|travmatism|katestramm|kommen)\S*|\bchoris\s+(?:\S+\s+)?(?:diarro|zimi|atychim|provlim)\S*/g;
 function grKinds(v) { const k = new Set(); for (const raw of String(v || '').split(/[.,;!?\n\u00b7\u0387\u037e]+/)) { if (!/[\u0370-\u03ff\u1f00-\u1fff]/.test(raw)) continue; const p = grLat(raw).replace(GR_NEG, ' '); if (!GR_OK.test(p)) for (const [n, rx, ex] of GR_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); } if (k.has('acc')) k.delete('injury'); return k; }
 // [CLAUDE] Backlog 1538 (Blickwinkel „Fahrer schreibt Hindi/Punjabi in lateinischen Buchstaben (Hinglish)“, Backlog 195): viele Fahrer aus Indien schreiben
 // Hindi/Punjabi per Handy-Tastatur lateinisch, mit englischen Hauptwörtern („brake kaam nahi kar raha“, „tyre phat gaya“, „gaadi start nahi ho rahi“).

@@ -43571,7 +43571,7 @@ await test('Backlog 1533 (Blickwinkel „Fahrer schreibt die Meldung auf Armenis
   for (const x of NO) eq([...await fk(x)].join(','), '', 'ohne Hinweis: ' + x);
   ok(hyKinds('Արգելակները չեն աշխատում։ Յուղը հոսում է').size === 2 && hyKinds('Արգելակնե՞րը չեն աշխատում').has('brake'), 'armenischer Punkt „։“ trennt Sätze, Fragezeichen im Wort stört nicht');
   // Gegenprobe: Zeichenketten der übrigen Tests (andere Schriften) bekommen aus der armenischen Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1533"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1561 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1561: Reifen kaputt GR/GE/HY – Treffer erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1533"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1561 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1562 \([\s\S]*?\n\}\);\n/, '\n'); // Tests 1561/1562: GR/GE/HY – Treffer erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (hyKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der armenischen Tabelle');
@@ -43581,7 +43581,7 @@ await test('Backlog 1533 (Blickwinkel „Fahrer schreibt die Meldung auf Armenis
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const ids = [...src.matchAll(/\['([a-z]+)', \//g)].map((m) => m[1]);
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
-  eq(new Set(ids).size, 36, '36 Hinweisarten');
+  eq(new Set(ids).size, 40, '40 Hinweisarten (36 + Ladung/Sicherungsmittel/Diebstahl/Vandalismus aus Test 1562)');
   eq(new Set(CASES.map((c) => c[1])).size, 36, 'jede Hinweisart mit mindestens einem Beispiel');
   ok(app.includes('...tkKinds(v), ...hyKinds(v)'), 'in foreignKinds aufgenommen');
   ok(!main.includes('const HY_KINDS') && lang.includes('const HY_KINDS'), 'Tabelle nur in app-sprachen.js');
@@ -43606,7 +43606,7 @@ await test('Backlog 1534 (Blickwinkel „Fahrer schreibt die Meldung auf Griechi
   eq([...grKinds('Τα φρένα δεν πιάνουν· τρέχουν λάδια')].sort().join(','), 'brake,leak', 'Hochpunkt „·“ (U+0387/U+00B7) trennt Sätze');
   eq([...grKinds('Ο καθρέφτης έσπασε, τα φρένα δουλεύουν')].join(','), 'mirror', 'Mangel und Hauptwort nur im selben Satzteil');
   // Gegenprobe: Zeichenketten der übrigen Tests (andere Schriften) bekommen aus der griechischen Tabelle keinen Hinweis
-  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1534"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1561 \([\s\S]*?\n\}\);\n/, '\n'); // Test 1561: Reifen kaputt GR/GE/HY – Treffer erwünscht
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("await test('Backlog 1534"); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10)).replace(/\nawait test\('Backlog 1561 \([\s\S]*?\n\}\);\n/, '\n').replace(/\nawait test\('Backlog 1562 \([\s\S]*?\n\}\);\n/, '\n'); // Tests 1561/1562: GR/GE/HY – Treffer erwünscht
   const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
   const extra = []; for (const x of strs) if (grKinds(x).size) extra.push(x);
   eq(extra.slice(0, 5).join(' | '), '', 'andere Sprachen ohne Hinweis aus der griechischen Tabelle');
@@ -43616,7 +43616,7 @@ await test('Backlog 1534 (Blickwinkel „Fahrer schreibt die Meldung auf Griechi
   ok(src.length > 1000 && !/\(\?<[!=]/.test(src), 'kein Lookbehind (ältere iPhones)');
   const ids = [...new Set([...src.matchAll(/\['([a-z]+)', (?:\/|grCo)/g)].map((m) => m[1]))];
   for (const id of ids) ok(app.includes(`<div id="${id}" class="panel"`), 'Hinweis vorhanden: ' + id);
-  eq(ids.length, 36, '36 Hinweisarten');
+  eq(ids.length, 40, '40 Hinweisarten (36 + Ladung/Sicherungsmittel/Diebstahl/Vandalismus aus Test 1562)');
   eq(new Set(CASES.map((c) => c[1])).size, 36, 'jede Hinweisart mit mindestens einem Beispiel');
   ok(app.includes('...hyKinds(v), ...grKinds(v)'), 'in foreignKinds aufgenommen');
   ok(!main.includes('const GR_KINDS') && lang.includes('const GR_KINDS'), 'Tabelle nur in app-sprachen.js');
@@ -44590,6 +44590,39 @@ await test('Backlog 1561 (Blickwinkel „Ausländischer Fahrer meldet: Reifen ka
     for (const [x, k] of [['χάλασε το λάστιχο', 'flat'], ['საბურავი გაფუჭდა', 'flat'], ['անվադողը փչացել է', 'flat'], ['το λάστιχο είναι κατεστραμμένο', 'tyre'], ['საბურავი დაზიანებულია', 'tyre'], ['անվադողը վնասվել է', 'tyre'], ['δεν χάλασε το λάστιχο', '']])
       ok(STRINGS[l].help_report_s.includes(x) && (await K(x)) === k, 'Hilfe nennt ' + (k || 'ohne Hinweis') + ': ' + l + ' ' + x);
   }
+});
+
+await test('Backlog 1562 (Griechisch/Georgisch/Armenisch Stufe 2, Backlog 195): Ladung verrutscht/gefallen („το φορτίο μετακινήθηκε“, „ტვირთი გადაადგილდა“, „բեռը տեղաշարժվել է“), Ladungsgurt/Ratsche gerissen („ο ιμάντας του φορτίου κόπηκε“, „ტვირთის ღვედი გაწყდა“, „բեռի ամրակման գոտին կտրվել է“), Diebstahl („μου έκλεψαν το πετρέλαιο“, „საწვავი მოიპარეს“, „դիզելը գողացել են“), Vandalismus („βανδαλισμός“, „ვიღაცამ დაკაწრა“, „ինչ-որ մեկը քերծել է“) → Hinweise wie auf Deutsch (vorher keiner); Keilriemen, Sicherheitsgurt, umgekippter Lkw, Verneinung ohne; „κόπηκαν“ nicht mehr Verletzung; übrige Testsätze unverändert', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const load = (code) => new Function(code.replace(/^import .*$/m, '').replace(/^export .*$/m, '') + 'return { foreignKinds };')().foreignKinds;
+  const fk = load(lang), K = async (x) => [...await fk(x)].sort().join(',');
+  const CASES = [['το φορτίο μετακινήθηκε', 'load'], ['το φορτίο γλίστρησε', 'load'], ['οι παλέτες έπεσαν', 'load'], ['έπεσε το φορτίο', 'load'], ['το φορτίο ανατράπηκε', 'load'], ['μετατοπίστηκε το φορτίο', 'load'],
+    ['ο ιμάντας του φορτίου κόπηκε', 'lashgear'], ['οι ιμάντες κόπηκαν', 'lashgear'], ['έσπασε η καστάνια', 'lashgear'], ['ο ιμάντας πρόσδεσης έσπασε', 'lashgear'],
+    ['μου έκλεψαν το πετρέλαιο', 'theft'], ['κλάπηκε η μπαταρία', 'theft'], ['κάποιος γρατζούνισε το φορτηγό', 'vandal'], ['βανδαλισμός στο φορτηγό', 'vandal'],
+    ['ტვირთი გადაადგილდა', 'load'], ['ტვირთი დაეცა', 'load'], ['პალეტები დაცვივდა', 'load'], ['ტვირთი გადმოვარდა', 'load'], ['ტვირთის ღვედი გაწყდა', 'lashgear'], ['ღვედები გაწყდა', 'lashgear'],
+    ['საწვავი მოიპარეს', 'theft'], ['აკუმულატორი მოიპარეს', 'theft'], ['ვიღაცამ დაკაწრა მანქანა', 'vandal'], ['ვანდალიზმი', 'vandal'],
+    ['բեռը տեղաշարժվել է', 'load'], ['բեռը ընկել է', 'load'], ['պալետները ընկան', 'load'], ['բեռը շուռ է եկել', 'load'], ['բեռի ամրակման գոտին կտրվել է', 'lashgear'], ['գոտիները կտրվել են', 'lashgear'],
+    ['դիզելը գողացել են', 'theft'], ['մարտկոցը գողացան', 'theft'], ['ինչ-որ մեկը քերծել է մեքենան', 'vandal'], ['վանդալիզմ', 'vandal'],
+    ['κόπηκα στο χέρι', 'injury'], ['μου έκλεψαν τα κλειδιά', 'lost,theft']];
+  for (const [x, k] of CASES) eq(await K(x), k, x);
+  for (const x of ['δεν μετακινήθηκε το φορτίο', 'το φορτίο δεν έπεσε', 'δεν έκλεψαν τίποτα', 'τίποτα δεν κλάπηκε', 'ο ιμάντας του δυναμό κόπηκε', 'η ζώνη ασφαλείας κόπηκε', 'έδεσα ξανά το φορτίο',
+    'ტვირთი არ გადაადგილებულა', 'არაფერი მოუპარავთ', 'არ მოიპარეს', 'ძრავის ღვედი გაწყდა', 'უსაფრთხოების ღვედი გაწყდა', 'ტვირთი არ დაცემულა',
+    'բեռը չի տեղաշարժվել', 'ոչինչ չեն գողացել', 'գեներատորի գոտին կտրվել է', 'ամրագոտին կտրվել է', 'բեռնատարը շուռ է եկել', 'բեռնատարը ընկել է'])
+    eq(await K(x), '', 'ohne Hinweis: ' + x);
+  // Gegenprobe: ohne die neuen Einträge (Kommentar „Backlog 1562“) liefern alle übrigen Testsätze dasselbe Ergebnis
+  const L = app.split('\n'), E = []; L.forEach((l, k) => { if (/Backlog 1562/.test(l) && /^\s+\/\//.test(l)) { let j = k + 1; while (/^  \['(?:load|lashgear|theft|vandal)'/.test(L[j] || '')) E.push(L[j++].trim()); } });
+  eq(E.length, 12, 'neue Einträge gefunden'); let old = lang; for (const e of E) { ok(old.includes(e), 'Eintrag im Modul: ' + e.slice(0, 40)); old = old.replace(e, e.endsWith(']];') ? '];' : ''); } // letzter Eintrag der Tabelle: Array bleibt mit Komma am Ende gültig
+  const fk0 = load(old), t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1562 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  for (const [x] of CASES.slice(0, 4)) eq(await fk0(x).then((r) => r.size), 0, 'ohne neue Einträge kein Hinweis: ' + x);
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ' → ' + b + ' / ' + a); }
+  eq(d.slice(0, 5).join(' | '), '', 'Sprachmodul: übrige Testsätze unverändert');
+  ok(!readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8').includes('gadaadgil'), 'Georgisch nur in app-sprachen.js');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en'])
+    for (const [x, k] of [['το φορτίο μετακινήθηκε', 'load'], ['ტვირთის ღვედი გაწყდა', 'lashgear'], ['դիզելը գողացել են', 'theft'], ['βανδαλισμός στο φορτηγό', 'vandal'], ['ძრავის ღვედი გაწყდა', '']])
+      ok(STRINGS[l].help_report_s.includes(x) && (await K(x)) === k, 'Hilfe nennt ' + (k || 'ohne Hinweis') + ': ' + l + ' ' + x);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
