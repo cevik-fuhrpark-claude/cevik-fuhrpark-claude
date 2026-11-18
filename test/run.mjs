@@ -44864,6 +44864,46 @@ await test('Backlog 1572 (Blickwinkel „Fahrzeug steht im Graben“ – Zustand
     ok(STRINGS[l].help_report_s.includes(x), 'Hilfe nennt: ' + l + ' ' + x);
 });
 
+await test('Backlog 1573 (Blickwinkel „Ladung als Teil der Fahrzeugbezeichnung“, Folge aus 1571, Backlog 195): „yük kamyonu devrildi“, „il camion merci si è ribaltato“, „camion de marfă s-a răsturnat“, „vrachtwagen met lading is omgevallen“ zeigten Ladung statt Unfall; „ciężarówka z ładunkiem przewróciła się“, „camión de carga volcó“, „teretni kamion se prevrnuo“ zeigten nichts → Unfall; Ladung mit Partizip („camion con il carico spostato“) und echte Ladungs-Sätze bleiben Ladung', async () => {
+  const { readFileSync } = await import('node:fs');
+  const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const mk = (src) => new Function(src.replace(/^import .*$/m, ``).replace(/^export .*$/m, ``) + `return { foreignKinds };`)().foreignKinds;
+  const fk = mk(lang), K = async (x) => [...await fk(x)].sort().join(`,`);
+  const ACC = [`yük kamyonu devrildi`, `yük kamyonu yan yattı`, `ciężarówka z ładunkiem przewróciła się`, `samochód z towarem przewrócił się`, `camión de carga volcó`, `el camión de carga se volcó`, `camion de marchandises s’est renversé`,
+    `il camion merci si è ribaltato`, `vrachtwagen met lading is omgevallen`, `de vrachtwagen met pallets is omgevallen`, `camion de marfa s-a răsturnat`, `autocamionul cu marfa s-a rasturnat`, `teretni kamion se prevrnuo`, `krovininis sunkvežimis apvirto`,
+    `maal wala truck palat gaya`, `cargo truck palat gaya`, `caminhão de carga tombou`];
+  for (const x of ACC) eq(await K(x), 'acc', `Unfall: ` + x);
+  for (const x of [`yük kamyonu hendeğe düştü`, `camión de mercancías se cayó a la cuneta`, `le camion de marchandises est tombé dans le fossé`, `il camion del carico è caduto nel fosso`, `camionul de marfă a căzut în șanț`, `kamion za teret je pao u jarak`, `o caminhão de carga caiu na vala`])
+    eq(await K(x), 'acc,stuck', `Unfall + festgefahren: ` + x);
+  for (const x of [`yük kamyondan düştü`, `yük kamyonun üstünden düştü`, `la carga del camión se movió`, `il carico del camion si è spostato`, `la carga se cayó del camión`, `el camión de carga está bien pero la carga se movió`, `camion con il carico spostato`,
+    `camion con carico ribaltato`, `camion cu marfa răsturnată`, `vrachtwagen met lading verschoven`, `il camion merci ha il carico spostato`, `yük kamyonunda yük kaydı`, `camion de marchandises, les palettes ont bougé`]) eq(await K(x), 'load', `Ladung: ` + x);
+  // Gegenprobe: ohne LX_CMP zeigen die Unfall-Beispiele keinen Unfall; alle übrigen Testsätze bleiben unverändert
+  ok(lang.includes('for (const rx of LX_CMP)'), `LX_CMP im Sprachmodul`); const fk0 = mk(lang.replace('for (const rx of LX_CMP)', 'for (const rx of [])'));
+  for (const x of ACC) ok(!(await fk0(x)).has('acc'), `vorher kein Unfall: ` + x);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const i = t.indexOf("\nawait test('Backlog 1573 ("); const rest = t.slice(0, i) + t.slice(t.indexOf('\nawait test(', i + 10));
+  const strs = new Set([...rest.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2])); ok(strs.size > 30000, 'Zeichenketten gefunden: ' + strs.size);
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ` → ` + b + ` / ` + a); }
+  eq(d.slice(0, 5).join(` | `), ``, `Sprachmodul: übrige Testsätze unverändert`);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const x of [`yük kamyonu devrildi`, `il camion merci si è ribaltato`])
+    ok(STRINGS[l].help_report_s.includes(x), `Hilfe nennt: ` + l + ` ` + x);
+});
+
+await test('Backlog 1574 (Sonde zu 1573): albanisches „tym“ (Rauch) traf polnische Wörter auf „-ętym“ („jadę z pękniętym lusterkiem“, „przesuniętym“, „wygiętym“) als Brand – jetzt nur als eigenes Wort', async () => {
+  const { readFileSync } = await import('node:fs');
+  const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const fk = new Function(lang.replace(/^import .*$/m, ``).replace(/^export .*$/m, ``) + `return { foreignKinds };`)().foreignKinds;
+  for (const x of [`jadę z pękniętym lusterkiem`, `ciężarówka z ładunkiem przesuniętym`, `koło z wygiętym błotnikiem`, `z odciętym kablem`]) ok(!(await fk(x)).has('fire'), `kein Brand: ` + x);
+  for (const x of [`del tym`, `del i tym`, `ka tym në kabinë`, `del tymi nga motori`, `Tym nga motori.`, `„tym“ nga kabina`]) ok((await fk(x)).has('fire'), `Brand: ` + x);
+  // Gegenprobe: mit dem alten Muster (\btym\b) zeigen die polnischen Beispiele Brand; alle übrigen Testsätze bleiben unverändert
+  const NEW = `|(?<![^\\s.,;!?:("„'«])(?:tym\\b|tymi\\b|tymos)|`; ok(lang.includes(NEW), `neues Muster im Modul`);
+  const fk0 = new Function(lang.replace(NEW, `|\\btym\\b|\\btymi\\b|\\btymos|`).replace(/^import .*$/m, ``).replace(/^export .*$/m, ``) + `return { foreignKinds };`)().foreignKinds;
+  ok((await fk0(`jadę z pękniętym lusterkiem`)).has('fire'), `vorher Brand`);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const strs = new Set([...t.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2]));
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ` → ` + b + ` / ` + a); }
+  eq(d.slice(0, 5).join(` | `), ``, `Sprachmodul: übrige Testsätze unverändert`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

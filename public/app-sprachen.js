@@ -2,6 +2,41 @@
 import {  } from './app-main.js';
 
 
+function lbRx(src, flags, testOnly) {
+  if (lbRx.ok === undefined) { try { lbRx.ok = !!new RegExp('(?<=a)b'); } catch (e) { lbRx.ok = false; } }
+  return new RegExp(lbRx.ok ? src : lbFallback(src, !!testOnly), flags);
+}
+function lbFallback(src, exact) {
+  const classEnd = (i) => { for (let j = i + 1; j < src.length; j++) { if (src[j] === '\\') j++; else if (src[j] === ']') return j + 1; } return src.length; };
+  const groupEnd = (i) => { let d = 0; for (let j = i; j < src.length; j++) { const c = src[j]; if (c === '\\') j++; else if (c === '[') j = classEnd(j) - 1; else if (c === '(') d++; else if (c === ')' && --d === 0) return j + 1; } return src.length; };
+  const negOne = (x) => { const m = /^\[(\^?)((?:\\.|[^\]\\])*)\]$/.exec(x); if (m) return m[1] ? '[' + m[2] + ']' : '[^' + m[2] + ']';
+    if (/^\\[wdsWDS]$/.test(x)) return '\\' + (x[1] === x[1].toLowerCase() ? x[1].toUpperCase() : x[1].toLowerCase());
+    if (x.length === 1 && !/[\\^$.|?*+()[\]{}/]/.test(x)) return '[^' + (x === '-' ? '\\-' : x) + ']';
+    return null; };
+  let out = ''; const st = [true], pol = [1]; let at = true;
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    if (c === '\\') { out += src.slice(i, i + 2); i += 2; at = false; continue; }
+    if (c === '[') { const e = classEnd(i); out += src.slice(i, e); i = e; at = false; continue; }
+    if (c === '(' && (src.startsWith('(?<=', i) || src.startsWith('(?<!', i))) {
+      const e = groupEnd(i), inner = src.slice(i + 4, e - 1);
+      if (exact && at) {
+        if (src[i + 3] === '=') { out += '(?:' + lbFallback(inner, false) + ')'; at = false; }
+        else { const one = negOne(inner); if (one) { out += '(?:^|' + one + ')'; at = false; } }
+      } else if (pol[pol.length - 1] < 0) out += '(?!)';
+      i = e; continue;
+    }
+    if (c === '(') { const look = src.startsWith('(?=', i) || src.startsWith('(?!', i); const h = look || src.startsWith('(?:', i) ? 3 : src.startsWith('(?<', i) ? src.indexOf('>', i) + 1 - i : 1;
+      st.push(at && !look); pol.push(pol[pol.length - 1] * (src.startsWith('(?!', i) ? -1 : 1)); out += src.slice(i, i + h); i += h; at = at && !look; continue; }
+    if (c === ')') { st.pop(); pol.pop(); out += c; i++; at = false; continue; }
+    if (c === '|') { out += c; i++; at = st[st.length - 1]; continue; }
+    if (c === '^') { out += c; i++; continue; }
+    out += c; i++; at = false;
+  }
+  return out;
+}
+
+
 
 
 
@@ -449,8 +484,9 @@ const LV_KINDS = [['brake', /\bbremz\S*\s+(?:\S+\s+)?(?:nedarboj|nestrada|nebrem
 const lvFold = (s) => String(s || '').toLowerCase().replace(/[āčēģīķļņšūž]/g, (c) => 'acegiklnsuz'['āčēģīķļņšūž'.indexOf(c)]);
 function lvKinds(v) { const k = new Set(); for (const p of lvFold(v).split(/[.,;!?\n]+/)) if (!LV_OK.test(p)) for (const [n, rx, ex] of LV_KINDS) if (rx.test(p) && !(ex && ex.test(p))) k.add(n); if (k.has('acc')) k.delete('injury'); return k; }
 const SQ_OK = /\bu\s+(?:riparua|rregullua|nderrua)n?\b|\b(?:riparuar|rregulluar|nderruar)\b|\bpunon\s+(?:perseri|prape|normal)|\bne\s+rregull\b|\bpa\s+problem/;
+
 const SQ_KINDS = [['brake', /\bfren\S*\s+(?:\S+\s+)?(?:nuk\s+(?:punon|punojne|mbajne|mban|kapin|kap)|jane\s+te\s+dobet|te\s+dobet|dobet)|\bnuk\s+frenon\b|\b(?:ra|bie|humbet|ulet)\s+(?:\S+\s+)?presion\S*\s+(?:i\s+)?(?:te\s+)?ajri|\bpresion\S*\s+(?:i\s+)?ajri\S*\s+(?:\S+\s+)?(?:ra|bie|ulet)\b|\b(?:humb|humbet|fryn|nxjerr)\s+aj[eë]r\b/, /dore|drit|llamb|asistent|vete|arsye|gom|jastek|balon/],
-  ['fire', /\bzjarr\b|\bmori\s+zjarr|\b(?:digjet|po\s+digjet|u\s+dogj)\s+(?:\S+\s+)?(?:kabin|motor|rrot|gom|kabllo|rimorkio)|\b(?:kabin\S*|motor\S*|rrot\S*|gom\S*|kabllo\S*|rimorkio\S*)\s+(?:\S+\s+)?(?:po\s+)?digjet\b|\btym\b|\btymi\b|\btymos|\bere\s+(?:\S+\s+)?djegi/, /marmit|shkarkim|zjarrfik|fikes|llamb|drit|fener|friksion|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|vyfuk|izputej|ismetim|duslintuv/],
+  ['fire', lbRx(String.raw`\bzjarr\b|\bmori\s+zjarr|\b(?:digjet|po\s+digjet|u\s+dogj)\s+(?:\S+\s+)?(?:kabin|motor|rrot|gom|kabllo|rimorkio)|\b(?:kabin\S*|motor\S*|rrot\S*|gom\S*|kabllo\S*|rimorkio\S*)\s+(?:\S+\s+)?(?:po\s+)?digjet\b|(?<![^\s.,;!?:("„'«])(?:tym\b|tymi\b|tymos)|\bere\s+(?:\S+\s+)?djegi`, ''), /marmit|shkarkim|zjarrfik|fikes|llamb|drit|fener|friksion|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|vyfuk|izputej|ismetim|duslintuv/],
   ['flat', /\bgom\S*\s+(?:\S+\s+)?(?:u\s+)?(?:shpua|shpuar|plasi|plasur|shfry|shfryre|shfrye|shfryra)\b|\b(?:shpova|shpuam|plasi|u\s+shpua|u\s+shfry)\s+(?:\S+\s+)?gom/, /jastek|balon|tend|fshir/],
   ['steer', /\btimon\S*\s+(?:\S+\s+)?(?:u\s+)?(?:bllokua|bllokuar|eshte\s+bllokuar|rende|nuk\s+(?:kthehet|punon|rrotullohet)|lekundet|ka\s+loje)|\b(?:terheq|teheq|shkon)\s+(?:\S+\s+)?(?:ne\s+te\s+|nga\s+e\s+)?(?:djathte|majte|djathtas|majtas)\b/],
   ['leak', /\b(?:rrjedh|pikon|pikojne|derdhet|humb|humbet)\s+(?:\S+\s+)?(?:vaj|naft|karburant|antifriz|ftohes|leng|adblue)|\b(?:vaj|naft|karburant|antifriz|leng\S*\s+ftohes|adblue)\S*\s+(?:\S+\s+)?(?:rrjedh|pikon|derdhet)\b/],
@@ -2171,7 +2207,16 @@ const LX_KINDS = [
 
 
 const LX_DITCH = /^\s+(?:[^\s.,;!?]+\s+){0,2}?(?:prikop\S*|priekop\S*|rowu|rowie|hendeg\S*|hendek\S*|sarampol\S*|cuneta|zanja|valeta|vala|fosso|fossato|cunetta|fosse|sloot|greppel|arok\S*|sant|santul|rapa|jarak|jarku|griov\S*|grav(?:is|i|ja|ji|ju)|kraavi?|kanal\S*|khaai|naale|nale)\b/;
-function lxRun(v) { const s = String(v || ''), f = lxFold(s), k = new Set(), cut = s.split(''); let any = false;
+
+
+
+const LX_TRUCK = '(?:kamyon\\S*|tir|tiri|ciezarowk\\S*|samochod\\S*|auto|camion\\S*|camioneta\\S*|caminhao|caminhoes|furgon\\S*|vrachtwagen\\S*|vrachtauto\\S*|trucks?|autocamion\\S*|autocarro|autocarri|kamion\\S*|vozil\\S*|pojazd\\S*|vehiculo|veiculo|vehicule|veicolo|oplegger|aanhanger|remorque|rimorchio|semirimorchio|reboque|remolque|remorc\\S*|dorse\\S*)';
+const LX_CMP = [new RegExp(`\\b${LX_TRUCK}(\\s+(?:(?:z|ze|de|da|do|d|del|dei|cu|con|com|met|za|s|sa)\\s+(?:(?:la|il|o|a|le|les|de|het)\\s+)?(?:ladunk\\S*|towar\\S*|palet\\S*|carga|mercancias?|mercaderias?|mercadorias?|marchandises?|marfa|marfuri\\S*|incarcatur\\S*|carico|merci|teret\\S*|robu|robom|lading|vracht|goederen|pallets?)|merci))\\b`, 'g'),
+  /\b((?:yuk\s+)(?=(?:kamyon(?:u|um|umuz|unu|umuzu)|araci|aracim|aracimiz|tiri|tirim)\b)|teretn\S*\s+(?=(?:kamion|vozil|auto)\S*)|krovinin\S*\s+(?=(?:sunkvezim|automobil|masin)\S*)|(?:maal|saman|samaan|cargo|load)\s+(?:(?:wala|wali|vala|vali|vaala|waala|ka|ki|ke)\s+)?(?=(?:truck|trak|gaadi|gadi|gaddi|trolla|tempo|container)\b))/g];
+
+const LX_PART = /^\s+(?:spostat|ribaltat|rovesciat|scivolat|cadut|crollat|movid|desplazad|caid|volcad|tirad|ladead|deslocad|tombad|verschoven|omgevallen|gevallen|losgeraakt|scheef|rasturnat|mutat|miscat|deplasat|przesuniet|przewrocon|deplace|renverse|tombe|bascule|glisse|pomaknut|prevrnut)/;
+function lxRun(v) { const s = String(v || ''), cut = s.split(''), k = new Set(); let f = lxFold(s), any = false;
+  for (const rx of LX_CMP) f = f.replace(rx, (m, g, off) => { if (LX_PART.test(f.slice(off + m.length))) return m; const a = off + m.indexOf(g); for (let i = a; i < a + g.length; i++) cut[i] = ' '; any = true; return m.replace(g, ' '.repeat(g.length)); });
   for (const [n, rx, neg, ok, ex] of LX_KINDS) for (const m of f.matchAll(rx)) { const a = m.index; let b = a + m[0].length;
     let p = a; while (p > 0 && !/[.,;!?\n]/.test(f[p - 1])) p--; let q = b; while (q < f.length && !/[.,;!?\n]/.test(f[q])) q++;
     const part = f.slice(p, q); if (ex && ex.test(part)) continue; any = true;

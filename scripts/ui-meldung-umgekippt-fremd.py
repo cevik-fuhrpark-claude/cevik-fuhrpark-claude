@@ -1,4 +1,4 @@
-# [CLAUDE] UI-Test (17.11.2026, Backlog 1563; Stufe 3 Graben UZ/AZ/KZ/KY/TJ/KU/SO/AR/FA/Hinglish Backlog 1569; verneint/Zustand Backlog 1570; Ladung in den Graben/CS-SK-Lkw-Wörter Backlog 1571; Fahrzeug steht im Graben TR/IT/HU/ES/NL Backlog 1572; Stufe 2 Backlog 1564: BG/LT/LV/SQ/ET/SL/UZ/AZ/KZ/KY/TJ/KU/SO/AR/FA/Hinglish/Tagalog, Blickwinkel „Lkw umgekippt / von der Straße abgekommen“ in Fremdsprachen): Meldeformular zeigt bei
+# [CLAUDE] UI-Test (17.11.2026, Backlog 1563; Stufe 3 Graben UZ/AZ/KZ/KY/TJ/KU/SO/AR/FA/Hinglish Backlog 1569; verneint/Zustand Backlog 1570; Ladung in den Graben/CS-SK-Lkw-Wörter Backlog 1571; Fahrzeug steht im Graben TR/IT/HU/ES/NL Backlog 1572; Ladung als Teil der Fahrzeugbezeichnung Backlog 1573; „-ętym“ kein Brand Backlog 1574; Stufe 2 Backlog 1564: BG/LT/LV/SQ/ET/SL/UZ/AZ/KZ/KY/TJ/KU/SO/AR/FA/Hinglish/Tagalog, Blickwinkel „Lkw umgekippt / von der Straße abgekommen“ in Fremdsprachen): Meldeformular zeigt bei
 # „tır devrildi“, „fura przewróciła się“, „camionul s-a răsturnat“, „kamion se prevrnuo“, „a kamion felborult“, „kamion se převrátil“, „el camión volcó“, „saí da estrada“,
 # „το φορτηγό ανατράπηκε“, „მანქანა გზიდან გადავარდა“, „բեռնատարը շուռ է եկել“ den Unfall-Hinweis (wie „Lkw ist umgekippt“); umgekippte Ladung zeigt nur den
 # Ladungs-Hinweis, Verneinung keinen. DE/UK/EN bei 390/820/1366 px. Braucht den Dev-Server.
@@ -17,14 +17,16 @@ CASES=[["tır devrildi", "acc"], ["yoldan çıktım", "acc"], ["fura przewróci�
        ["yuk mashinasi ariqqa tushib ketdi", "acc,stuck"], ["maşın xəndəyə düşdü", "acc,stuck"], ["машина арыкта турат", "acc,stuck"], ["мошин ба ҷӯй афтод", "acc,stuck"], ["kamyon ket nav xendekê", "acc,stuck"], ["بارهەڵگرەکە کەوتە ناو جۆگەڵەکە", "acc,stuck"], ["الشاحنة سقطت في الخندق", "acc,stuck"], ["کامیون افتاد توی جوی", "acc,stuck"], ["truck khaai mein gir gaya", "acc,stuck"], ["maal khaai mein gir gaya", "load"],  # Backlog 1569
        ["الشاحنة مقلوبة", "acc"], ["tovornjak je prevrnjen", "acc"], ["sunkvežimis apvirto", "acc"],  # Backlog 1570
        ["náklad spadl do příkopu", "load"], ["ładunek spadł do rowu", "load"], ["la carga cayó en la cuneta", "load"], ["a rakomány az árokba esett", "load"], ["nákladní auto je v příkopu", "acc,stuck"], ["nákladiak sa prevrátil", "acc"],  # Backlog 1571
-       ["il camion è nel fosso", "acc,stuck"], ["kamyon hendekte", "acc,stuck"], ["el camión está en la zanja", "acc,stuck"], ["de vrachtwagen staat in de greppel", "acc,stuck"]]  # Backlog 1572
+       ["il camion è nel fosso", "acc,stuck"], ["kamyon hendekte", "acc,stuck"], ["el camión está en la zanja", "acc,stuck"], ["de vrachtwagen staat in de greppel", "acc,stuck"],  # Backlog 1572
+       ["yük kamyonu devrildi", "acc"], ["il camion merci si è ribaltato", "acc"], ["camión de carga volcó", "acc"], ["camion con il carico spostato", "load"]]  # Backlog 1573
 NO=["kamyon devrilmedi", "ciężarówka się nie przewróciła", "camionul nu s-a răsturnat", "kamion se nije prevrnuo", "a kamion nem borult fel", "el camión no volcó", "το φορτηγό δεν ανατράπηκε", "բեռնատարը չի շրջվել", "sürət həddini aşdı", "الشاحنة ما انقلبت", "gaadi palat lo", "krovinys neapsivertė", "yük ters dönmedi",
     "tır şarampole düşmedi", "el camión no está en la cuneta", "il camion non è finito nel fosso", "le camion n’est pas dans le fossé", "de vrachtwagen is niet in de sloot", "camionul nu a intrat în șanț", "kamion není v příkopu", "a kamion nincs az árokban", "ciężarówka nie stoi w rowie",  # Backlog 1567
     "камионът не падна в канавката", "το φορτηγό δεν έπεσε στο χαντάκι", "hindi nahulog sa kanal ang trak", "televizori është në kanal 5",  # Backlog 1568
     "mashina ariqqa tushmadi", "maşın xəndəyə düşmədi", "машина арыкка түшкөн жок", "мошин ба ҷӯй наафтод", "الشاحنة لم تسقط في الخندق", "کامیون توی جوی نیفتاد", "truck khaai mein nahi gira", "ariqda suv yoq",  # Backlog 1569
     "камионът не е преобърнат", "veok ei ole ümber läinud", "ما خرجت عن الطريق", "از جاده خارج نشدم",  # Backlog 1570
     "a kamion nem az árokban van", "nem vagyok az árokban",  # Backlog 1571
-    "il camion non è nel fosso", "el camión no está en la zanja", "de vrachtwagen staat niet in de greppel"]  # Backlog 1572
+    "il camion non è nel fosso", "el camión no está en la zanja", "de vrachtwagen staat niet in de greppel",  # Backlog 1572
+    "koło z wygiętym błotnikiem"]  # Backlog 1574
 fails=[]
 def check(c,m):
     print(('  ✔ ' if c else '  ✘ ')+m)
@@ -48,7 +50,7 @@ with sync_playwright() as p:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
             check(','.join(sorted(shown))==want,f'{lang}/{w}: „{txt}“ → {want} (sichtbar: {shown})')
-            if SHOTS and txt in ('náklad spadl do příkopu','il camion è nel fosso','tır devrildi','το φορτηγό ανατράπηκε','yükler devrildi','الشاحنة انقلبت','krovinys apsivertė','truck ulta ho gaya','le camion est dans le fossé','tır hendeğe düştü','το φορτηγό έπεσε στο χαντάκι','الشاحنة سقطت في الخندق'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/umk-{CASES.index([txt,want])}-{lang}-{w}.png')
+            if SHOTS and txt in ('yük kamyonu devrildi','náklad spadl do příkopu','il camion è nel fosso','tır devrildi','το φορτηγό ανατράπηκε','yükler devrildi','الشاحنة انقلبت','krovinys apsivertė','truck ulta ho gaya','le camion est dans le fossé','tır hendeğe düştü','το φορτηγό έπεσε στο χαντάκι','الشاحنة سقطت في الخندق'): q.locator('#'+want.split(',')[-1]).scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/umk-{CASES.index([txt,want])}-{lang}-{w}.png')
         for txt in NO:
             q.fill('#d',txt); q.wait_for_timeout(100)
             shown=q.evaluate("[...document.querySelectorAll('.panel[role=status]')].filter(e=>!e.hidden&&e.id).map(e=>e.id)")
