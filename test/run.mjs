@@ -44904,6 +44904,26 @@ await test('Backlog 1574 (Sonde zu 1573): albanisches „tym“ (Rauch) traf pol
   eq(d.slice(0, 5).join(` | `), ``, `Sprachmodul: übrige Testsätze unverändert`);
 });
 
+await test('Backlog 1575 (Sonde zu 1572/1573, Backlog 195): estnisch „veok kukkus kraavi“, „haagis kukkus kraavi“, „veok läks kraavi“, „kukkusin kraavi“ zeigten nichts → Unfall + festgefahren; „peaaegu“ (beinahe) und Verneinung ohne, Ladung bleibt Ladung', async () => {
+  const { readFileSync } = await import('node:fs');
+  const lang = readFileSync(new URL('../public/app-sprachen.js', import.meta.url), 'utf8');
+  const mk = (src) => new Function(src.replace(/^import .*$/m, ``).replace(/^export .*$/m, ``) + `return { foreignKinds };`)().foreignKinds;
+  const fk = mk(lang), K = async (x) => [...await fk(x)].sort().join(`,`);
+  const BOTH = [`veok kukkus kraavi`, `haagis kukkus kraavi`, `veok läks kraavi`, `kukkusin kraavi`, `läksime autoga kraavi`, `veok kukkus kraavi, aga keegi ei saanud viga`];
+  for (const x of BOTH) eq(await K(x), `acc,stuck`, `Unfall + festgefahren: ` + x);
+  for (const x of [`veok ei kukkunud kraavi`, `veok ei läinud kraavi`, `telefon kukkus kraavi`, `veok kukkus peaaegu kraavi`, `sõitsin peaaegu kraavi`]) eq(await K(x), ``, `ohne Hinweis: ` + x);
+  for (const x of [`koorem kukkus kraavi`, `kastid kukkusid kraavi`]) eq(await K(x), `load`, `Ladung: ` + x);
+  // Gegenprobe: ohne die neuen Teilmuster zeigen die Beispiele nichts; alle übrigen Testsätze bleiben unverändert
+  const ADD = [...lang.matchAll(/\|\\b\(\?:veok\|[^/]*?kraavi(?=\/)/g)].map((m) => m[0]); eq(ADD.length, 2, `neue Teilmuster gefunden`);
+  let old = lang; for (const a of ADD) old = old.replace(a, ``); eq((old.match(/peaaegu\|napilt\|/g) || []).length, 2, `peaaegu-Ausschluss`); old = old.replaceAll(`peaaegu|napilt|`, ``);
+  const fk0 = mk(old); for (const x of BOTH.slice(0, 4)) eq([...await fk0(x)].join(), ``, `vorher ohne Hinweis: ` + x);
+  const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const strs = new Set([...t.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2]));
+  const d = []; for (const x of strs) { const a = [...await fk(x)].sort().join(), b = [...await fk0(x)].sort().join(); if (a !== b) d.push(x + ` → ` + b + ` / ` + a); }
+  eq(d.slice(0, 5).join(` | `), ``, `Sprachmodul: übrige Testsätze unverändert`);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_report_s.includes(`veok kukkus kraavi`), `Hilfe nennt: ` + l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
