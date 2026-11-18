@@ -44896,7 +44896,7 @@ await test('Backlog 1574 (Sonde zu 1573): albanisches „tym“ (Rauch) traf pol
   for (const x of [`jadę z pękniętym lusterkiem`, `ciężarówka z ładunkiem przesuniętym`, `koło z wygiętym błotnikiem`, `z odciętym kablem`]) ok(!(await fk(x)).has('fire'), `kein Brand: ` + x);
   for (const x of [`del tym`, `del i tym`, `ka tym në kabinë`, `del tymi nga motori`, `Tym nga motori.`, `„tym“ nga kabina`]) ok((await fk(x)).has('fire'), `Brand: ` + x);
   // Gegenprobe: mit dem alten Muster (\btym\b) zeigen die polnischen Beispiele Brand; alle übrigen Testsätze bleiben unverändert
-  const NEW = `|(?<![^\\s.,;!?:("„'«])(?:tym\\b|tymi\\b|tymos)|`; ok(lang.includes(NEW), `neues Muster im Modul`);
+  const NEW = `|(?:^|[\\s.,;!?:("„'«])(?:tym\\b|tymi\\b|tymos)|`; ok(lang.includes(NEW), `neues Muster im Modul`);
   const fk0 = new Function(lang.replace(NEW, `|\\btym\\b|\\btymi\\b|\\btymos|`).replace(/^import .*$/m, ``).replace(/^export .*$/m, ``) + `return { foreignKinds };`)().foreignKinds;
   ok((await fk0(`jadę z pękniętym lusterkiem`)).has('fire'), `vorher Brand`);
   const t = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8'); const strs = new Set([...t.matchAll(/(["'])((?:(?!\1).){6,120}?)\1/g)].map((m) => m[2]));

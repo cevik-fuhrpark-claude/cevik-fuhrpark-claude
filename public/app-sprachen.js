@@ -2,41 +2,6 @@
 import {  } from './app-main.js';
 
 
-function lbRx(src, flags, testOnly) {
-  if (lbRx.ok === undefined) { try { lbRx.ok = !!new RegExp('(?<=a)b'); } catch (e) { lbRx.ok = false; } }
-  return new RegExp(lbRx.ok ? src : lbFallback(src, !!testOnly), flags);
-}
-function lbFallback(src, exact) {
-  const classEnd = (i) => { for (let j = i + 1; j < src.length; j++) { if (src[j] === '\\') j++; else if (src[j] === ']') return j + 1; } return src.length; };
-  const groupEnd = (i) => { let d = 0; for (let j = i; j < src.length; j++) { const c = src[j]; if (c === '\\') j++; else if (c === '[') j = classEnd(j) - 1; else if (c === '(') d++; else if (c === ')' && --d === 0) return j + 1; } return src.length; };
-  const negOne = (x) => { const m = /^\[(\^?)((?:\\.|[^\]\\])*)\]$/.exec(x); if (m) return m[1] ? '[' + m[2] + ']' : '[^' + m[2] + ']';
-    if (/^\\[wdsWDS]$/.test(x)) return '\\' + (x[1] === x[1].toLowerCase() ? x[1].toUpperCase() : x[1].toLowerCase());
-    if (x.length === 1 && !/[\\^$.|?*+()[\]{}/]/.test(x)) return '[^' + (x === '-' ? '\\-' : x) + ']';
-    return null; };
-  let out = ''; const st = [true], pol = [1]; let at = true;
-  for (let i = 0; i < src.length;) {
-    const c = src[i];
-    if (c === '\\') { out += src.slice(i, i + 2); i += 2; at = false; continue; }
-    if (c === '[') { const e = classEnd(i); out += src.slice(i, e); i = e; at = false; continue; }
-    if (c === '(' && (src.startsWith('(?<=', i) || src.startsWith('(?<!', i))) {
-      const e = groupEnd(i), inner = src.slice(i + 4, e - 1);
-      if (exact && at) {
-        if (src[i + 3] === '=') { out += '(?:' + lbFallback(inner, false) + ')'; at = false; }
-        else { const one = negOne(inner); if (one) { out += '(?:^|' + one + ')'; at = false; } }
-      } else if (pol[pol.length - 1] < 0) out += '(?!)';
-      i = e; continue;
-    }
-    if (c === '(') { const look = src.startsWith('(?=', i) || src.startsWith('(?!', i); const h = look || src.startsWith('(?:', i) ? 3 : src.startsWith('(?<', i) ? src.indexOf('>', i) + 1 - i : 1;
-      st.push(at && !look); pol.push(pol[pol.length - 1] * (src.startsWith('(?!', i) ? -1 : 1)); out += src.slice(i, i + h); i += h; at = at && !look; continue; }
-    if (c === ')') { st.pop(); pol.pop(); out += c; i++; at = false; continue; }
-    if (c === '|') { out += c; i++; at = st[st.length - 1]; continue; }
-    if (c === '^') { out += c; i++; continue; }
-    out += c; i++; at = false;
-  }
-  return out;
-}
-
-
 
 
 
@@ -486,7 +451,7 @@ function lvKinds(v) { const k = new Set(); for (const p of lvFold(v).split(/[.,;
 const SQ_OK = /\bu\s+(?:riparua|rregullua|nderrua)n?\b|\b(?:riparuar|rregulluar|nderruar)\b|\bpunon\s+(?:perseri|prape|normal)|\bne\s+rregull\b|\bpa\s+problem/;
 
 const SQ_KINDS = [['brake', /\bfren\S*\s+(?:\S+\s+)?(?:nuk\s+(?:punon|punojne|mbajne|mban|kapin|kap)|jane\s+te\s+dobet|te\s+dobet|dobet)|\bnuk\s+frenon\b|\b(?:ra|bie|humbet|ulet)\s+(?:\S+\s+)?presion\S*\s+(?:i\s+)?(?:te\s+)?ajri|\bpresion\S*\s+(?:i\s+)?ajri\S*\s+(?:\S+\s+)?(?:ra|bie|ulet)\b|\b(?:humb|humbet|fryn|nxjerr)\s+aj[eë]r\b/, /dore|drit|llamb|asistent|vete|arsye|gom|jastek|balon/],
-  ['fire', lbRx(String.raw`\bzjarr\b|\bmori\s+zjarr|\b(?:digjet|po\s+digjet|u\s+dogj)\s+(?:\S+\s+)?(?:kabin|motor|rrot|gom|kabllo|rimorkio)|\b(?:kabin\S*|motor\S*|rrot\S*|gom\S*|kabllo\S*|rimorkio\S*)\s+(?:\S+\s+)?(?:po\s+)?digjet\b|(?<![^\s.,;!?:("„'«])(?:tym\b|tymi\b|tymos)|\bere\s+(?:\S+\s+)?djegi`, ''), /marmit|shkarkim|zjarrfik|fikes|llamb|drit|fener|friksion|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|vyfuk|izputej|ismetim|duslintuv/],
+  ['fire', /\bzjarr\b|\bmori\s+zjarr|\b(?:digjet|po\s+digjet|u\s+dogj)\s+(?:\S+\s+)?(?:kabin|motor|rrot|gom|kabllo|rimorkio)|\b(?:kabin\S*|motor\S*|rrot\S*|gom\S*|kabllo\S*|rimorkio\S*)\s+(?:\S+\s+)?(?:po\s+)?digjet\b|(?:^|[\s.,;!?:("„'«])(?:tym\b|tymi\b|tymos)|\bere\s+(?:\S+\s+)?djegi/, /marmit|shkarkim|zjarrfik|fikes|llamb|drit|fener|friksion|wydech|vyhlop|auspuh|egzoz|esapament|kipufog|vyfuk|izputej|ismetim|duslintuv/],
   ['flat', /\bgom\S*\s+(?:\S+\s+)?(?:u\s+)?(?:shpua|shpuar|plasi|plasur|shfry|shfryre|shfrye|shfryra)\b|\b(?:shpova|shpuam|plasi|u\s+shpua|u\s+shfry)\s+(?:\S+\s+)?gom/, /jastek|balon|tend|fshir/],
   ['steer', /\btimon\S*\s+(?:\S+\s+)?(?:u\s+)?(?:bllokua|bllokuar|eshte\s+bllokuar|rende|nuk\s+(?:kthehet|punon|rrotullohet)|lekundet|ka\s+loje)|\b(?:terheq|teheq|shkon)\s+(?:\S+\s+)?(?:ne\s+te\s+|nga\s+e\s+)?(?:djathte|majte|djathtas|majtas)\b/],
   ['leak', /\b(?:rrjedh|pikon|pikojne|derdhet|humb|humbet)\s+(?:\S+\s+)?(?:vaj|naft|karburant|antifriz|ftohes|leng|adblue)|\b(?:vaj|naft|karburant|antifriz|leng\S*\s+ftohes|adblue)\S*\s+(?:\S+\s+)?(?:rrjedh|pikon|derdhet)\b/],
