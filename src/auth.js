@@ -746,10 +746,22 @@ export async function updateUser(env, actor, userId, body) {
         (SELECT COUNT(*) FROM emergency_contacts WHERE created_by=?1 AND environment=?2 AND archived_at IS NULL) AS emergency`).bind(userId, target.environment, berlinDate()).first();
     if (h && (h.notes || h.emergency)) staffHandover = { notes: h.notes || 0, ...(h.notes ? { notes_plates: String(h.notes_plates || '').split('|').filter(Boolean) } : {}), emergency: h.emergency || 0 };
   }
+  // Backlog 1583 (Backlog 195, Blickwinkel „Mechaniker scheidet aus – sein Arbeitsstand „Rad HL abgebaut – nicht bewegen“ steht noch am Auftrag“):
+  // Werkstatt/Leitung schreiben Arbeitsstände (Backlog 867) und Bestellvermerke im Lager mit ihrem Namen. Scheidet die Person aus bzw. wechselt
+  // Rolle/Umgebung/Werkstatt, kann niemand mehr nachfragen – Auftragsnummern mit ihrem gültigen Arbeitsstand (in Reparatur/wartet auf Teile)
+  // und Anzahl ihrer offenen Bestellvermerke als `work_handover`. Nur Anzeige, nichts wird geändert.
+  let workHandover = null;
+  if (['workshop', 'fleet'].includes(target.role) && (deact || role !== target.role || environment !== target.environment || (target.role === 'workshop' && siteChanged))) {
+    const h = await env.DB.prepare(`SELECT
+        (SELECT group_concat(n, '|') FROM (SELECT case_no AS n FROM cases WHERE work_state_by=?1 AND environment=?2 AND work_state_note IS NOT NULL AND status IN ('in_reparatur','wartet_teile') ORDER BY work_state_at LIMIT 20)) AS ws,
+        (SELECT COUNT(*) FROM cases WHERE work_state_by=?1 AND environment=?2 AND work_state_note IS NOT NULL AND status IN ('in_reparatur','wartet_teile')) AS wsn,
+        (SELECT COUNT(*) FROM stock_items WHERE ordered_by=?1 AND environment=?2 AND ordered_on IS NOT NULL AND active=1) AS so`).bind(userId, target.environment).first();
+    if (h && (h.wsn || h.so)) workHandover = { work_states: String(h.ws || '').split('|').filter(Boolean), work_states_total: h.wsn || 0, stock_orders: h.so || 0 };
+  }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),
     ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}), ...(handover ? { fleet_handover: handover } : {}),
-    ...(cardDl ? { card_download: cardDl } : {}), ...(drvHandover ? { driver_handover: drvHandover } : {}), ...(staffHandover ? { staff_handover: staffHandover } : {}) };
+    ...(cardDl ? { card_download: cardDl } : {}), ...(drvHandover ? { driver_handover: drvHandover } : {}), ...(staffHandover ? { staff_handover: staffHandover } : {}), ...(workHandover ? { work_handover: workHandover } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {

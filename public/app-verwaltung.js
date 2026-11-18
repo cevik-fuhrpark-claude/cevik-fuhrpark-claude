@@ -1853,6 +1853,10 @@ function userUpdateHints(r) {
   const sh = r && r.staff_handover;
   if (sh && sh.notes) h.push(t('ue_fleet_notes').replace('{n}', sh.notes) + ((sh.notes_plates || []).length ? ' · ' + sh.notes_plates.join(', ') : ''));
   if (sh && sh.emergency) h.push(t('ue_fleet_emerg').replace('{n}', sh.emergency));
+
+  const wh = r && r.work_handover;
+  if (wh && wh.work_states_total) h.push(t('ue_wst').replace('{n}', wh.work_states_total).replace('{list}', wh.work_states.join(', ') + (wh.work_states_total > wh.work_states.length ? ', …' : '')));
+  if (wh && wh.stock_orders) h.push(t('ue_stock_orders').replace('{n}', wh.stock_orders));
   if (fh) { if (fh.received_untriaged) h.push(t('ue_fleet_recv').replace('{n}', fh.received_untriaged)); if (fh.notes) h.push(t('ue_fleet_notes').replace('{n}', fh.notes) + ((fh.notes_plates || []).length ? ' · ' + fh.notes_plates.join(', ') : '')); if (fh.emergency) h.push(t('ue_fleet_emerg').replace('{n}', fh.emergency)); if (fh.questions_open) h.push(t('ue_fleet_questions').replace('{n}', fh.questions_open)); if (fh.followups) h.push(t('ue_fleet_followups').replace('{n}', fh.followups)); if (fh.last_fleet) h.push(t('ue_fleet_last')); }
   return h;
 }

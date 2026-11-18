@@ -45104,6 +45104,37 @@ await test('Backlog 1582 (Backlog 195, Blickwinkel „Disponent scheidet aus –
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_fleet_notes.includes('{n}') && STRINGS[l].ue_fleet_emerg.includes('{n}'), l);
 });
 
+await test('Backlog 1583 (Backlog 195, Blickwinkel „Mechaniker scheidet aus – sein Arbeitsstand steht noch am Auftrag“): Deaktivieren bzw. Rollen-/Umgebungs-/Werkstattwechsel eines Werkstatt-/Leitungskontos nennt Aufträge mit seinem gültigen Arbeitsstand und seine offenen Bestellvermerke (work_handover); nichts wird geändert', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString();
+  const id = await toRepair(); eq((await cmd(U.ws, id, 'set_work_state', {}, 'Rad HL abgebaut – nicht bewegen')).status, 200);
+  const no = db.prepare('SELECT case_no FROM cases WHERE id=?').get(id).case_no;
+  const id2 = await toRepair(); eq((await cmd(U.ws, id2, 'set_work_state', {}, 'Bremse zerlegt')).status, 200);
+  const id3 = await toRepair(); eq((await cmd(U.fleet, id3, 'set_work_state', {}, 'Leitung: Teile bestellt')).status, 200); // Arbeitsstand der Leitung zählt nicht bei der Werkstatt
+  db.prepare(`UPDATE cases SET status='abschlusskontrolle' WHERE id=?`).run(id2); // Arbeitsstand nicht mehr gültig (Status) – zählt nicht
+  const si = (sid, by, ordered, env0 = 'test') => db.prepare(`INSERT INTO stock_items(id,environment,site,name,unit,active,created_by,created_at,updated_at,ordered_qty,ordered_on,ordered_by) VALUES (?,?,'DORTMUND',?,'Stk',1,?,?,?,?,?,?)`).run(sid, env0, 'Bremsbelag ' + sid, by, now, now, ordered ? 4 : null, ordered ? now.slice(0, 10) : null, ordered ? by : null);
+  si('si-1583-a', U.ws.id, true); si('si-1583-b', U.ws.id, false); si('si-1583-c', U.ws.id, true, 'production');
+  // Namensänderung: nichts
+  eq((await U.own.patch(`/api/users/${U.ws.id}`, { display_name: 'WS DO 2' })).data.work_handover, undefined, 'nur Name');
+  let r = await U.own.patch(`/api/users/${U.ws.id}`, { active: false }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.work_handover), JSON.stringify({ work_states: [no], work_states_total: 1, stock_orders: 1 }), 'Werkstatt deaktiviert');
+  eq(db.prepare('SELECT work_state_by FROM cases WHERE id=?').get(id).work_state_by, U.ws.id, 'Arbeitsstand bleibt');
+  eq(db.prepare(`SELECT ordered_by FROM stock_items WHERE id='si-1583-a'`).get().ordered_by, U.ws.id, 'Bestellvermerk bleibt');
+  eq((await U.own.patch(`/api/users/${U.ws.id}`, { active: true })).data.work_handover, undefined, 'Reaktivieren ohne Zusatz');
+  // Werkstattwechsel Dortmund → München ebenso
+  r = await U.own.patch(`/api/users/${U.ws.id}`, { workshop_site: 'MUENCHEN' }); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.work_handover && r.data.work_handover.work_states_total, 1, 'Werkstattwechsel');
+  // Werkstatt ohne Arbeitsstand/Bestellung: kein Feld
+  eq((await U.own.patch(`/api/users/${U.wsMuc.id}`, { active: false })).data.work_handover, undefined, 'ohne Vermerke nichts');
+  // Leitung mit Arbeitsstand: Rollenwechsel nennt ihn
+  r = await U.own.patch(`/api/users/${U.fleet.id}`, { role: 'viewer' }); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.work_handover && r.data.work_handover.work_states_total, 1, 'Leitung');
+  // Fahrer/Disposition: nie
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).data.work_handover, undefined, 'nicht für Fahrer');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('function userUpdateHints('), app.indexOf('async function viewUsers('));
+  ok(fn.includes('r.work_handover') && fn.includes("h.push(t('ue_wst')") && fn.includes("h.push(t('ue_stock_orders')"), 'Benutzerverwaltung zeigt die Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_wst.includes('{n}') && STRINGS[l].ue_wst.includes('{list}') && STRINGS[l].ue_stock_orders.includes('{n}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
