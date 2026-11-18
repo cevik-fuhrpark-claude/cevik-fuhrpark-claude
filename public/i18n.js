@@ -3121,6 +3121,8 @@ Object.assign(STRINGS.uk, { cand_elsewhere: 'у день порушення ко
 Object.assign(STRINGS.en, { cand_elsewhere: 'pre-departure check on a different vehicle on the day of the offence: {p} (vehicles swapped?)' });
 Object.assign(FIELD_NAMES.uk, { 'Hinweis zum Termin': 'Примітка до терміну' });
 Object.assign(FIELD_NAMES.en, { 'Hinweis zum Termin': 'Note on the date' });
+// Backlog 1586 (Backlog 1501 Stufe 22): Ja/Nein-Feld des Sammeltermins nennt jetzt seinen Namen
+Object.assign(FIELD_NAMES.uk, { 'Vorhandene Termine ersetzen': 'Замінити наявні терміни' }); Object.assign(FIELD_NAMES.en, { 'Vorhandene Termine ersetzen': 'Replace existing appointments' });
 Object.assign(STRINGS.de, { plan_note_lbl: 'Hinweis zum Termin', plan_note_hint: 'optional, z. B. „nur vormittags“, „Abholung 13 Uhr“, „Achsvermessung bei Fa. …“ – erscheint im Werkstattplan und bei der Disposition', ev_plan_note: 'Hinweis zum Termin' });
 Object.assign(STRINGS.uk, { plan_note_lbl: 'Примітка до терміну', plan_note_hint: 'необов’язково, напр. «лише до обіду», «забрати о 13:00», «розвал-сходження у фірми …» – видно в плані майстерні та диспетчерам', ev_plan_note: 'Примітка до терміну' });
 Object.assign(STRINGS.en, { plan_note_lbl: 'Note on the date', plan_note_hint: 'optional, e.g. “mornings only”, “pick-up 1 pm”, “wheel alignment at company …” – shown in the workshop plan and to dispatch', ev_plan_note: 'Note on the date' });

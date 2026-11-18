@@ -1189,6 +1189,8 @@ Object.assign(FIELD_NAMES.en, { Sprache: 'Language' });
 // [CLAUDE] 26.10.2026 Backlog 413: Kostenbericht Schnellwahl Zeitraum (Jahresabschluss)
 Object.assign(FIELD_NAMES.uk, { 'Hinweis zum Termin': 'Примітка до терміну' });
 Object.assign(FIELD_NAMES.en, { 'Hinweis zum Termin': 'Note on the date' });
+// Backlog 1586 (Backlog 1501 Stufe 22): Ja/Nein-Feld des Sammeltermins nennt jetzt seinen Namen
+Object.assign(FIELD_NAMES.uk, { 'Vorhandene Termine ersetzen': 'Замінити наявні терміни' }); Object.assign(FIELD_NAMES.en, { 'Vorhandene Termine ersetzen': 'Replace existing appointments' });
 // Backlog 1442: Hinweis zum geplanten Prüf-/Wartungstermin (Uhrzeit, Prüfstelle, Absprachen)
 // Backlog 860 (Blickwinkel „Werkstatt wechselt den Lieferanten für Bremsteile“): Wareneingang – letzter Zugang und Preis je Position
 // Backlog 449 (Blickwinkel „Lieferant liefert nur einen Teil der Bestellung“): Teillieferung eingegangen

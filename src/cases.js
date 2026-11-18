@@ -1581,7 +1581,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (Array.isArray(p.notify)) { const n = [...new Set(p.notify.filter((x) => ['reporter', 'fleet', 'workshop'].includes(x)))]; if (n.length) payload.notify = n; }
       notifyKind = 'comment';
       // Backlog 463: Rückfrage an den Melder – nur Leitung/Inhaber, an offener Meldung einer anderen Person, „Gemeldet von“ ausgewählt
-      if (flag(p.question, 'question')) {
+      if (flag(p.question, 'question', false, { key: 'question' })) {
         if (!['fleet', 'owner'].includes(user.role)) throw forbidden();
         if (!(payload.notify || []).includes('reporter')) throw bad('question_needs_reporter', 'Rückfrage nur mit „Nur benachrichtigen: Gemeldet von“.');
         if (c.reporter_id === user.id) throw bad('question_own_case', 'Rückfrage an sich selbst ist nicht möglich.');
@@ -1613,7 +1613,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     case 'lift_safety_lock': {
       requireNote('Bitte fachliche Begründung für die Aufhebung angeben.');
-      if (!flag(p.confirm, 'Bestätigung')) throw bad('confirm_required', 'Aufhebung muss ausdrücklich bestätigt werden.');
+      if (!flag(p.confirm, 'Bestätigung', false, { key: 'confirm' })) throw bad('confirm_required', 'Aufhebung muss ausdrücklich bestätigt werden.');
       const safetyOpen = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (safetyOpen.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
       set.safety_lock = 0; set.safety_lock_reason = null;
@@ -1716,7 +1716,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Teilelieferung wieder fahren darf – es gilt dann nicht mehr als „in Werkstatt“ (Fahrzeugliste, Disposition, Schnittstelle).
       // Nur ohne Sicherheitssperre und ohne offene sicherheitsrelevante Restarbeiten; Bemerkung optional (z. B. „nur Nahverkehr“).
       // Ohne Statuswechsel und ohne Push; mit jedem Statuswechsel, einer Sperre oder einer sicherheitsrelevanten Restarbeit entfernt.
-      const on = flag(p.on, 'Fährt bis zur Teilelieferung');
+      const on = flag(p.on, 'Fährt bis zur Teilelieferung', false, { key: 'on' });
       if (on === !!c.parts_drive_at) throw bad('validation', on ? 'Fahrzeug fährt laut Vorgang bereits bis zur Teilelieferung.' : 'Vermerk „fährt bis zur Teilelieferung“ ist nicht gesetzt.');
       if (on) {
         if (c.safety_lock) throw bad('parts_drive_locked', 'Fahrzeug ist gesperrt – es darf nicht bis zur Teilelieferung fahren.');
@@ -2061,8 +2061,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         if (!oiFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
       }
       extra.push(env.DB.prepare(`INSERT INTO open_items(id,case_id,description,safety_relevant,status,created_by,created_at,file_id) VALUES (?,?,?,?,'offen',?,?,?)`)
-        .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant') ? 1 : 0, user.id, now, oiFile ? oiFile.id : null));
-      payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant'), ...(oiFile ? { file_id: oiFile.id } : {}) };
+        .bind(oid, c.id, desc, flag(p.safety_relevant, 'Sicherheitsrelevant', false, { key: 'safety_relevant' }) ? 1 : 0, user.id, now, oiFile ? oiFile.id : null));
+      payload = { open_item_id: oid, description: desc, safety_relevant: flag(p.safety_relevant, 'Sicherheitsrelevant', false, { key: 'safety_relevant' }), ...(oiFile ? { file_id: oiFile.id } : {}) };
       // Hinweis nach dem geprüften Wert (17.10.2026: „false“/„0“ wurden als nicht sicherheitsrelevant gespeichert, lösten aber den Sicherheits-Push aus)
       // Backlog 259 (Blickwinkel „Werkstatt findet bei der Reparatur einen zusätzlichen Schaden“): auch ein nicht dringender Zusatzbefund der
       // Werkstatt erreicht die Leitung (abschaltbar) – vorher erfuhr sie davon erst beim Öffnen des Vorgangs
@@ -2114,7 +2114,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Umgebung) → Hinweis mit Fundstellen, Buchung nur nach ausdrücklicher Bestätigung (Sammelrechnung für mehrere Fahrzeuge ist zulässig).
       // Fremdleistungen buchen nur Inhaber/Fuhrparkleitung (sehen alle Vorgänge und Kosten).
       const invNo0 = str(p.invoice_no, { key: 'invoice_no', max: 60 });
-      const dupConfirmed = flag(p.confirm_duplicate_invoice, 'Bestätigung');
+      const dupConfirmed = flag(p.confirm_duplicate_invoice, 'Bestätigung', false, { key: 'confirm_duplicate_invoice' });
       if (invNo0 && !dupConfirmed) {
         // Backlog 626 (Blickwinkel „Panne in Frankreich“): Schreibweise egal – „FA-2026/118“, „FA 2026 118“, „N° FA.2026.118“ gelten als dieselbe
         // Nummer (Vergleichsschlüssel `invoiceKey`: nur Buchstaben/Ziffern, ohne führendes „Nr./No./N°“). Vorauswahl in SQL über die längste
@@ -2136,8 +2136,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         if (!ecFile) throw bad('validation', 'Datei: bitte eine Datei dieses Vorgangs wählen.');
       }
       extra.push(env.DB.prepare(`INSERT INTO external_costs(id,case_id,user_id,supplier,invoice_no,amount_net,valuation,covers_work_and_parts,note,created_at,warranty_until,file_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { key: 'invoice_no', max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile') ? 1 : 0, note, now, warranty, ecFile ? ecFile.id : null));
-      const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile');
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(eid, c.id, user.id, supplier, str(p.invoice_no, { key: 'invoice_no', max: 60 }), amount, valuation, flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile', false, { key: 'covers_work_and_parts' }) ? 1 : 0, note, now, warranty, ecFile ? ecFile.id : null));
+      const covers = flag(p.covers_work_and_parts, 'Ersetzt eigene Arbeit/Teile', false, { key: 'covers_work_and_parts' });
       // Backlog 887 (Folge aus 886, Blickwinkel „Fremdwerkstatt-Rechnung mit unpassendem km-Stand“): optional km-Stand laut Rechnung (mit Datum
       // laut Rechnung, ohne = heute). Gleiche Regel wie „Kilometerstand erfassen“/Kontrolle: nicht kleiner als der Stand davor, nicht größer als
       // ein später erfasster – sonst nicht in die Fahrzeugakte, nur im Verlauf und in der Antwort (`km_rejected`). Keine Pflichtangabe.
@@ -2198,7 +2198,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (c.tire_order === 'winter') {
         const w = await caseWinter(env, c);
         // keine Winterpflicht (z. B. Fahrzeugart inzwischen Anhänger): nichts zu bestätigen (21.10.2026: 400 winter_open trotz fehlender Pflicht)
-        if (!['erfuellt', 'nicht_pflichtig'].includes(w.status) && !flag(p.confirm_winter_open, 'Bestätigung')) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
+        if (!['erfuellt', 'nicht_pflichtig'].includes(w.status) && !flag(p.confirm_winter_open, 'Bestätigung', false, { key: 'confirm_winter_open' })) throw bad('winter_open', 'Winterreifen laut Reifenerfassung noch nicht erfüllt. Bitte zuerst die Reifen mit Winterkennzeichnung erfassen – oder ausdrücklich bestätigen, dass ohne vollständige Erfassung abgeschlossen wird (Grund im Vermerk).');
         payload = { winter_status: w.status, ...(!['erfuellt', 'nicht_pflichtig'].includes(w.status) ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
       }
       // Abholvermerk (Backlog 425): Werkstatt weiß, wo Schlüssel/Fahrzeugschein und Fahrzeug zur Abholung liegen – optional, ≤ 300
@@ -2214,7 +2214,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       break;
     case 'technical_release': {
       requireNote('Bitte Kontrollnachweis eintragen.');
-      if (!flag(p.confirm, 'Bestätigung')) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
+      if (!flag(p.confirm, 'Bestätigung', false, { key: 'confirm' })) throw bad('confirm_required', 'Technische Freigabe muss ausdrücklich bestätigt werden.');
       // Grenze erst nach der letzten Buchung überschritten (Stundensatz erhöht, Grenze gesenkt, Satz nachgetragen – 18.10.2026: Freigabe
       // ohne Kostenfreigabe möglich): jetzt markieren (Hinweis an die Leitung) und die Freigabe abweisen
       // Markierung aus einer früheren Grenze/einem höheren Stundensatz: erst neu bewerten (Versions-Guard: neu laden, dann freigeben)
@@ -2230,7 +2230,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Nicht in den Push-Text (Sperrbildschirm: Ablageort des Schlüssels).
       const pickup = str(p.pickup_note, { key: 'pickup_note', max: 300, field: 'Abholung' });
       if (pickup) set.pickup_note = pickup;
-      const pickupForDriver = flag(p.pickup_for_driver, 'Für Fahrer sichtbar');
+      const pickupForDriver = flag(p.pickup_for_driver, 'Für Fahrer sichtbar', false, { key: 'pickup_for_driver' });
       let pickupUntil = null;
       if (pickupForDriver) {
         if (!(pickup || c.pickup_note)) throw bad('validation', 'Abholung: bitte zuerst eintragen, wo Schlüssel/Fahrzeugschein liegen.', { field_key: 'pickup_note' });

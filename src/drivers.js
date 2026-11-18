@@ -250,7 +250,7 @@ export async function updateDriver(env, user, envName, id, body) {
     personnel_no: body.personnel_no !== undefined ? str(body.personnel_no, { key: 'personnel_no', max: 40, field: 'Personalnummer' }) : d.personnel_no,
     site: body.site !== undefined ? str(body.site, { key: 'site', max: 60, field: 'Standort' }) : d.site,
     user_id: body.user_id !== undefined ? await validLinkedUser(env, envName, body.user_id) : d.user_id,
-    active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active) ? 1 : 0),
+    active: body.active === undefined ? d.active : (flag(body.active, 'Aktiv', !!d.active, { key: 'active' }) ? 1 : 0),
     note: body.note !== undefined ? str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' }) : d.note,
   };
   // Backlog 805j (Funkloch): Wiederholung nach verlorener Antwort – alle gesendeten Felder schon so gespeichert → „War bereits gespeichert“ statt Konflikt

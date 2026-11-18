@@ -64,14 +64,14 @@ export async function addNote(env, user, envName, vehicleId, body) {
   try {
     r = await env.DB.prepare(`INSERT INTO vehicle_notes(id,environment,vehicle_id,text,for_driver,created_by,created_at,valid_until,request_key) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?11
     WHERE (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?3 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?9)) < ?10`)
-      .bind(id, envName, vehicleId, text, flag(body.for_driver, 'Für Fahrer sichtbar') ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE, rkey).run();
+      .bind(id, envName, vehicleId, text, flag(body.for_driver, 'Für Fahrer sichtbar', false, { key: 'for_driver' }) ? 1 : 0, user.id, nowIso(), validUntil, today, NOTES_MAX_ACTIVE, rkey).run();
   } catch (e) {
     // paralleles Doppelsenden: eindeutiger Index greift → vorhandenen Hinweis liefern
     if (rkey && /UNIQUE/i.test(String(e && e.message))) { const w = await byKey(); if (w) return w; }
     throw e;
   }
   if (!(r.meta && r.meta.changes)) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
-  await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: flag(body.for_driver, 'Für Fahrer sichtbar'), valid_until: validUntil });
+  await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: flag(body.for_driver, 'Für Fahrer sichtbar', false, { key: 'for_driver' }), valid_until: validUntil });
   return { id };
 }
 

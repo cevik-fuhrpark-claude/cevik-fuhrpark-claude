@@ -45191,6 +45191,29 @@ await test('Backlog 1585 (Backlog 195, Blickwinkel „Leitung scheidet aus – i
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_slock.includes('{n}') && STRINGS[l].ue_slock.includes('{list}'), l);
 });
 
+await test('Backlog 1586 (Backlog 1501 Stufe 22, WCAG 3.3.1): Ja/Nein-Felder (flag) aus Formularen nennen field_key – Rückfrage, Bestätigungen, Teilefahrt, Hinweis für Fahrer, Feiertage, Sammeltermin ersetzen', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair(); eq((await cmd(U.fleet, id, 'set_safety_lock', {}, 'Bremse prüfen')).status, 200);
+  const r1 = await cmd(U.fleet, id, 'lift_safety_lock', { confirm: 'vielleicht' }, 'Bremse geprüft'); eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'confirm', 'Aufhebung: Bestätigung');
+  const r2 = await cmd(U.fleet, id, 'comment', { question: 'vielleicht', notify: ['reporter'] }, 'Welcher Spiegel?'); eq(r2.status, 400, JSON.stringify(r2.data)); eq(r2.data.field_key, 'question', 'Kommentar: Rückfrage');
+  const vl = (await U.fleet.get('/api/vehicles')).data; const vid = (vl.vehicles || vl)[0].id;
+  const r3 = await U.fleet.post(`/api/vehicles/${encodeURIComponent(vid)}/notes`, { text: 'Hinweis 1586', for_driver: 'vielleicht' }); eq(r3.status, 400, JSON.stringify(r3.data)); eq(r3.data.field_key, 'for_driver', 'Fahrzeughinweis: für Fahrer');
+  // Übersetzung des neuen Feldnamens (vorher „undefined: ungültiger Wert.“)
+  const { translateValidation } = await import('../public/i18n.js');
+  eq(translateValidation('en', 'Vorhandene Termine ersetzen: ungültiger Wert.'), 'Replace existing appointments: invalid value.');
+  ok(!translateValidation('uk', 'Vorhandene Termine ersetzen: ungültiger Wert.').includes('Vorhandene'), 'uk übersetzt');
+  // Wächter: jeder flag()-Aufruf in src/ nennt einen key – außer programmatisch gesetzten Werten ohne Formularfeld
+  const fs = fs0(); const allow = ["flag(body.active, 'Aktiv', !!target.active)", "flag(it.on_coupled,", "flag(it.safety_relevant,", "flag(body.verified,", "flag(body.create_only,", "flag(body.keep_active,", "flag(body.excluded,", "flag(body.active, 'Aktiv')"];
+  for (const m of fs.readdirSync(new URL('../src/', import.meta.url)).filter((x) => x.endsWith('.js') && x !== 'util.js')) {
+    const s = fs.readFileSync(new URL(`../src/${m}`, import.meta.url), 'utf8');
+    for (const x of s.matchAll(/\bflag\(([^()]|\([^()]*\))*\)/g)) if (!allow.some((a) => x[0].startsWith(a))) ok(/\{ key: '\w+' \}\)$/.test(x[0]), `${m}: ${x[0]} ohne key`);
+  }
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<input type="checkbox" data-q data-fkey="question">'), 'Rückfrage-Kästchen trägt data-fkey');
+  ok(app.includes('id="emnohol" data-cv="emnohol" data-fkey="hours_no_holidays"'), 'Feiertags-Kästchen trägt data-fkey');
+  void e;
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

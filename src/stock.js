@@ -238,7 +238,7 @@ export async function updateItem(env, user, envName, id, body) {
     min_qty: body.min_qty !== undefined ? r3n(qtyNum(body.min_qty, it.unit, { key: 'min_qty', min: 0, max: 1e6, field: 'Mindestbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) })) : it.min_qty,
     location: body.location !== undefined ? str(body.location, { key: 'location', max: 80, field: 'Ort' }) : it.location,
     unit_price_net: body.unit_price_net !== undefined ? num(body.unit_price_net, { key: 'unit_price_net', min: 0, max: 1e7, field: 'Preis', nullable: true, net: true, money: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) }) : it.unit_price_net,
-    active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active) ? 1 : 0),
+    active: body.active === undefined ? it.active : (flag(body.active, 'Aktiv', !!it.active, { key: 'active' }) ? 1 : 0),
   };
   // Nur tatsächliche Änderungen speichern und protokollieren (Stammdaten-Pflege in der Artikelakte, 15.10.2026)
   const changed = Object.keys(fields).filter((k) => fields[k] !== it[k]);

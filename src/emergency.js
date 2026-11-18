@@ -117,7 +117,7 @@ function readHours(body, ex) {
   const rawDays = has('hours_days') ? body.hours_days : ex.hours_days;
   const tm = (k) => { const v = has(k) ? body[k] : ex[k]; return v === null || v === undefined || v === '' ? null : String(v).trim(); };
   const from = tm('hours_from'); const to = tm('hours_to');
-  const noHol = has('hours_no_holidays') ? flag(body.hours_no_holidays, 'Nicht an Feiertagen') : !!ex.hours_no_holidays;
+  const noHol = has('hours_no_holidays') ? flag(body.hours_no_holidays, 'Nicht an Feiertagen', false, { key: 'hours_no_holidays' }) : !!ex.hours_no_holidays;
   const emptyDays = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
   const empty = emptyDays(rawDays);
   const more = has('hours_more') ? readMore(body.hours_more, emptyDays) : (empty ? null : ex.hours_more ?? null);

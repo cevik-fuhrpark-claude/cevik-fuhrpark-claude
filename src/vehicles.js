@@ -952,7 +952,7 @@ export async function assignDriver(env, user, envName, vehicleId, body) {
   const vehicleOthers = [...new Set(rowsOpen.filter((o) => o.other_name != null).map((o) => o.other_name))].sort((a, b) => a.localeCompare(b, 'de'));
   if (open.some((o) => o.vehicle_id === vehicleId)) throw conflict('already_assigned', `${driver.display_name} ist diesem Fahrzeug bereits zugeordnet.`);
   // Fahrzeugwechsel: bisherige offene Zuordnungen des Fahrers beenden, wenn ausdrücklich gewünscht
-  const endPrev = body.end_previous === 'on' || flag(body.end_previous, 'Bisherige Zuordnung beenden');
+  const endPrev = body.end_previous === 'on' || flag(body.end_previous, 'Bisherige Zuordnung beenden', false, { key: 'end_previous' });
   const id = uuid();
   const stmts = [];
   // atomar (17.10.2026): bisherige immer im selben Stapel beenden (nicht nur, wenn beim Lesen welche offen waren) und nur einfügen, wenn
@@ -1455,7 +1455,7 @@ export async function planMaintenanceBatch(env, user, body) {
   const raw = Array.isArray(body.ids) ? body.ids : null;
   if (!raw || !raw.length || raw.length > PLAN_BATCH_MAX || raw.some((x) => typeof x !== 'string' || !x || x.length > 80)) throw bad('validation', 'Bitte 1 bis 200 Prüftermine auswählen.');
   const ids = [...new Set(raw)];
-  const replace = flag(body.replace);
+  const replace = flag(body.replace, 'Vorhandene Termine ersetzen', false, { key: 'replace' }); // Backlog 1586: Feldname + field_key (vorher ohne – Meldung „undefined: …“)
   // Backlog 1443 (Folge aus 1442, Blickwinkel „UVV aller Lkw an einem Tag beim Prüfdienst – Uhrzeit/Ort gilt für alle“): optionaler gemeinsamer
   // Hinweis zum Termin; ohne Hinweis wird ein alter Hinweis wie bisher entfernt (gehörte zum alten Termin), gleicher Termin bleibt unverändert
   const note = str(body.planned_note, { key: 'planned_note', max: 200, field: 'Hinweis zum Termin' });
