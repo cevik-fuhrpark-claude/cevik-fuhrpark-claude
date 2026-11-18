@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, isMgr, isStockHash, lostDup, lostMark, ltxt, markGetField, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, importErr, isMgr, isStockHash, lostDup, lostMark, ltxt, markGetField, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
 
 
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
@@ -153,7 +153,7 @@ async function viewStock() {
       <label>${esc(t('min_qty'))}</label><input name="min_qty" inputmode="decimal"><label>${esc(t('storage'))}</label><input name="location">
       <label>${esc(t('price_net'))}</label><input name="unit_price_net" inputmode="decimal"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>
     <details class="panel noprint" id="simp"><summary>${esc(t('stock_import'))}</summary><p class="small muted">${esc(t('stock_import_hint'))}</p>
-      ${sites.length > 1 ? `<label for="simpsite">${esc(t('workshop'))}</label><select id="simpsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
+      ${sites.length > 1 ? `<label for="simpsite">${esc(t('workshop'))}</label><select id="simpsite" data-fkey="site">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
       <label for="simpf">${esc(t('csv_file'))}</label><input type="file" id="simpf" accept=".csv,.txt,text/csv,text/plain"><div id="simpr"></div></details>
     ${items.length ? `<details class="panel noprint" id="inv"><summary>${esc(t('inventory'))}</summary><p class="small muted">${esc(t('inventory_hint'))}</p>
       ${sites.length > 1 ? `<label for="invsite">${esc(t('workshop'))}</label><select id="invsite">${sites.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>` : ''}
@@ -296,7 +296,7 @@ async function viewStock() {
       const ap = $('#simpapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/stock/import' + (q ? '?' + q.slice(1) : ''), text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); S.simpDone = done; await viewStock(); } catch (err) { ap.disabled = false; toast(err.message, true); } };
     };
-    try { show(await api('POST', '/api/stock/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+    try { show(await api('POST', '/api/stock/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { importErr(simpf, err, { site: sel }); }
   };
   if (S.simpDone && $('#simpr')) { const d = $('#simp'); d.open = true; const r = S.simpDone; S.simpDone = null; $('#simpr').innerHTML = `<p id="simpsum"><b>✓</b> · ${esc(wsName(r.site))} · ${esc(t('ia_neu'))}: ${r.created} · ${esc(t('ia_unverändert'))}: ${r.unchanged} · ${esc(t('skipped'))}: ${r.skipped.length}</p>`; }
 

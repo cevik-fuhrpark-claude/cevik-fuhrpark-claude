@@ -661,7 +661,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   if (ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte „Kennzeichen“ oder „FIN“ erforderlich.');
   if (ci.kind < 0) throw bad('validation', 'Spalte „Vertragsart“ erforderlich.');
   if (ci.partner < 0) throw bad('validation', 'Spalte „Vertragspartner“ erforderlich.');
-  if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
+  if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.', { field_key: 'source' }); // Backlog 1580: Feld „Quelle“ markieren
 
   const [vehRes, exRes, formerPl] = await Promise.all([
     env.DB.prepare('SELECT id, vin, plate, active, eval_excluded FROM vehicles').all(),

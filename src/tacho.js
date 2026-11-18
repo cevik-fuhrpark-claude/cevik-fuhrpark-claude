@@ -317,7 +317,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   // Eigene Übersicht der App (Export „Auslesungen“: Letzte Auslesung/Spätestens fällig) ist kein Beleg einer Auslesung
   if (ci.day < 0 && head.some((h) => h.startsWith('letzte auslesung') || h.startsWith('spätestens fällig'))) throw bad('wrong_file_tacho', 'Das ist die Fristen-Übersicht dieser App, kein Export der Auslesesoftware. Bitte die Datei der Auslesesoftware mit Spalte „Datum“ hochladen.');
   if (ci.day < 0) throw bad('validation', 'Spalte „Datum“ erforderlich.');
-  if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“/„Datei“ oder Angabe „Quelle“ für alle Zeilen erforderlich.');
+  if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“/„Datei“ oder Angabe „Quelle“ für alle Zeilen erforderlich.', { field_key: 'source' }); // Backlog 1580: Feld „Quelle“ markieren
   if (ci.pno < 0 && ci.name < 0 && ci.plate < 0 && ci.vin < 0) throw bad('validation', 'Spalte Personalnummer/Fahrer oder Kennzeichen/FIN erforderlich.');
 
   const allDrivers = (await env.DB.prepare('SELECT id, display_name, personnel_no, active FROM drivers WHERE environment=?').bind(envName).all()).results;

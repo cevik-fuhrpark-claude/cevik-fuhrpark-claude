@@ -45010,6 +45010,32 @@ await test('Backlog 1579 (Backlog 195, Blickwinkel „Leitung nimmt einen verkau
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].fines_open_deact.includes('{n}'), l); const p = PLURALS[l].fines_open_deact; ok(p && p.one.includes('{n}') && p.other.includes('{n}') && (l !== 'uk' || (p.few && p.many)), l + ' Pluralformen'); ok(p.other.includes(STRINGS[l].fines), l + ' nennt den Bereich'); }
 });
 
+await test('Backlog 1580 (Backlog 1501 Stufe 21, WCAG 3.3.1): CSV-Import – Fehler der ganzen Datei am Dateifeld; „Quelle“ (Verträge, Auslesungen) und Lager (Lagerimport) mit field_key; Dateifeld wird geleert', async () => {
+  const { U } = await freshWorld(); const H = { 'content-type': 'text/csv' };
+  let r = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', 'Kennzeichen;Vertragsart;Vertragspartner\nSZ-YC 5513;leasing;Testbank', H);
+  eq(r.status, 400, JSON.stringify(r.data)); eq(r.data.field_key, 'source', 'Verträge: Quelle');
+  r = await U.fleet.req('POST', '/api/contracts/import?dry_run=1&source=' + encodeURIComponent('Vertragsordner 2026'), 'Kennzeichen;Vertragsart;Vertragspartner\nSZ-YC 5513;leasing;Testbank', H);
+  ok(r.status === 200 || r.data.field_key !== 'source', 'mit Quelle kein Quelle-Fehler');
+  r = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', 'Art;Datum\nFahrerkarte;2026-01-01', H); eq(r.status, 400); eq(r.data.field_key, 'source', 'Auslesungen: Quelle');
+  r = await U.fleet.req('POST', '/api/stock/import?dry_run=1&site=GIBTESNICHT', 'Bezeichnung;Lagerbestand\nKeilriemen;7', H); eq(r.status, 400); eq(r.data.field_key, 'site', 'Lager unbekannt');
+  r = await U.fleet.req('POST', '/api/stock/import?dry_run=1', 'Bezeichnung;Lagerbestand\nKeilriemen;7', H); eq(r.status, 400); eq(r.data.field_key, 'site', 'Lager fehlt');
+  r = await U.fleet.req('POST', '/api/maintenance/import?dry_run=1', 'Kennzeichen', H); eq(r.status, 400); eq(r.data.field_key, undefined, 'ganze Datei: kein Zusatzfeld');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const x of ["importErr(inp, err, { source: $('#ctsrc') })", 'importErr(simpf, err, { site: sel })', "importErr(inp, err, { source: $('#tsrc') })", 'importErr(inp, err); }', 'importErr(rinp, err)', "importErr($('#tcsv'), err)", "importErr($('#csv'), err)"]) ok(app.includes(x), x);
+  eq((app.match(/\/import\?dry_run=1[^\n]*catch \(err\) \{ toast\(err\.message, true\); \}/g) || []).filter((l) => !l.includes('false, text)')).length, 0, 'keine Dateivorschau mehr nur mit Toast (Rückruf-Formular ohne Datei ausgenommen)');
+  // Hilfsfunktion im Browser-Nachbau: Dateifeld geleert, Hinweis am Feld; Zusatzfeld nur, wenn sichtbar
+  const a = app.indexOf('function importErr('); const b = app.indexOf('\n}\n', a) + 2; ok(a > 0 && b > a, 'Funktion gefunden');
+  const marks = []; let toasted = '';
+  const fn = new Function('toast', 'markInvalid', app.slice(a, b) + '\nreturn importErr;')((m) => { toasted = m; }, (el, m) => marks.push([el.id, m]));
+  const mk = (id, vis = true) => ({ id, value: 'x.csv', isConnected: true, disabled: false, offsetParent: vis ? {} : null, focus() {}, addEventListener() {} });
+  let inp = mk('ctimp'); const src = mk('ctsrc');
+  fn(inp, { code: 'validation', message: 'Quelle fehlt', data: { field_key: 'source' } }, { source: src });
+  eq(JSON.stringify(marks.pop()), JSON.stringify(['ctsrc', 'Quelle fehlt'])); eq(inp.value, 'x.csv', 'Datei bleibt bei Quelle-Fehler'); eq(toasted, 'Quelle fehlt');
+  fn(inp, { code: 'validation', message: 'CSV leer.', data: {} }, { source: src }); eq(JSON.stringify(marks.pop()), JSON.stringify(['ctimp', 'CSV leer.'])); eq(inp.value, '', 'Dateifeld geleert');
+  inp = mk('simpf'); fn(inp, { code: 'validation', message: 'Unbekannte Werkstatt.', data: { field_key: 'site' } }, { site: mk('simpsite', false) }); eq(marks.pop()[0], 'simpf', 'unsichtbares Zusatzfeld → Dateifeld');
+  fn(inp, { code: 'forbidden', message: 'Keine Berechtigung' }); eq(marks.length, 0, 'andere Fehler nur Toast');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

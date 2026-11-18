@@ -1,5 +1,5 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, BERLIN_DT_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, STRINGS, TM_PROV, TST, afLink, agentFindingsCsv, alsoDueTxt, api, asgToast, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, etaPlanWatch, eur, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, hj, hoMissing, holName, holidayGaps, huNote, inviteExpired, isClaimsHash, isContractsHash, isDriversHash, isFinesHash, isMaintHash, isMgr, isPlanHash, isTachoHash, isTiresHash, isUnusedUser, isWeekendD, kmDigHtml, kmFcHtml, kmUnclearDateDue, langAttr, langLoaded, licText, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mPlanNote, mPlanNoteField, mPlanPast, mPlanPastChip, mY, maintOrderHtml, markGetField, markInvalid, mk, mkR, nDays, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, onPage, ownerT, partsEta, phoneIn, planEtaMsg, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rdyOf, rdyTxt, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stackTables, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, usersCsv, vehiclesCached, vlAt, vsDef, woApptTxt, woTag, wsAll, wsLabel, wsName, wsOptions } from './app-main.js';
+import { $, $$, BERLIN_DT_FMT, CT_KINDS, DEFECT_RESULTS, MORE_MAX, PHOTO_TIMEOUT_MS, S, SEND_TIMEOUT_MS, STATES, STRINGS, TM_PROV, TST, afLink, agentFindingsCsv, alsoDueTxt, api, asgToast, auditActionLabel, auditDetailText, bDate, berlinLocalDT, bindTachoCancel, cDesc, checkLabel, claimChip, clipTxt, conflictKeep, conflictMine, coverageGaps, ctChip, ctLines, ctRet, dataQualityCsv, dateOpts, decIn, defectItemsCsv, defectVehiclesCsv, download, downloadChecked, dqDetail, dur, emHoursText, ensureLang, envFn, esc, etaPlanWatch, eur, eurIst, fMsg, fcLabel, federalHoliday, fileUrl, filterUsers, fmtD, fmtDT, fmtDue, fmtHM, fmtKm, fmtMm, fmtMonth, fmtNum, helpLink, hj, hoMissing, holName, holidayGaps, huNote, importErr, inviteExpired, isClaimsHash, isContractsHash, isDriversHash, isFinesHash, isMaintHash, isMgr, isPlanHash, isTachoHash, isTiresHash, isUnusedUser, isWeekendD, kmDigHtml, kmFcHtml, kmUnclearDateDue, langAttr, langLoaded, licText, locOf, lostDup, lostIs, lostMark, ltxt, mEv, mPlanNote, mPlanNoteField, mPlanPast, mPlanPastChip, mY, maintOrderHtml, markGetField, markInvalid, mk, mkR, nDays, noTr, noVehiclesNote, noneP, nowMs, occurredFields, occurredValue, odoSrc, offDayWatch, onPage, ownerT, partsEta, phoneIn, planEtaMsg, planVehTag, plate, plateCmp, pnm, posL, prepareUpload, printHead, printStamp, provL, qrSvg, rdyOf, rdyTxt, readCsvFile, reasonText, render, rkFor, rwsDrop, searchKey, siteKeyUi, siteSelect, siteWsHints, sortPref, sortUsers, stackTables, supplierLabel, t, tachoHistList, telAbroad, telHref, tfill, tireAge, tlHash, tmAge, tmKmRej, tn, toast, translateNextAction, tzNote, uiLoc, uid, usersCsv, vehiclesCached, vlAt, vsDef, woApptTxt, woTag, wsAll, wsLabel, wsName, wsOptions } from './app-main.js';
 
 
 
@@ -235,7 +235,7 @@ async function viewContracts() {
     <div class="actions noprint"><button type="button" class="btn secondary" id="ctcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="ctics" title="${esc(t('ct_ics_hint'))}"${ctIcsNone ? ' disabled data-ctics-none' : ''}>${esc(t('export_ics'))}</button><button type="button" class="btn secondary" id="ctprt">${esc(t('print'))}</button></div>${ctIcsNone ? `<p class="small muted noprint" data-ctics-hint>${esc(t('ctics_none'))}</p>` : ''}
     ${ctb.html}
     <details class="panel noprint"><summary>${esc(t('ct_import'))}</summary><p class="small muted">${esc(t('ct_import_hint'))}</p>
-      <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
+      <label for="ctsrc">${esc(t('ct_import_src'))}</label><input id="ctsrc" maxlength="300" data-fkey="source"><input type="file" id="ctimp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('ct_import'))}" style="margin-top:8px"><div id="ctimpr"></div></details>`, 'more');
   S.ctAt = Date.now();
   { const rl = $('#ctreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewContracts(); } catch (err) { toast(err.message, true); } }; }
   $$('[data-cf]').forEach((b) => (b.onclick = () => { S.ctFilter = b.dataset.cf; viewContracts(); }));
@@ -266,7 +266,7 @@ async function viewContracts() {
       const ap = $('#ctapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/contracts/import' + (q ? '?' + q.slice(1) : ''), text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewContracts(); const d = $('#ctimpr'); if (d) { d.closest('details').open = true; show(done, true); } } catch (err) { ap.disabled = false; toast(err.message, true); } };
     };
-    try { show(await api('POST', '/api/contracts/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+    try { show(await api('POST', '/api/contracts/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { importErr(inp, err, { source: $('#ctsrc') }); }
   };
   $('#ctics').onclick = async () => { try { download(await api('GET', `/api/contracts?format=ics&filter=aktiv${k ? '&kind=' + k : ''}${sq.replace(/&as_of=[^&]*/, '')}`), `fuhrpark-vertraege_${r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}${k ? '_' + k : ''}${r.partner ? '_' + fnPart(r.partner) : ''}.ics`  ); } catch (err) { toast(err.message, true); } };
   $('#ctcsv').onclick = async () => { try { download(await api('GET', `/api/contracts?format=csv&filter=${f}${k ? '&kind=' + k : ''}${sq}`), `fuhrpark-vertraege_${r.as_of ? 'stichtag-' + r.as_of : r.today}${r.ends_by ? '_bis-' + r.ends_by : ''}${r.site ? '_' + fnPart(r.site) : ''}${r.partner ? '_' + fnPart(r.partner) : ''}.csv`); } catch (err) { toast(err.message, true); } };
@@ -962,7 +962,7 @@ async function viewTacho() {
     <div class="actions"><button type="button" class="btn secondary" id="tcsv">${esc(t('export_csv'))}</button><button type="button" class="btn secondary" id="tprt">${esc(t('print'))}</button></div>
     <p class="noprint"><a href="#/tacho/history" class="tap" id="thlink">${esc(t('th_link'))} ›</a></p>
     <section class="panel noprint"><h2 style="margin-top:0">${esc(t('tacho_import'))}</h2><p class="small muted">${esc(t('tacho_import_hint'))}</p>
-      <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" maxlength="300" placeholder="${esc(t('tacho_ev_ph'))}"><input type="file" id="timp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
+      <label for="tsrc">${esc(t('tacho_import_src'))}</label><input id="tsrc" maxlength="300" placeholder="${esc(t('tacho_ev_ph'))}" data-fkey="source"><input type="file" id="timp" accept=".csv,.txt,text/csv,text/plain" aria-label="${esc(t('tacho_import'))}" style="margin-top:8px"><div id="timpr"></div></section>`, 'more');
   S.tachoAt = Date.now();
   { const rl = $('#tachoreload'); if (rl) rl.onclick = async (e) => { e.preventDefault(); try { await viewTacho(); } catch (err) { toast(err.message, true); } }; }
   $$('[data-tt]').forEach((b) => (b.onclick = () => { S.tachoTab = b.dataset.tt; viewTacho(); }));
@@ -984,7 +984,7 @@ async function viewTacho() {
       const ap = $('#tapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/tacho/import' + (q ? '?' + q.slice(1) : ''), text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewTacho(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
     };
-    try { show(await api('POST', '/api/tacho/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+    try { show(await api('POST', '/api/tacho/import?dry_run=1' + q, text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { importErr(inp, err, { source: $('#tsrc') }); }
   };
   const nf = $('#tnf'); if (nf) nf.onsubmit = async (e) => { e.preventDefault(); const b = Object.fromEntries(new FormData(nf)); const body = { kind: tab === 'drivers' ? 'fahrerkarte' : 'massenspeicher', downloaded_on: b.downloaded_on, evidence: b.evidence };
     body[tab === 'drivers' ? 'driver_id' : 'vehicle_id'] = b.target; if (b.note) body.note = b.note;
@@ -1253,7 +1253,7 @@ async function viewMaint(fq) {
       const ap = $('#mapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
     };
-    try { show(await api('POST', '/api/maintenance/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+    try { show(await api('POST', '/api/maintenance/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { importErr(inp, err); }
   };
 
   const rinp = $('#rimp');
@@ -1270,7 +1270,7 @@ async function viewMaint(fq) {
       const ap = $('#rapply');
       if (ap) ap.onclick = async () => { ap.disabled = true; try { const done = await api('POST', '/api/maintenance/recalls/import', text, { headers: { 'content-type': 'text/csv' } }); toast('✓'); await viewMaint(); show(done, true); } catch (err) { ap.disabled = false; toast(err.message, true); } };
     };
-    try { show(await api('POST', '/api/maintenance/recalls/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { toast(err.message, true); }
+    try { show(await api('POST', '/api/maintenance/recalls/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } }), false); } catch (err) { importErr(rinp, err); }
   };
 }
 const KPI_VEH_MAX = 20;
@@ -1992,7 +1992,7 @@ async function viewSettings(sec) {
       const r = await api('POST', '/api/tires/import?dry_run=1', text, { headers: { 'content-type': 'text/csv' } });
       $('#tcsvr').innerHTML = `<p><b>${esc(t('preview'))}:</b> ${esc(t('imp_new'))}: ${r.counts.neu} · ${esc(t('imp_changed'))}: ${r.counts.geaendert} · ${esc(t('imp_same'))}: ${r.counts.unveraendert} · ${esc(t('tires_kept_verified'))}: ${r.kept_verified} · ${esc(t('tires_no_vehicle'))}: ${r.skipped_no_vehicle.length}</p>${(r.skipped || []).length ? `<details open><summary>${esc(t('skipped'))} (${r.skipped.length})</summary><ul class="small">${r.skipped.slice(0, 300).map((x) => `<li>${esc(t('line'))} ${x.line}${x.plate ? ' · ' + esc(x.plate) : ''}: ${esc(reasonText(x.reason))}</li>`).join('')}</ul>${impMore(r.skipped.length, 300)}</details>` : ''}<div class="actions"><button type="button" class="btn" id="tgo"${r.counts.neu + r.counts.geaendert ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
       $('#tgo').onclick = async () => { try { const g = await api('POST', '/api/tires/import', text, { headers: { 'content-type': 'text/csv' } }); $('#tcsvr').innerHTML = `<p>✓ ${esc(t('imp_new'))}: ${g.counts.neu} · ${esc(t('imp_changed'))}: ${g.counts.geaendert} · ${esc(t('imp_same'))}: ${g.counts.unveraendert}</p>`; } catch (err) { toast(err.message, true); } };
-    } catch (err) { toast(err.message, true); }
+    } catch (err) { importErr($('#tcsv'), err); }
   };
 
   $('#sf').onsubmit = async (e) => {
@@ -2033,7 +2033,7 @@ async function viewSettings(sec) {
         ${changed.length ? `<div class="list">${changed.slice(0, 200).map((x) => `<div class="row ${x.action === 'neu' ? '' : 'p-mittel'}"><span class="chip">${esc(t('line'))} ${x.line}</span><span class="title">${esc(x.plate)}</span><span class="chip">${esc(x.action === 'neu' ? t('imp_new') : x.action === 'unverändert' ? t('imp_same') : t('imp_changed'))}</span>${(x.changes && x.changes.length) || x.plate_conflict || x.year_unrecognized ? `<span class="sub" style="white-space:normal">${[...(x.plate_conflict ? [`⚠ ${esc(t('dq_duplicate_plate'))}`] : []), ...(x.year_unrecognized ? [`⚠ ${esc(t('imp_year_unrecognized').replace('{v}', x.year_unrecognized))}`] : []), ...(x.changes || []).map((c) => `${esc(FL[c.field] || c.field)}: ${esc(c.field === 'kind' && c.from ? t('vk_' + c.from) : c.from ?? '–')} → ${esc(c.field === 'kind' ? t('vk_' + c.to) : c.to)}`)].join(' · ')}</span>` : ''}</div>`).join('')}</div>${impMore(changed.length, 200)}` : ''}
         <p class="small muted">${esc(t('imp_keep_hint'))}</p><div class="actions"><button type="button" class="btn" id="csvgo"${r.preview.length ? '' : ' disabled'}>${esc(t('apply_import'))}</button></div>`;
       $('#csvgo').onclick = async () => { try { const g = await api('POST', '/api/vehicles/import', text, { headers: { 'content-type': 'text/csv' } }); $('#csvr').innerHTML = `<p>✓ ${g.imported}</p>${skipped(g)}${(g.site_changes || []).length ? `<div class="panel warn small" id="impsite"><b>${esc(t('imp_site_changes'))}</b><ul>${g.site_changes.map((x) => `<li>${esc(x.plate)} → ${esc(x.site || t('cs_nosite'))}: ${[...siteWsHints(x, x.site), x.planned_appointments ? tn('veh_site_planned', x.planned_appointments) : '', x.drivers_other_site.length ? t('veh_site_drivers').replace('{list}', () => x.drivers_other_site.map((d) => `${d.name} (${d.site})`).join(', ')) : '', ...(x.coupled_other_site || []).map((y) => t('veh_site_coupled').replace('{p}', () => y.plate).replace('{site}', () => y.site || t('cs_nosite')))].filter(Boolean).map(esc).join(' · ')}</li>`).join('')}</ul></div>` : ''}`; } catch (err) { toast(err.message, true); } };
-    } catch (err) { toast(err.message, true); }
+    } catch (err) { importErr($('#csv'), err); }
   };
 }
 

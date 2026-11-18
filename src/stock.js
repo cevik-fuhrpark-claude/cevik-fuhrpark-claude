@@ -680,8 +680,9 @@ export const STOCK_IMPORT_MAX = 1000;
 export async function importStockCsv(env, user, envName, text, { dryRun = false, site: siteParam = null } = {}) {
   if (!isMgr(user) && user.role !== 'workshop') throw forbidden();
   const site = siteScope(user, siteParam);
-  if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.');
-  if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.');
+  // Backlog 1580 (Backlog 1501 Stufe 21): Lagerauswahl des Imports markieren
+  if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.', { field_key: 'site' });
+  if (!(await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first())) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'site' });
   const table = parseCsv(text);
   if (table.length < 2) throw bad('validation', 'CSV leer.');
   const MAX_ROWS = STOCK_IMPORT_MAX;
