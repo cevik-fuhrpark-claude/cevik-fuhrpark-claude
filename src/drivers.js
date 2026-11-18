@@ -304,8 +304,16 @@ export async function updateDriver(env, user, envName, id, body) {
   // Akte auf „ausgeschieden“ gesetzt, verknüpftes App-Konto aber weiter aktiv bzw. Fahrzeug weiter zugeordnet (Backlog 190, Teilagent
   // „Fahrer verlässt das Unternehmen“): Hinweis statt stiller Weiterarbeit (Push, Kontrollen, Meldungen gingen weiter); nichts automatisch geändert
   if (changed.active && changed.active.to === false && f.user_id) {
-    const u = await env.DB.prepare(`SELECT u.display_name, u.active, (SELECT COUNT(*) FROM driver_vehicles dv WHERE dv.user_id=u.id AND (dv.valid_to IS NULL OR dv.valid_to > ?)) AS n FROM users u WHERE u.id=?`).bind(nowIso(), f.user_id).first();
-    if (u && (u.active || u.n)) return { ok: true, ...(u.active ? { account_still_active: { name: u.display_name } } : {}), ...(u.n ? { open_assignments: u.n } : {}), ...(await cardDownloadHint(env, id)) };
+    // Backlog 1581 (Backlog 195, Blickwinkel „Leitung setzt die Fahrerakte auf ausgeschieden, das App-Konto ist schon deaktiviert“): dieselbe
+    // Übergabe wie beim Deaktivieren des Kontos (Backlog 657) – Bußgeldvorgänge ohne Bestätigung des Fahrers immer, offene Meldungen nur bei
+    // bereits deaktiviertem Konto (sonst erreichen Rückfragen ihn noch; der Konto-Hinweis führt dorthin). Nur Anzeige, nichts geändert.
+    const u = await env.DB.prepare(`SELECT u.display_name, u.active, (SELECT COUNT(*) FROM driver_vehicles dv WHERE dv.user_id=u.id AND (dv.valid_to IS NULL OR dv.valid_to > ?1)) AS n,
+        (SELECT COUNT(*) FROM fines WHERE driver_id=u.id AND environment=?3 AND status IN ('fahrer_ermittelt','fahrer_informiert') AND driver_ack_at IS NULL) AS fn,
+        CASE WHEN u.active = 0 THEN (SELECT COUNT(*) FROM cases WHERE reporter_id=u.id AND environment=?3 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt')) ELSE 0 END AS ocn,
+        CASE WHEN u.active = 0 THEN (SELECT group_concat(n, '|') FROM (SELECT case_no AS n FROM cases WHERE reporter_id=u.id AND environment=?3 AND status NOT IN ('fahrzeug_freigegeben','abgelehnt') ORDER BY created_at LIMIT 20)) END AS oc
+        FROM users u WHERE u.id=?2`).bind(nowIso(), f.user_id, envName).first();
+    const handover = u && (u.fn || u.ocn) ? { driver_handover: { cases: String(u.oc || '').split('|').filter(Boolean), cases_total: u.ocn || 0, fines: u.fn || 0 } } : {};
+    if (u && (u.active || u.n || u.fn || u.ocn)) return { ok: true, ...(u.active ? { account_still_active: { name: u.display_name } } : {}), ...(u.n ? { open_assignments: u.n } : {}), ...handover, ...(await cardDownloadHint(env, id)) };
   }
   if (changed.active && changed.active.to === false) return { ok: true, ...(await cardDownloadHint(env, id)) };
   return { ok: true };

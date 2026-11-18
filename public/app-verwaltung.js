@@ -782,7 +782,7 @@ async function viewDriver(id) {
     const b = Object.fromEntries(Object.entries(all).filter(([k, v]) => v !== was[k])); if (!Object.keys(b).length) { toast('✓'); return; }
     if (d.updated_at) b.expected_updated_at = d.updated_at; try { const r = await api('PATCH', `/api/drivers/${id}`, b, { timeoutMs: SEND_TIMEOUT_MS }); if (r && r.duplicate) { toast(t('saved_before')); viewDriver(id); return; }
 
-      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none'));
+      const h = []; if (r && r.account_still_active) h.push(t('dr_left_account_active').replace('{name}', r.account_still_active.name)); if (r && r.open_assignments) h.push(tn('dr_left_assignments', r.open_assignments)); { const dh = r && r.driver_handover; if (dh && dh.cases_total) h.push(t('ue_drv_cases').replace('{n}', dh.cases_total).replace('{list}', dh.cases.join(', ') + (dh.cases_total > dh.cases.length ? ', …' : ''))); if (dh && dh.fines) h.push(t('ue_drv_fines').replace('{n}', dh.fines)); } if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none'));
       toast(h.length ? h.join(' ') : '✓'); viewDriver(id); } catch (err) { if (err.code === 'version_conflict') { S.drLost = { id, ...conflictMine(edf) }; viewDriver(id); return; } toast(linkedMsg(err), true); } };
 }
 

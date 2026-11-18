@@ -45036,6 +45036,41 @@ await test('Backlog 1580 (Backlog 1501 Stufe 21, WCAG 3.3.1): CSV-Import – Feh
   fn(inp, { code: 'forbidden', message: 'Keine Berechtigung' }); eq(marks.length, 0, 'andere Fehler nur Toast');
 });
 
+await test('Backlog 1581 (Backlog 195, Blickwinkel „Leitung setzt die Fahrerakte auf ausgeschieden, das App-Konto ist schon deaktiviert“): Fahrerakte „ausgeschieden“ nennt Bußgeldvorgänge ohne Bestätigung des Fahrers (immer) und seine offenen Meldungen (nur bei bereits deaktiviertem Konto); bestätigte, erledigte und andere Umgebung zählen nicht; nichts wird geändert', async () => {
+  const { e, U, newCase, cmd } = await freshWorld(); const db = e.DB.db;
+  const open1 = await newCase({ description: 'Spiegel locker' }); const done = await newCase({ description: 'Wischer defekt' });
+  eq((await cmd(U.fleet, done, 'reject', { reason: 'erledigt vor Ort' }, 'gemeldet')).status, 200);
+  const plate = db.prepare('SELECT plate FROM vehicles WHERE id=?').get('VIN:WMA15SZZ2HM722774').plate;
+  const fines = [];
+  for (const ref of ['AZ-1581-1', 'AZ-1581-2', 'AZ-1581-3']) {
+    const f = await U.fleet.post('/api/fines', { kind: 'anhoerung', authority: 'Stadt Dortmund', reference: ref, offense_type: 'geschwindigkeit', offense_at: new Date().toISOString(), plate_in_letter: plate, response_due: bDayOff(10) }); eq(f.status, 201, JSON.stringify(f.data));
+    eq((await U.fleet.post(`/api/fines/${f.data.id}/commands`, { action: 'confirm_driver', payload: { driver_id: U.driver.id, basis: 'manuell', evidence: 'Tourenplan' } })).status, 200, ref);
+    fines.push(f.data.id);
+  }
+  db.prepare(`UPDATE fines SET driver_ack_at=? WHERE id=?`).run(new Date().toISOString(), fines[1]); // vom Fahrer bestätigt → zählt nicht
+  db.prepare(`UPDATE fines SET environment='production' WHERE id=?`).run(fines[2]); // andere Umgebung → zählt nicht
+  const dr = await U.fleet.post('/api/drivers', { display_name: 'Fahrer 1581', personnel_no: 'P-1581', user_id: U.driver.id }); eq(dr.status, 201);
+  // Konto noch aktiv: Bußgeld ja, Meldungen nicht (Rückfragen erreichen ihn noch; Konto-Hinweis)
+  let r = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { active: false }); eq(r.status, 200, JSON.stringify(r.data));
+  ok(r.data.account_still_active, 'Konto-Hinweis'); eq(JSON.stringify(r.data.driver_handover), JSON.stringify({ cases: [], cases_total: 0, fines: 1 }), 'nur Bußgeld');
+  eq((await U.fleet.patch(`/api/drivers/${dr.data.id}`, { active: true })).data.driver_handover, undefined, 'Reaktivieren ohne Zusatz');
+  // Konto zuerst deaktiviert, danach die Akte: Meldung und Bußgeld
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).status, 200);
+  const before = JSON.stringify(db.prepare('SELECT id, status, driver_id, version FROM fines ORDER BY id').all());
+  r = await U.fleet.patch(`/api/drivers/${dr.data.id}`, { active: false }); eq(r.status, 200);
+  eq(r.data.account_still_active, undefined, 'Konto schon deaktiviert');
+  eq(JSON.stringify(r.data.driver_handover), JSON.stringify({ cases: [db.prepare('SELECT case_no FROM cases WHERE id=?').get(open1).case_no], cases_total: 1, fines: 1 }), 'offene Meldung und Bußgeld');
+  eq(JSON.stringify(db.prepare('SELECT id, status, driver_id, version FROM fines ORDER BY id').all()), before, 'Bußgelder unverändert');
+  // Bemerkung ändern an ausgeschiedener Akte: kein Zusatz
+  eq((await U.fleet.patch(`/api/drivers/${dr.data.id}`, { note: 'Austritt 30.11.' })).data.driver_handover, undefined, 'nur beim Ausscheiden');
+  // Akte ohne App-Konto: nichts
+  const dr2 = await U.fleet.post('/api/drivers', { display_name: 'Ohne Konto 1581' }); eq(dr2.status, 201);
+  eq((await U.fleet.patch(`/api/drivers/${dr2.data.id}`, { active: false })).data.driver_handover, undefined, 'ohne Konto');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const at = app.indexOf("api('PATCH', `/api/drivers/${id}`, b,"); ok(at > 0, 'Speichern der Fahrerakte'); const line = app.slice(at, at + 2500);
+  ok(line.includes('r.driver_handover') && line.includes("t('ue_drv_cases')") && line.includes("t('ue_drv_fines')"), 'Fahrerakte zeigt die Übergabe-Hinweise');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
