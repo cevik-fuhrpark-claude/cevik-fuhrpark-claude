@@ -3880,7 +3880,7 @@ const BG_KINDS = [['brake', /\bspirach\S*\s+(?:\S+\s+){0,2}(?:ne\s+(?:rabot|deys
   ['leak', /\b(?:maslo\S*|nafta\S*|gorivo\S*|antifriz\S*|ohladitel\S*|technost\S*|adblue|dizel\S*|hidravlik\S*)\s+(?:\S+\s+)?(?:teche|kape|izticha|tekat|kapyat)|\b(?:teche|kape|izticha|tekat|kapyat|izteche)\S*\s+(?:\S+\s+)?(?:maslo|nafta|gorivo|antifriz|ohladitel|technost|adblue|dizel|hidravlik)/, /\bne\s+(?:tech|tek|kap|izticha)/],
   ['acc', /\bkatastrof|\bblasna|\bpatnotransportno|\bptp\b|\bsblasa|\budari\S*\s+(?:me|ni|kamiona|remarketo)\b/, /kamache|kamak/],
   // [CLAUDE] Backlog 1564: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (Stufe 2 zu 1563); Ladung umgekippt und Verneinung ohne
-  ['acc', /\bpreobar(?:na|nah|nahme|nat|nato|nala)\b|\b(?:izlyaz|izleta|izletyah|izhvarch)\S*\s+(?:\S+\s+)?ot\s+(?:patya|patnoto|platnoto)|\bv\s+kanavk/, /\btovar|palet|\bne\s+(?:se\s+)?(?:preobar|izlyaz|izlet)|\bne\s+(?:e|sme|sam|sa|padna|padnah|padnahme|vleze|vlyazoh)\s+(?:\S+\s+)?v\s+kanavk/],
+  ['acc', /\bpreobar(?:na|nah|nahme|nat|nato|nala)\b|\b(?:izlyaz|izleta|izletyah|izhvarch)\S*\s+(?:\S+\s+)?ot\s+(?:patya|patnoto|platnoto)|\bv\s+kanavk/, /\btovar|palet|\bne\s+(?:(?:se|e|sam|sme|sa|si|beshe)\s+)?(?:preobar|izlyaz|izlet)|\bne\s+(?:e|sme|sam|sa|padna|padnah|padnahme|vleze|vlyazoh)\s+(?:\S+\s+)?v\s+kanavk/],
   // [CLAUDE] Backlog 1568: Lkw im Graben → zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
   ['stuck', /\bv\s+kanavk/, /\btovar|palet|\bne\s+(?:e|sme|sam|sa|padna|padnah|padnahme|vleze|vlyazoh|izlyaz)\b/],
   ['injury', /\branen\S*|\bpostradah|\blineyk|\bbolnits|\barza\s+pomosht/],
@@ -3929,7 +3929,7 @@ const LT_KINDS = [['brake', /\bstabd\S*\s+(?:\S+\s+)?(?:neveik|nestabd|silpn|nel
   ['leak', /\b(?:alyv|tepal|dyzel|kuras\b|kuro\b|antifriz|ausinimo\s+skyst|skyst|adblue|tosol)\S*\s+(?:\S+\s+)?(?:teka|bega|lasa|varva|isbego|istek|prateka)|\b(?:teka|bega|lasa|varva|isbego|istek|prateka)\S*\s+(?:\S+\s+)?(?:alyv|tepal|dyzel|kuras|kuro|antifriz|ausinimo|skyst|adblue)/],
   ['acc', /\bavarij|\bsusidur|\batsitrenk|\bisitrenk|\btrenk[e]?s\b|\btrenkesi|\bkliud|\bapibraiz|\bsudauziau/, /rezim|akmen|akmuo|akmenuk/],
   // [CLAUDE] Backlog 1564: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (Stufe 2 zu 1563); Ladung umgekippt und Verneinung ohne
-  ['acc', /\bapsivert|\b(?:nuvaziav|nuslyd|islekiau|islek)\S*\s+(?:\S+\s+)?nuo\s+kelio|\bi\s+griov|\bgriovyje\b/, /krovin|palet|\b(?:ne\S+|nera)\s+(?:\S+\s+)?(?:i\s+griov|griovyje)/],
+  ['acc', /\bapsivert|\bapvirt|\b(?:nuvaziav|nuslyd|islekiau|islek)\S*\s+(?:\S+\s+)?nuo\s+kelio|\bi\s+griov|\bgriovyje\b/, /krovin|palet|\b(?:ne\S+|nera)\s+(?:\S+\s+)?(?:i\s+griov|griovyje)/],
   // [CLAUDE] Backlog 1568: Lkw im Graben → zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
   ['stuck', /\bi\s+griov|\bgriovyje\b/, /krovin|palet|\b(?:ne\S+|nera)\s+(?:\S+\s+)?(?:i\s+griov|griovyje)/],
   ['injury', /\bsuzeist|\bsusizeid|\bsusizalo|\bgreitaj|\bgreitoj|\bligonin/],
@@ -4062,7 +4062,7 @@ const ET_KINDS = [['brake', /\bpidur\S*\s+(?:\S+\s+)?(?:ei\s+(?:toota|pea|toimi|
   ['leak', /\b(?:oli|kutus|diisel|antifriis|jahutusvedel|vedelik|adblue)\S*\s+(?:\S+\s+)?(?:lekib|lekkis|tilgub|tilkus|voolab\s+valja|jookseb\s+valja)|\b(?:lekib|lekkis|tilgub|tilkus)\s+(?:\S+\s+)?(?:oli|olit|kutus|kutust|diisel|diislit|antifriis|jahutusvedel|vedelik|adblue)|\b(?:oli|kutuse|diisli|antifriisi|jahutusvedeliku)leke/],
   ['acc', /\bavarii|\bonnetus|\bkokkupor|\bporka\S*\s+(?:\S+\s+)?kokku|\b(?:soitsin|soitis|soitsime|tagurdasin)\s+(?:\S+\s+){0,3}otsa\b|\bsain\s+(?:\S+\s+)?otsa\b/, /avariitul|avariirez|avariimark|avariipidur|avariik|avariin|kolmnurk|kivi|killust|tul(?:ed|i)\b/],
   // [CLAUDE] Backlog 1564: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (Stufe 2 zu 1563); Ladung umgekippt und Verneinung ohne
-  ['acc', /\b(?:laks|lainud|laksime)\s+(?:\S+\s+)?umber\b|\bumber\s+(?:laks|lainud)|\b(?:soitsin|soitis|soitsime|libisesin|libises)\s+(?:\S+\s+)?(?:teelt\s+valja|kraavi)|\bkraavis\b/, /koorem|\blast\b|\balus|\bei\s+(?:\S+\s+)?(?:lainud|soitnud|libisenud)|\b(?:ei|pole)\s+(?:\S+\s+)?kraavi/],
+  ['acc', /\b(?:laks|lainud|laksime)\s+(?:\S+\s+)?umber\b|\bumber\s+(?:laks|lainud)|\b(?:soitsin|soitis|soitsime|libisesin|libises)\s+(?:\S+\s+)?(?:teelt\s+valja|kraavi)|\bkraavis\b/, /koorem|\blast\b|\balus|\b(?:ei|pole)\s+(?:\S+\s+){0,2}?(?:lainud|soitnud|libisenud)|\b(?:ei|pole)\s+(?:\S+\s+)?kraavi/],
   // [CLAUDE] Backlog 1568: Lkw im Graben → zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
   ['stuck', /\b(?:soitsin|soitis|soitsime|libisesin|libises|vajus|vajusin|vajusime)\s+(?:\S+\s+)?kraavi|\bkraavis\b/, /koorem|\blast\b|\balus|\b(?:ei|pole)\s+(?:\S+\s+)?kraavi/],
   ['injury', /\bsa(?:in|ime)\s+(?:\S+\s+)?viga\b|\bkiirabi|\bhaigla|\bolen\s+vigastatud|\b(?:juht|inime|isik|kaassoitja)\S*\s+(?:on\s+|sai\s+)?vigasta/],
@@ -4229,7 +4229,7 @@ const SL_KINDS = [['brake', /\bzavor\S*\s+(?:\S+\s+)?(?:ne\s+(?:delaj|dela|prime
   ['leak', /\b(?:olj|goriv|naft|dizl|dizel|tekocin|antifriz|adblue)\S*\s+(?:\S+\s+)?(?:tece|kaplja|pusca|curlja|uhaja)|\b(?:tece|kaplja|pusca|curlja|izgublja)\s+(?:\S+\s+)?(?:olj|goriv|naft|dizl|dizel|tekocin|antifriz|adblue)/],
   ['acc', /\bnesrec|\btrcenj|\b(?:trcil|trcila|zadel|zadela|oplazil|oplazila|opraskal|opraskala|zaletel|zaletela|naletel)\b/, /kamen|kamenc/],
   // [CLAUDE] Backlog 1564: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (Stufe 2 zu 1563); Ladung umgekippt und Verneinung ohne
-  ['acc', /\bprevrn(?:il|ila|ilo|ili)\b|\b(?:zapeljal|zaneslo|zdrsnil|zletel)\S*\s+(?:\S+\s+){0,2}?(?:s|z)\s+(?:ceste|vozisca)|\b(?:zapeljal|zdrsnil|zletel|pristal)\S*\s+(?:\S+\s+){0,2}?v\s+jarek|\b(?:je|sem|smo|stoji|obtical)\s+(?:\S+\s+)?v\s+jarku\b/, /\btovor(?!nj)|palet|\bni\s+(?:se\s+)?(?:prevrn|zapelj)|\b(?:ni|nisem|nismo|niso)\s+(?:\S+\s+)?(?:zapelj|zdrsn|zlet|pristal|v\s+jar)/],
+  ['acc', /\bprevrn(?:il|ila|ilo|ili|jen|jena|jeno|jeni)\b|\b(?:zapeljal|zaneslo|zdrsnil|zletel)\S*\s+(?:\S+\s+){0,2}?(?:s|z)\s+(?:ceste|vozisca)|\b(?:zapeljal|zdrsnil|zletel|pristal)\S*\s+(?:\S+\s+){0,2}?v\s+jarek|\b(?:je|sem|smo|stoji|obtical)\s+(?:\S+\s+)?v\s+jarku\b/, /\btovor(?!nj)|palet|\bni\s+(?:se\s+)?(?:prevrn|zapelj)|\b(?:ni|nisem|nismo|niso)\s+(?:\S+\s+)?(?:zapelj|zdrsn|zlet|pristal|v\s+jar)/],
   // [CLAUDE] Backlog 1568: Lkw im Graben → zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
   ['stuck', /\bv\s+(?:jarek|jarku)\b/, /\btovor(?!nj)|palet|\b(?:ni|nisem|nismo|niso)\s+(?:\S+\s+)?(?:zapelj|zdrsn|zlet|pristal|v\s+jar)/],
   ['injury', /\branjen\S*|\b(?:sem\s+se|se\s+je)\s+(?:\S+\s+)?poskodoval|\bposkodoval\S*\s+sem\s+se\b|\b(?:voznik|sovoznik|kolega|pesec|kolesar|clovek|oseba)\S*\s+(?:\S+\s+)?(?:je\s+)?(?:poskodovan|ranjen)|\b(?:resilc|resevalc)|\bnujn\S*\s+(?:medicinsk\S*\s+)?pomoc/, /\b(?:tovornjak|kamion|vlacilec|priklopnik|vozilo|kabin)\S*\s+se\s+je\s+(?:\S+\s+)?poskodoval/],
@@ -4388,7 +4388,7 @@ const AR_KINDS = [['brake', arRx('framl|fram|bryk|mkab7|mkb7', 'D|' + AR_NOT('ms
   ['fire', /\b[wfb]?(?:a?ll?)?(?:7ryq|nar\b|dkhan|dkhnh)|\b(?:b?[yt]|a)?7trq|\basht3l|\b(?:b?t)?wl3/, new RegExp(`\\btfay|${AR_P}(?:${AR_EXH})|\\b(?:b?t)?wl3\\S*\\s+(?:\\S+\\s+)?${AR_P}(?:lmb|dw\\b|ashar|3lam)|${AR_P}(?:lmb|dw\\b)\\S*\\s+(?:\\S+\\s+){0,2}(?:b?t)?wl3`)],
   ['acc', /\b[wfb]?(?:a?ll?)?(?:7adth|7adt\b)|\bt?sadm|\bastdm|\b(?:sdmt|sdmny|sdmna|sdmw|khbtt|khbtny|khbtna|khbtw|khbth|d3st)/],
   // [CLAUDE] Backlog 1564: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (Stufe 2 zu 1563); Ladung umgekippt und Verneinung ohne
-  ['acc', /\b(?:al)?anqlb|\bmnqlb|\bkhrj\S*\s+(?:3n|mn)\s+(?:al)?tryq/, /7mwl|bda3|palet|\bma\s+anqlb/],
+  ['acc', /\b(?:al)?anqlb|\bmnqlb|\bkhrj\S*\s+(?:3n|mn)\s+(?:al)?tryq|\b(?:al)?(?:sha7n|syar|trl|qatr|mqtwr|lwry)\S*\s+(?:\S+\s+)?mqlwb/, /7mwl|bda3|palet|\b(?:ma|lm|la|msh|mish|mw|lys|lyst)\s+(?:\S+\s+)?(?:anqlb|tnqlb|ynqlb|khrj|mqlwb)/],
   // [CLAUDE] Backlog 1569: Lkw im Graben → Unfall und zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
   ['acc', new RegExp(`\\b[wf]?(?:sqt|wq3|ta7|anzlq|tzl[qj]|tdhrj|[yt]sqt|[yt]q3|[yt]ty7|[yt]nzlq|dkhl)\\S*\\s+(?:\\S+\\s+){0,2}?(?:fy|ila|l)\\s*${AR_P}(?:khndq|tr3h)|${AR_P}(?:sha7n|syar|trl|qatr|mqtwr|lwry)\\S*\\s+(?:\\S+\\s+)?fy\\s*${AR_P}(?:khndq|tr3h)\\b`), /7mwl|bda3|palet|\b(?:lm|ma|la|lys|lyst|msh|mw|mish|mesh)\s+(?:\S+\s+)?(?:[wf]?(?:sqt|wq3|ta7|anzlq|dkhl|[yt]sqt|[yt]q3|[yt]ty7|[yt]nzlq|[yt]dkhl)|fy)/],
   // [CLAUDE] Backlog 1569: Lkw im Graben → Unfall und zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
@@ -4446,7 +4446,7 @@ const FA_KINDS = [['brake', faRx('trmz|bryk|lnt', 'D|nmy?gyr\\S*|bryd\\S*|sft\\S
   ['fire', /\batsh\s*(?:grft|gyrft|grfth|zd)\S*|\batshswz\S*|\b(?:kabyn|mwtwr|mashyn|kamywn|tryly|mwtr|bar|lastyk)\S*\s+(?:\S+\s+)?(?:myswz\S*|atsh\b)|\bdwd\s+(?:\S+\s+){0,2}(?:myad|myayd|blnd|byrwn|zd|grft)\S*/, /agzwz/],
   ['acc', /\btsadf\S*(?=\s|$)(?!\s+n)|\btsadm|\baksydnt|\btkr\s+(?:kd|krd|khwrd)\S*|\b(?:zdm|zdym|zd|khwrdm|khwrdym|malydm)\s+bh\s+|\bbh\s+(?:\S+\s+){0,2}(?:zdm|zdym|khwrdm|khwrdym|malydm)\b|\b(?:bhm|bh\s+mn|bh\s+ma)\s+(?:\S+\s+)?zd/],
   // [CLAUDE] Backlog 1564: Lkw umgekippt / von der Strasse abgekommen / im Graben → Unfall (Stufe 2 zu 1563); Ladung umgekippt und Verneinung ohne
-  ['acc', /\bwazhgwn|\bchp\s+shd|\baz\s+jadh\s+(?:\S+\s+)?(?:mn7rf|khar[jg])/, /\bbar\b|palt|wazhgwn\s+nshd/],
+  ['acc', /\bwazhgwn|\bchp\s+shd|\baz\s+jadh\s+(?:\S+\s+)?(?:mn7rf|khar[jg])/, /\bbar\b|palt|wazhgwn\s+nshd|(?:mn7rf|khar[jg])\s+n(?:shd|bwd|ymd)/],
   // [CLAUDE] Backlog 1569: Lkw im Graben → Unfall und zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
   ['acc', /\b(?:aftad|aftadh|aftadym|aftadm|rft|rftym|rftm|lyz\s+khwrd|sr\s+khwrd)\s+(?:\S+\s+)?(?:tw|twy|dakhl|dr|bh)\s+(?:jwb|jwy|khndq|kanal|drh)\b|\b(?:tw|twy|dakhl|dr|bh)\s+(?:jwb|jwy|khndq|kanal|drh)\s+(?:\S+\s+)?(?:aftad|rft|lyz\s+khwrd|sr\s+khwrd)\S*|\b(?:kamywn|mashyn|mwtr|trylr|trayly|tryly|kshndh)\S*\s+(?:\S+\s+)?(?:tw|twy|dakhl|dr)\s+(?:jwy|khndq)\b/, /\bbar\b|palt|\bnyst\b|\bny?ftad|\bnrft|\bnkhwrd/],
   // [CLAUDE] Backlog 1569: Lkw im Graben → Unfall und zusätzlich festgefahren (Bergung) wie im Deutschen; Verneinung und Ladung ohne
