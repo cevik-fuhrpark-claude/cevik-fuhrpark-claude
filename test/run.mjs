@@ -45162,6 +45162,35 @@ await test('Backlog 1584 (Backlog 195, Blickwinkel „Leitung scheidet aus – i
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_pdrive.includes('{n}') && STRINGS[l].ue_pdrive.includes('{list}'), l);
 });
 
+await test('Backlog 1585 (Backlog 195, Blickwinkel „Leitung scheidet aus – ihre Sicherheitssperren mit Begründung stehen noch“): Deaktivieren bzw. Rollen-/Umgebungswechsel der Leitung nennt offene Vorgänge mit ihrer aktuellen Sperre (work_handover.safety_locks); Sperre bleibt wirksam', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const x = await U.own.post('/api/users', { username: 'w.leitung2', display_name: 'Leitung Zwei', role: 'fleet', environment: 'test' });
+  const fl2 = new Client(worker, e, 'w.leitung2'); await fl2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' }); fl2.id = x.data.id;
+  const lock = async (u, id, why) => eq((await cmd(u, id, 'set_safety_lock', {}, why)).status, 200);
+  const id = await toRepair(); await lock(U.fleet, id, 'Bremse zieht schief – erst nach Probefahrt mit mir');
+  const no = db.prepare('SELECT case_no FROM cases WHERE id=?').get(id).case_no;
+  // aufgehoben und von der zweiten Leitung neu gesetzt: zählt nicht mehr für die Leitung
+  const id2 = await toRepair(); await lock(U.fleet, id2, 'Reifen');
+  eq((await cmd(U.fleet, id2, 'lift_safety_lock', { confirm: true }, 'Reifen getauscht')).status, 200);
+  await lock(fl2, id2, 'Leitung 2 sperrt');
+  // von der zweiten Leitung gesetzt: zählt nicht
+  const id3 = await toRepair(); await lock(fl2, id3, 'Leitung 2');
+  eq((await U.own.patch(`/api/users/${U.fleet.id}`, { display_name: 'Leitung 2' })).data.work_handover, undefined, 'nur Name');
+  let r = await U.own.patch(`/api/users/${U.fleet.id}`, { active: false }); eq(r.status, 200, JSON.stringify(r.data));
+  const wh = r.data.work_handover; ok(wh, JSON.stringify(r.data));
+  eq(JSON.stringify(wh.safety_locks), JSON.stringify([no]), 'nur aktuelle Sperre der Leitung'); eq(wh.safety_locks_total, 1);
+  eq(db.prepare('SELECT safety_lock FROM cases WHERE id=?').get(id).safety_lock, 1, 'Sperre bleibt wirksam');
+  eq((await U.own.patch(`/api/users/${U.fleet.id}`, { active: true })).data.work_handover, undefined, 'Reaktivieren ohne Zusatz');
+  r = await U.own.patch(`/api/users/${U.fleet.id}`, { role: 'viewer' }); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.work_handover && r.data.work_handover.safety_locks_total, 1, 'Rollenwechsel');
+  // Werkstatt (kann nicht sperren): Feld fehlt
+  r = await U.own.patch(`/api/users/${U.ws.id}`, { active: false }); eq(r.status, 200); ok(!r.data.work_handover || !('safety_locks' in r.data.work_handover), 'Werkstatt: kein safety_locks');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('function userUpdateHints('), app.indexOf('async function viewUsers('));
+  ok(fn.includes('wh.safety_locks_total') && fn.includes("h.push(t('ue_slock')"), 'Benutzerverwaltung zeigt den Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_slock.includes('{n}') && STRINGS[l].ue_slock.includes('{list}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

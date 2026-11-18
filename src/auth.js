@@ -759,9 +759,16 @@ export async function updateUser(env, actor, userId, body) {
         -- Backlog 1584 (Backlog 195, Blickwinkel „Leitung scheidet aus – ihre Entscheidung „fährt bis zur Teilelieferung“ gilt weiter“):
         -- gültige Vermerke (Backlog 880) dieses Kontos – Status wartet auf Teile (Sperre/Statuswechsel entfernen den Vermerk)
         (SELECT group_concat(n, '|') FROM (SELECT case_no AS n FROM cases WHERE parts_drive_by=?1 AND environment=?2 AND parts_drive_at IS NOT NULL AND status='wartet_teile' ORDER BY parts_drive_at LIMIT 20)) AS pd,
-        (SELECT COUNT(*) FROM cases WHERE parts_drive_by=?1 AND environment=?2 AND parts_drive_at IS NOT NULL AND status='wartet_teile') AS pdn`).bind(userId, target.environment).first();
-    if (h && (h.wsn || h.so || h.pdn)) workHandover = { work_states: String(h.ws || '').split('|').filter(Boolean), work_states_total: h.wsn || 0, stock_orders: h.so || 0,
-      ...(h.pdn ? { parts_drive: String(h.pd || '').split('|').filter(Boolean), parts_drive_total: h.pdn } : {}) };
+        (SELECT COUNT(*) FROM cases WHERE parts_drive_by=?1 AND environment=?2 AND parts_drive_at IS NOT NULL AND status='wartet_teile') AS pdn,
+        -- Backlog 1585 (Backlog 195, Blickwinkel „Leitung scheidet aus – ihre Sicherheitssperren mit Begründung stehen noch“): offene Vorgänge,
+        -- deren aktuelle Sperre dieses Konto gesetzt hat (letztes Ereignis set_safety_lock). Die Sperre bleibt wirksam; nur der Ansprechpartner fehlt.
+        (SELECT group_concat(n, '|') FROM (SELECT c.case_no AS n FROM cases c WHERE c.environment=?2 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+          AND (SELECT e.actor_id FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock' ORDER BY e.created_at DESC LIMIT 1)=?1 ORDER BY c.created_at LIMIT 20)) AS lk,
+        (SELECT COUNT(*) FROM cases c WHERE c.environment=?2 AND c.safety_lock=1 AND c.status NOT IN ('fahrzeug_freigegeben','abgelehnt')
+          AND (SELECT e.actor_id FROM case_events e WHERE e.case_id=c.id AND e.action='set_safety_lock' ORDER BY e.created_at DESC LIMIT 1)=?1) AS lkn`).bind(userId, target.environment).first();
+    if (h && (h.wsn || h.so || h.pdn || h.lkn)) workHandover = { work_states: String(h.ws || '').split('|').filter(Boolean), work_states_total: h.wsn || 0, stock_orders: h.so || 0,
+      ...(h.pdn ? { parts_drive: String(h.pd || '').split('|').filter(Boolean), parts_drive_total: h.pdn } : {}),
+      ...(h.lkn ? { safety_locks: String(h.lk || '').split('|').filter(Boolean), safety_locks_total: h.lkn } : {}) };
   }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),

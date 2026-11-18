@@ -710,6 +710,7 @@ UI-Fahrerakte ausgeschieden nennt Bußgeldvorgänge ohne Bestätigung (DE/UK/EN;
 UI-Disposition deaktiviert nennt Fahrzeughinweise und Notfallnummern (DE/UK/EN; Backlog 1582)|ui-dispo-austritt.py|/tmp/cfp-dispo-austritt.log
 UI-Werkstatt deaktiviert nennt Arbeitsstände und Bestellvermerke (DE/UK/EN; Backlog 1583)|ui-werkstatt-austritt.py|/tmp/cfp-werkstatt-austritt.log
 UI-Leitung deaktiviert nennt Vermerke „fährt bis zur Teilelieferung“ (DE/UK/EN; Backlog 1584)|ui-leitung-teilefahrt.py|/tmp/cfp-leitung-teilefahrt.log
+UI-Leitung deaktiviert nennt ihre Sicherheitssperren (DE/UK/EN; Backlog 1585)|ui-leitung-sperre.py|/tmp/cfp-leitung-sperre.log
 UI-Import: Dateifehler am Dateifeld/an „Quelle“ (DE/UK/EN; Backlog 1580)|ui-import-dateifehler.py|/tmp/cfp-import-dateifehler.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
 UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
