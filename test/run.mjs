@@ -45135,6 +45135,33 @@ await test('Backlog 1583 (Backlog 195, Blickwinkel „Mechaniker scheidet aus �
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_wst.includes('{n}') && STRINGS[l].ue_wst.includes('{list}') && STRINGS[l].ue_stock_orders.includes('{n}'), l);
 });
 
+await test('Backlog 1584 (Backlog 195, Blickwinkel „Leitung scheidet aus – ihr Vermerk „fährt bis zur Teilelieferung“ gilt weiter“): Deaktivieren bzw. Rollen-/Umgebungswechsel der Leitung nennt Aufträge mit ihrem gültigen Vermerk (work_handover.parts_drive); nichts wird geändert', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const eta = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  const mk = async () => { const id = await toRepair(); eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: eta }, 'Luftbalg bestellt')).status, 200); return id; };
+  const id = await mk(); eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' }, 'nur Nahverkehr')).status, 200);
+  const no = db.prepare('SELECT case_no FROM cases WHERE id=?').get(id).case_no;
+  const id2 = await mk(); eq((await cmd(U.fleet, id2, 'set_parts_drive', { on: '1' })).status, 200);
+  eq((await cmd(U.ws, id2, 'resume_repair', {})).status, 200); // Statuswechsel beendet den Vermerk – zählt nicht
+  eq(db.prepare('SELECT parts_drive_by FROM cases WHERE id=?').get(id2).parts_drive_by, null, 'Vermerk beendet');
+  const id4 = await toRepair(); eq((await cmd(U.ws, id4, 'set_work_state', {}, 'Bremse zerlegt')).status, 200);
+  // nur Name: nichts
+  eq((await U.own.patch(`/api/users/${U.fleet.id}`, { display_name: 'Leitung 2' })).data.work_handover, undefined, 'nur Name');
+  let r = await U.own.patch(`/api/users/${U.fleet.id}`, { active: false }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.work_handover), JSON.stringify({ work_states: [], work_states_total: 0, stock_orders: 0, parts_drive: [no], parts_drive_total: 1 }), 'Leitung deaktiviert');
+  eq(db.prepare('SELECT parts_drive_by FROM cases WHERE id=?').get(id).parts_drive_by, U.fleet.id, 'Vermerk bleibt');
+  ok(db.prepare('SELECT parts_drive_at FROM cases WHERE id=?').get(id).parts_drive_at, 'Vermerk bleibt gesetzt');
+  eq((await U.own.patch(`/api/users/${U.fleet.id}`, { active: true })).data.work_handover, undefined, 'Reaktivieren ohne Zusatz');
+  r = await U.own.patch(`/api/users/${U.fleet.id}`, { role: 'viewer' }); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.work_handover && r.data.work_handover.parts_drive_total, 1, 'Rollenwechsel');
+  // Werkstatt ohne Vermerke: Feld parts_drive fehlt
+  r = await U.own.patch(`/api/users/${U.ws.id}`, { active: false }); eq(r.status, 200); ok(r.data.work_handover && !('parts_drive' in r.data.work_handover) && !('parts_drive_total' in r.data.work_handover), 'Werkstatt: kein parts_drive');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('function userUpdateHints('), app.indexOf('async function viewUsers('));
+  ok(fn.includes('wh.parts_drive_total') && fn.includes("h.push(t('ue_pdrive')"), 'Benutzerverwaltung zeigt den Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_pdrive.includes('{n}') && STRINGS[l].ue_pdrive.includes('{list}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

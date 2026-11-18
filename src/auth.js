@@ -755,8 +755,13 @@ export async function updateUser(env, actor, userId, body) {
     const h = await env.DB.prepare(`SELECT
         (SELECT group_concat(n, '|') FROM (SELECT case_no AS n FROM cases WHERE work_state_by=?1 AND environment=?2 AND work_state_note IS NOT NULL AND status IN ('in_reparatur','wartet_teile') ORDER BY work_state_at LIMIT 20)) AS ws,
         (SELECT COUNT(*) FROM cases WHERE work_state_by=?1 AND environment=?2 AND work_state_note IS NOT NULL AND status IN ('in_reparatur','wartet_teile')) AS wsn,
-        (SELECT COUNT(*) FROM stock_items WHERE ordered_by=?1 AND environment=?2 AND ordered_on IS NOT NULL AND active=1) AS so`).bind(userId, target.environment).first();
-    if (h && (h.wsn || h.so)) workHandover = { work_states: String(h.ws || '').split('|').filter(Boolean), work_states_total: h.wsn || 0, stock_orders: h.so || 0 };
+        (SELECT COUNT(*) FROM stock_items WHERE ordered_by=?1 AND environment=?2 AND ordered_on IS NOT NULL AND active=1) AS so,
+        -- Backlog 1584 (Backlog 195, Blickwinkel „Leitung scheidet aus – ihre Entscheidung „fährt bis zur Teilelieferung“ gilt weiter“):
+        -- gültige Vermerke (Backlog 880) dieses Kontos – Status wartet auf Teile (Sperre/Statuswechsel entfernen den Vermerk)
+        (SELECT group_concat(n, '|') FROM (SELECT case_no AS n FROM cases WHERE parts_drive_by=?1 AND environment=?2 AND parts_drive_at IS NOT NULL AND status='wartet_teile' ORDER BY parts_drive_at LIMIT 20)) AS pd,
+        (SELECT COUNT(*) FROM cases WHERE parts_drive_by=?1 AND environment=?2 AND parts_drive_at IS NOT NULL AND status='wartet_teile') AS pdn`).bind(userId, target.environment).first();
+    if (h && (h.wsn || h.so || h.pdn)) workHandover = { work_states: String(h.ws || '').split('|').filter(Boolean), work_states_total: h.wsn || 0, stock_orders: h.so || 0,
+      ...(h.pdn ? { parts_drive: String(h.pd || '').split('|').filter(Boolean), parts_drive_total: h.pdn } : {}) };
   }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),
