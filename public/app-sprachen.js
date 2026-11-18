@@ -29,6 +29,8 @@ const TR_KINDS = [['brake', /\bfren(?:ler|im|leri|lerim)?\s+(?:\S+\s+)?(?:tutmuy
 
   ['stuck', /\bsarampol|\bhendeg(?:e|de)\b|\bhendekte\b/, /\b(?:yuk|yukler|yuku|palet|paletler|koli|kasa)\b|dusmed|girmed|kaymad/],
 
+  ['acc', /\b(?:kamyon|tir|arac|araba|dorse|romork|cekici|kamyonet|minibus|panelvan)\S*\s+(?:\S+\s+)?hendekte\b|\bhendekteyi[mz]\b/, /\b(?:yuk|yukler|yuku|palet|paletler|koli|kasa)\b|\bdegil/],
+
   ['acc', /\bters\s+don(?:du|mus)/, /\b(?:yuk|yukler|yuku|yuklerin|palet|paletler|koli|koliler|kolilerin|kasa|kutular)\b/],
   ['injury', /\byaralan|\byarali\b|\bambulans/],
   ['nostart', /\b(?:motor|arac|kamyon|tir)\s+(?:\S+\s+)?(?:calismiyor|calismadi|baslamiyor)|\bmars\s+(?:\S+\s+)?(?:basmiyor|almiyor)/],
@@ -222,7 +224,9 @@ const HU_KINDS = [['brake', /\bfek(?:ek|et|nek|rendszer\S*|betet\S*|tarcs\S*)?\s
 
   ['acc', /\bfelborul|\boldalara\s+(?:dolt|borult|fordult)|\b(?:letert|lesodrod|lecsusz|kisodrod)\S*\s+(?:\S+\s+)?az\s+utrol|\barokba\s+(?:\S+\s+)?(?:csusz|hajt|kerul|borul|fordul|ment)|\b(?:csusz|hajt|kerul|borul|fordul)\S*\s+(?:\S+\s+)?(?:az\s+)?arokba/, /rakomany|raklap|\baru\b|\bnem\s+(?:\S+\s+)?(?:borult|felborul|tert|csusz)/],
 
-  ['stuck', /\barok(?:ba|ban)\b/, /rakomany|raklap|\baru\b|\bnem\s+(?:\S+\s+)?(?:csusz|hajt|kerul|borul|fordul|ment|van)|\bnincs(?:en)?\s+(?:\S+\s+)?arok/],
+  ['stuck', /\barok(?:ba|ban)\b/, /rakomany|raklap|\baru\b|\bnem\s+(?:\S+\s+)?(?:csusz|hajt|kerul|borul|fordul|ment|van)|\bnincs(?:en)?\s+(?:\S+\s+)?arok|\bnem\s+(?:az\s+)?arok|\bnem\s+(?:vagyok|vagyunk)\b/],
+
+  ['acc', /\b(?:kamion|teherauto|kocsi|auto|jarmu|potkocsi|felpotkocsi|vontato|nyerges|kisteherauto|furgon)\S*\s+(?:\S+\s+){0,2}?arokban\b|\b(?:vagyok|vagyunk)\s+(?:az\s+)?arokban\b|\barokban\s+(?:vagyok|vagyunk)\b/, /rakomany|raklap|\baru\b|\bnem\s+(?:\S+\s+)?(?:az\s+)?arok|\bnincs(?:en)?\s+(?:\S+\s+)?arok|\bnem\s+(?:vagyok|vagyunk)/],
   ['injury', /\bmegserultem\b|\bmegsebesul|\bmento(?:t|k|hoz)?\b|\bkorhaz|\bverzik|\bvereztem|\beltort\s+a\s+(?:lab|kez|kar|bord)/],
   ['parkbrake', /\b(?:kezifek|rogzitofek)\S*\s+(?:\S+\s+)?(?:nem\s+(?:fog|tart|mukodik|old|enged)|elromlott|beragadt)|\belgurult/],
   ['nostart', /\b(?:motor|kamion|auto|vontato)\S*\s+(?:\S+\s+)?nem\s+(?:indul|akar\s+(?:be)?indulni)|\bnem\s+(?:akar\s+)?(?:be)?indul(?:ni)?\b|\bonindito\S*\s+(?:\S+\s+)?(?:nem\s+mukodik|rossz|elromlott)/, /huto|agregat|aggregat|klima|futes|webasto|lift|hatfal/],
@@ -267,9 +271,9 @@ const CS_KINDS = [['brake', /\bbrzd\S*\s+(?:\S+\s+)?(?:nefunguj|nejd|nebrzd|nedr
   ['leak', /\b(?:olej|naft|palivo|paliva|chladic|chladiac|kapalin|kvapalin|nemrz|adblue|diesel)\S*\s+(?:\S+\s+)?(?:tece|tecie|kape|kvapka|unika|vytek|vytiek)|\b(?:tece|tecie|kape|kvapka|unika|vytek|vytiek)\S*\s+(?:\S+\s+)?(?:olej|naft|palivo|chladic|chladiac|kapalin|kvapalin|nemrz|adblue)/],
   ['acc', /\bnehod|\bhavar|\bsrazk|\bzrazk|\bnaboural|\bnabural|\bnarazil|\bodrel|\bvrazil/, /rezim|kamen|kamienk|kaminek/],
 
-  ['acc', /\b(?:prevratil|prevratila|prevratilo|prevratili|prevraceny|prevrateny)\b|\bsjel\S*\s+(?:\S+\s+)?(?:ze?)\s+(?:silnice|cesty|vozovky|dalnice)|\bzisiel\S*\s+(?:\S+\s+)?z\s+(?:cesty|vozovky|dialnice)|\b(?:do|v)\s+(?:prikopu|priekopy|priekope|prikope)\b/, /naklad|palet|\b(?:nesjel|nesjela|nespadl|nespadla|nezisiel|nespadol|neni|nie\s+je|neprevratil\S*)\b/],
+  ['acc', /\b(?:prevratil|prevratila|prevratilo|prevratili|prevraceny|prevrateny)\b|\bsjel\S*\s+(?:\S+\s+)?(?:ze?)\s+(?:silnice|cesty|vozovky|dalnice)|\b(?:zisiel|zisl)\S*\s+(?:\S+\s+)?z\s+(?:cesty|vozovky|dialnice)|\b(?:do|v)\s+(?:prikopu|priekopy|priekope|prikope)\b/, /\bnaklad(?!n|i?ak)|palet|\b(?:nesjel|nesjela|nespadl|nespadla|nezisiel|nespadol|neni|nie\s+je|neprevratil\S*)\b/],
 
-  ['stuck', /\b(?:do|v)\s+(?:prikopu|priekopy|priekope|prikope)\b/, /naklad|palet|\b(?:nesjel|nespadl|nezisiel|nespadol|neni|nie\s+je)\b/],
+  ['stuck', /\b(?:do|v)\s+(?:prikopu|priekopy|priekope|prikope)\b/, /\bnaklad(?!n|i?ak)|palet|\b(?:nesjel|nespadl|nezisiel|nespadol|neni|nie\s+je)\b/],
   ['injury', /\bzran(?:en|il|ila|ili)\S*|\bzachrank|\bsanitk|\bnemocnic/],
   ['parkbrake', /\b(?:rucni|rucna|parkovaci|parkovacia)\s+brzd\S*\s+(?:\S+\s+)?(?:nedrz|nefunguj|neuvoln|zasekl|nejde)|\b(?:rozjel|rozbehol|pohol|odjel)\S*\s+(?:sa\s+|se\s+)?sam/],
   ['nostart', /\bnenastartuj|\bnestartuj|\b(?:nejde|neda\s+sa)\s+(?:\S+\s+)?nastartovat|\bstarter\S*\s+(?:\S+\s+)?nefunguj/, /agregat|chlad|klim|topen|kurenie|webasto/],
@@ -1571,6 +1575,8 @@ const ES_KINDS = [['brake', esCo('frenos?', '@|no\\s+frenan?|sin\\s+frenos?|floj
   ['acc', /\b(?:volco|volcado|volcada)\b|\b(?:me\s+sali|se\s+salio|nos\s+salimos)\s+de\s+la\s+(?:carretera|via|calzada|autopista|autovia)|\bcuneta\b/, /carga|palet|mercancia|\bno\s+(?:se\s+)?(?:volco|sali)|\bno\s+(?:\S+\s+)?(?:esta|estamos|cai|cay|termine|acab|fue|fuimos)\S*\s+(?:\S+\s+){0,2}?(?:cuneta|zanja)/],
 
   ['stuck', /\bcuneta\b|\b(?:en|a)\s+(?:una|la)\s+zanja\b/, /carga|palet|mercancia|\bno\s+(?:\S+\s+)?(?:sali|cai|cay|esta|termine|acab|fue|fuimos)/],
+
+  ['acc', /\b(?:en|a)\s+(?:una|la)\s+zanja\b/, /carga|palet|mercancia|\bno\s+(?:\S+\s+)?(?:sali|cai|cay|esta|estamos|termine|acab|fue|fuimos)/],
   ['injury', /\b(?:herid[oa]s?|lesionad[oa]s?|sangr\S*|ambulancia|me\s+(?:lastime|hice\s+dano))\b/],
   ['nostart', /\b(?:no\s+(?:me\s+)?(?:arranca|arrancan|enciende|prende|quiere\s+(?:arrancar|encender|prender)|da\s+contacto|hace\s+contacto)|se\s+(?:me\s+)?(?:apaga|apago|cala|calo)\s+(?:el\s+|solo\s+)?(?:motor|camion|troca)|(?:motor|camion|troca)\s+(?:\S+\s+)?se\s+(?:apaga|apago|cala|calo|muere|murio))\b/, /frigo|equipo\s+de\s+frio|grupo\s+(?:de\s+)?frio|unidad\s+de\s+frio|thermo|termo|carrier|reefer|aire\s+acondicionado|\bclima|calefac|webasto|\bluz|\bluces|faro|foco|pantalla|tablet|movil|telefono|radio/],
   ['engine', esCo('motor', 'se\\s+(?:calienta|recalienta|sobrecalienta|esta\\s+calentando)|recalentad[oa]|sobrecalentad[oa]|calentandose|temperatura\\s+alta|hace\\s+(?:un\\s+)?ruido|ruido\\s+(?:raro|extrano|fuerte)|suena\\s+(?:raro|mal)|golpetea|pierde\\s+(?:fuerza|potencia)|sin\\s+(?:fuerza|potencia)|no\\s+tiene\\s+(?:fuerza|potencia)|no\\s+tira|tironea|da\\s+tirones|modo\\s+(?:de\\s+)?emergencia|vibra|@'), /humo|testigo|chivato|\bluz|arranca|enciende|prende|\bse\s+(?:apaga|apago|cala|calo)\b|muere|murio/],
@@ -1728,6 +1734,8 @@ const IT_KINDS = [['brake', itCo('freni|freno|frenata|impianto\\s+frenante', '@|
   ['acc', /\b(?:incident[ei]|tamponament[oi]|tamponat[oaie]|ho\s+tamponato|scontro|scontrat[oaie]|collisione|urtat[oaie]|ho\s+urtato|abbiamo\s+urtato|ho\s+sbattuto|abbiamo\s+sbattuto|hanno\s+sbattuto|investit[oaie]|ho\s+investito|ribaltat[oaie]|cappottat[oaie]|uscit[oa]\s+(?:fuori\s+)?(?:di\s+)?strada|finit[oa]\s+(?:fuori\s+strada|nel\s+fosso|in\s+un\s+fosso))\b/, /cuore|record|sbattuto\s+(?:la\s+)?testa|\bnon\s+(?:\S+\s+){0,2}?(?:finit|uscit|ribaltat|cappottat)/],
 
   ['stuck', /\b(?:nel|in\s+un|dentro\s+(?:al|il|un))\s+(?:fosso|fossato|cunetta)\b/, /carico|merce|bancal|pedan|\bnon\b/],
+
+  ['acc', /\b(?:camion\S*|rimorchio|semirimorchio|motrice|furgone|cisterna|bilico|autoarticolato|tir|trattore|macchina|auto)\s+(?:\S+\s+){0,3}?(?:nel|in\s+un|dentro\s+(?:al|il|un))\s+(?:fosso|fossato)\b|\b(?:camion\S*|rimorchio|semirimorchio|motrice|furgone|cisterna|bilico|autoarticolato|tir|trattore|macchina|auto)\s+(?:\S+\s+){0,3}?(?:nella|in\s+una)\s+cunetta\b|\b(?:sono|siamo)\s+(?:\S+\s+)?(?:nel|in\s+un)\s+(?:fosso|fossato)\b/, /carico|merce|bancal|pedan|\bnon\s+(?:\S+\s+){0,2}?(?:e|sta|sono|siamo|si\s+trova|finit[oa]|uscit[oa]|ribaltat[oa]|cappottat[oa]|cadut[oa])\b/],
   ['injury', /\b(?:ferit[oaie]|mi\s+sono\s+fatt[oa]\s+male|si\s+e\s+fatt[oa]\s+male|ci\s+siamo\s+fatti\s+male|sanguin\S*|sangue|ambulanza|infortunat[oaie]|infortunio)\b/],
   ['nostart', /\b(?:non\s+(?:si\s+)?(?:parte|accende|avvia|mette\s+in\s+moto|va\s+in\s+moto|da\s+segni\s+di\s+vita)|non\s+(?:vuole\s+)?(?:partire|accendersi|avviarsi)|(?:motore|camion)\s+(?:\S+\s+)?(?:si\s+spegne|si\s+e\s+spento|muore|e\s+morto)|(?:si\s+spegne|si\s+e\s+spento)\s+(?:il\s+)?(?:motore|camion))\b/, /frigo|thermo|termo|carrier|reefer|aria\s+condizionata|clima|riscaldamento|webasto|stufa|\bluc[ei]|far[oi]|frecc|schermo|display|tablet|telefono|cellulare|radio|gps|wifi|computer|carta|tachigrafo|nessuno|capo|cliente|ufficio|\blui\b|\blei\b|treno|nave|traghetto|aereo|volo|partenza|domani|spia|non\s+si\s+spegne/],
   ['engine', itCo('motore', 'scald[ao]|sta\\s+scaldando|si\\s+surriscald\\S*|surriscald\\S*|temperatura\\s+alta|fa\\s+(?:un\\s+)?rumore|rumore\\s+strano|batte|picchia|(?:perde|sta\\s+perdendo)\\s+(?:potenza|forza)|senza\\s+(?:potenza|forza)|non\\s+(?:ha\\s+)?(?:potenza|forza)|non\\s+tira|in\\s+protezione|in\\s+emergenza|modalita\\s+(?:di\\s+)?emergenza|strappa|tossisce|perde\\s+colpi|@'), /(?:non|senza)\s+(?:si\s+)?(?:parte|accende|avvia)|si\s+spegne|si\s+e\s+spento|e\s+morto|muore|fumo|fuma|puzza|odore|perde\s+(?:olio|acqua|gasolio|adblue|liquido)|perdita|gocciol|\bcola|spia|frigo|thermo|carrier/],
@@ -1892,6 +1900,8 @@ const NL_KINDS = [['brake', nlCo('remmen|rem|remsysteem', '@|' + nlNot('remt|rem
   ['acc', /\b(?:ongeluk|ongelukje|ongeval|aanrijding|botsing|kettingbotsing|aangereden|tegenaan\s+gereden|ertegenaan\s+gereden|achterop\s+gereden|(?:heb|hebben|heeft)\s+(?:een|de|het)\s+(?:paal|auto|wagen|muur|vrachtwagen|hek|vangrail|pilaar|laadperron|boom|personenauto|brugpijler|slagboom)\s+geraakt|van\s+de\s+weg\s+geraakt|in\s+de\s+sloot|gekanteld|omgevallen|op\s+(?:zijn|z|de)\s+(?:kant|zij))\b/, /werk\s*ongeval|\bgeluk\s+gehad|\b(?:niet|nooit)\s+(?:\S+\s+)?(?:in\s+(?:de|een)\s+(?:sloot|greppel)|gekanteld|omgevallen|van\s+de\s+weg|op\s+(?:zijn|z|de)\s+(?:kant|zij))/],
 
   ['stuck', /\bin\s+(?:de|een)\s+(?:sloot|greppel)\b/, /lading|pallet|\b(?:niet|geen|nooit)\b/],
+
+  ['acc', /\b(?:vrachtwagen|vrachtauto|wagen|truck|auto|oplegger|aanhanger|trailer|trekker|bestelbus|busje|ik|we|wij)\s+(?:\S+\s+){0,3}?in\s+(?:de|een)\s+greppel\b|\bin\s+(?:de|een)\s+greppel\s+(?:\S+\s+)?(?:gereden|beland|gegleden|geraakt|terechtgekomen|gegaan|gereden)\b/, /lading|pallet|\b(?:niet|geen|nooit)\b/],
   ['injury', /\b(?:gewond|gewonde|gewonden|pijn\s+gedaan|bezeerd|bloed|bloedt|bloeden|ambulance|ziekenwagen)\b/],
   ['nostart', /\b(?:(?:start|starten|slaat|slaan|springt|springen)\s+(?:(?:nog|steeds|helemaal)\s+)?niet\s+(?:meer\s+)?(?:aan\b)?|wil\s+niet\s+(?:meer\s+)?(?:starten|aanslaan|aanspringen|aan)|niet\s+(?:meer\s+)?(?:starten|aanslaan|aan\s+te\s+krijgen)|geen\s+teken\s+van\s+leven|(?:motor|vrachtwagen|truck|wagen|camion)\s+(?:\S+\s+)?(?:valt\s+(?:steeds\s+)?uit|slaat\s+af|is\s+afgeslagen|sloeg\s+af|viel\s+uit|valt\s+stil|stopt\s+vanzelf))/, /frigo|koelmachine|koelunit|koelgroep|thermo|carrier|airco|kachel|verwarming|webasto|\blicht|lampen|scherm|tablet|telefoon|gsm|radio|navigatie|computer|kaart|tachograaf|niemand|chef|klant|kantoor|trein|veerboot|ferry|boot|vliegtuig|morgen|lampje|gaat\s+niet\s+uit|ventilator/],
   ['engine', nlCo('motor', 'wordt\\s+(?:te\\s+)?(?:warm|heet)|te\\s+heet|te\\s+warm|oververhit|oververhitting|raakt\\s+oververhit|temperatuur\\s+(?:is\\s+)?(?:te\\s+)?hoog|maakt\\s+(?:een\\s+)?(?:raar|vreemd|raar\\s+|vreemd\\s+)?\\s*(?:lawaai|geluid|herrie)|raar\\s+geluid|vreemd\\s+geluid|tikt|klopt|verliest\\s+vermogen|geen\\s+vermogen|weinig\\s+vermogen|geen\\s+kracht|' + nlNot('trekt') + '|noodloop|in\\s+noodloop|in\\s+noodstand|sputtert|hapert|@'), /start|slaat\s+af|valt\s+uit|afgeslagen|\brook|rookt|ruikt|lekt|lekkage|\blek\b|verliest\s+(?:olie|water|diesel|koelvloeistof)|druppelt|lampje|frigo|\bkoel|teken\s+van\s+leven/],
@@ -2107,7 +2117,7 @@ const LX_KINDS = [
   ['lashgear', lxRx('sangles?|cliquets?|tendeurs?|chaines?\\s+d\\s+arrimage|courroies?\\s+d\\s+arrimage|spanset', 'cassee?s?|se\\s+sont\\s+cassee?s|s\\s+est\\s+cassee?|dechiree?s?|abimee?s?|rompue?s?|usee?s?|effilochee?s?|a\\s+lache|ont\\s+lache|lachee?s?|manquent|defectueu\\S*|hs',
     '(?:n\\s+)?y\\s+a\\s+(?:pas|plus)\\s+(?:assez\\s+)?(?:de|d)\\s+(?:sangles|cliquets)|il\\s+manque\\s+(?:des\\s+|de\\s+|les\\s+|une\\s+|deux\\s+)?(?:sangles?|cliquets?)|(?:pas|plus)\\s+(?:assez\\s+)?de\\s+sangles'), /\b(?:ne|n)\s+(?!y\s+a\b)(?:[^\s.,;!?]+\s+)?(?:sont|est|pas)\b/, /changee?s|remplacee?s|neuves/, LX_BELT],
 
-  ['load', lxRx('lading|vracht|pallets?|goederen|dozen|rolcontainers?|kratten|colli|bigbags?', 'verschoven|verschuift|verschuiven|schuift|gaan\\s+(?:schuiven|verschuiven|lopen)|omgevallen|omgekiept|gekanteld|gevallen|eruit\\s+gevallen|eraf\\s+gevallen|ingestort|ingezakt|scheef|losgeraakt|losgekomen',
+  ['load', lxRx('lading|vracht|pallets?|goederen|dozen|rolcontainers?|kratten|colli|bigbags?', 'verschoven|verschuift|verschuiven|schuift|gaan\\s+(?:schuiven|verschuiven|lopen)|omgevallen|omgekiept|gekanteld|gevallen|viel|vielen|eruit\\s+gevallen|eraf\\s+gevallen|ingestort|ingezakt|scheef|losgeraakt|losgekomen',
     '(?:is|zijn)\\s+(?:er\\s+)?(?:[^\\s.,;!?]+\\s+){0,2}?(?:pallets?|dozen|kratten|colli|rolcontainers?)\\s+(?:omgevallen|gevallen|verschoven|uitgevallen)'), /\b(?:niet|geen|niets|niks|nergens)\b/,
     /opnieuw\s+(?:vastgezet|gezekerd|gesjord|vastgemaakt|gestapeld|geladen)|weer\s+(?:vastgezet|gezekerd|gesjord|vastgemaakt|recht)|herladen|rechtgezet|recht\s+gezet|al\s+(?:vastgezet|gezekerd)/, /accu|batterij|elektrisch|laadpaal|vrachtbrief|vrachtprijs/],
   ['lashgear', lxRx('spanbanden?|sjorbanden?|spanriemen|sjorriemen|ratels?|sjorkettingen|spankettingen|spanset', 'kapot|stuk|gescheurd|gebroken|geknapt|gesprongen|versleten|beschadigd|ontbreken|ontbreekt|kwijt|werken\\s+niet|werkt\\s+niet|houden\\s+niet|houdt\\s+niet|sluit\\s+niet',
@@ -2118,7 +2128,7 @@ const LX_KINDS = [
   ['lashgear', lxRx('trake\\s+za\\s+(?:teret|vezanje|pricvrscivanje)|remen(?:i|ovi)?\\s+za\\s+(?:teret|vezanje|pricvrscivanje)|spanzet\\S*|spanset\\S*|zatezn\\S*\\s+(?:trak|remen)\\S*|gurtne|gurte|pasovi\\s+za\\s+tovor', 'puk\\S*|potrgan\\S*|pokidan\\S*|ostecen\\S*|nedostaj\\S*|fale|fali|strgan\\S*|manjkaj\\S*',
     'puk\\S*\\s+(?:su\\s+|je\\s+)?(?:spanzet|spanset|gurt)\\S*|(?:nema|nemam|nemamo|fale|fali|nedostaju)\\s+(?:\\S+\\s+)?(?:spanzet\\S*|spanset\\S*|gurt\\S*|trak\\S*\\s+za\\s+(?:teret|vezanje))'), /\b(?:nije|nisu)\b/, /zamijen|zamenj|nove\s+(?:trake|gurte)/, LX_BELT],
 
-  ['load', lxRx('rakomany|rakomanyt|aru|arut|raklap|raklapok|raklapot|dobozok|ladak', 'elcsuszott|megcsuszott|elcsusztak|elmozdult|elmozdultak|eldolt|eldoltek|felborult|felborultak|leesett|leestek|kiesett|kiestek|ledolt|osszedolt|megbillent',
+  ['load', lxRx('rakomany|rakomanyt|aru|arut|raklap|raklapok|raklapot|dobozok|ladak', 'elcsuszott|megcsuszott|elcsusztak|elmozdult|elmozdultak|eldolt|eldoltek|felborult|felborultak|leesett|leestek|kiesett|kiestek|ledolt|osszedolt|megbillent|esett|estek|beleesett|beleestek|becsuszott|belecsuszott',
     '(?:elcsuszott|megcsuszott|elcsusztak|elmozdult|elmozdultak|eldolt|eldoltek|felborult|leesett|leestek|kiesett|kiestek|ledolt|osszedolt)\\s+(?:a|az|egy|ket|harom)\\s+(?:rakomany|aru|raklap|raklapok|dobozok|ladak)'), /\b(?:nem|sem)\b/, /ujra\s+(?:rogzit|lekot|biztosit|lespanifer)|megigazit|rendbe\s+tett/],
   ['lashgear', lxRx('heveder\\S*|spanifer\\S*|spanset\\S*|racsni\\S*|lekotoheveder\\S*|rogzito\\s+(?:heveder|szij)\\S*', 'elszakadt|elszakadtak|szakadt|szakadtak|elszakad|tonkrement|serult|serultek|hianyzik|hianyoznak|kopott|eltort',
     '(?:elszakadt|elszakadtak|szakadt|szakadtak|tonkrement|serult)\\s+(?:a|az|egy|ket)\\s+(?:heveder|spanifer|racsni)\\S*|(?:nincs(?:enek)?|hianyzik|hianyoznak)\\s+(?:eleg\\s+|a\\s+|egy\\s+|ket\\s+)?(?:heveder|spanifer|racsni)\\S*'), /\bnem\b/, /kicserel|uj\s+(?:heveder|spanifer)/, /biztonsagi|ekszij|vezermu|motor|generator/],
@@ -2158,12 +2168,16 @@ const LX_KINDS = [
   ['lashgear', lxRx('strap|mga\\s+strap|ratchet|tali|lubid|kadena', 'naputol|napigtas|nasira|sira|wala\\s+na',
     '(?:naputol|napigtas|nasira)\\s+(?:na\\s+)?(?:ang|yung|ung)\\s+(?:mga\\s+)?(?:strap|ratchet|tali|lubid|kadena)|(?:walang|kulang\\s+ang|kulang\\s+(?:ng|sa))\\s+(?:mga\\s+)?(?:strap|ratchet)'), /\b(?:hindi|di)\b/, /pinalitan|bagong\s+strap/, /seatbelt|seat\s+belt|sinturon|fan|makina|sapatos/]];
 
+
+
+const LX_DITCH = /^\s+(?:[^\s.,;!?]+\s+){0,2}?(?:prikop\S*|priekop\S*|rowu|rowie|hendeg\S*|hendek\S*|sarampol\S*|cuneta|zanja|valeta|vala|fosso|fossato|cunetta|fosse|sloot|greppel|arok\S*|sant|santul|rapa|jarak|jarku|griov\S*|grav(?:is|i|ja|ji|ju)|kraavi?|kanal\S*|khaai|naale|nale)\b/;
 function lxRun(v) { const s = String(v || ''), f = lxFold(s), k = new Set(), cut = s.split(''); let any = false;
-  for (const [n, rx, neg, ok, ex] of LX_KINDS) for (const m of f.matchAll(rx)) { const a = m.index, b = a + m[0].length;
+  for (const [n, rx, neg, ok, ex] of LX_KINDS) for (const m of f.matchAll(rx)) { const a = m.index; let b = a + m[0].length;
     let p = a; while (p > 0 && !/[.,;!?\n]/.test(f[p - 1])) p--; let q = b; while (q < f.length && !/[.,;!?\n]/.test(f[q])) q++;
     const part = f.slice(p, q); if (ex && ex.test(part)) continue; any = true;
     if (!(neg && neg.test(f.slice(p, b))) && !(ok && ok.test(part))) k.add(n);
-    for (let i = a; i < b; i++) cut[i] = i === a + 1 ? 'o' : i === a + 2 ? 'k' : ' '; }
+    const dm = n === 'load' ? LX_DITCH.exec(f.slice(b, q)) : null; const e = dm ? b + dm[0].length : b;
+    for (let i = a; i < e; i++) cut[i] = i === a + 1 ? 'o' : i === a + 2 ? 'k' : ' '; }
   return { k, rest: any ? cut.join('') : s }; }
 
 
