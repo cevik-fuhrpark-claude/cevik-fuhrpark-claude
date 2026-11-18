@@ -148,6 +148,7 @@ const V_MORE = [
   ['Bitte mindestens zwei Fahrzeuge wählen.', 'Виберіть щонайменше два транспортні засоби.', 'Please choose at least two vehicles.'],
   ['Fahrzeug doppelt gewählt.', 'Транспорт вибрано двічі.', 'Vehicle selected twice.'],
   ['Höchstens 12 Fahrzeuge je Aufruf.', 'Не більше 12 транспортних засобів за один запит.', 'At most 12 vehicles per request.'],
+  ['Fahrzeug unbekannt – bitte Seite neu laden.', 'Транспорт невідомий – оновіть сторінку.', 'Vehicle unknown – please reload the page.'], // Backlog 1577
   ['Eigene Zwei-Faktor-Anmeldung bitte unter „Mein Konto“ ausschalten.', 'Власний двофакторний вхід вимикайте в «Мій акаунт».', 'Please turn off your own two-factor sign-in under “My account”.'],
   ['Datum im Format JJJJ-MM-TT.', 'Дата у форматі РРРР-ММ-ДД.', 'Date in format YYYY-MM-DD.'],
   ['CSV leer.', 'Файл CSV порожній.', 'The CSV file is empty.'],
@@ -486,6 +487,9 @@ Object.assign(VALIDATION_TEXTS.en, { csv_columns: 'Line {n}: more values than he
 // Backlog 971: Bruttobetrag in einem Nettofeld (Server-Meldung „<Feld>: „<Wert>“ ist ein Bruttobetrag – …“)
 Object.assign(VALIDATION_TEXTS.uk, { gross_amount: '{f}: «{v}» – це сума брутто. Введіть суму нетто (без ПДВ).' });
 Object.assign(VALIDATION_TEXTS.en, { gross_amount: '{f}: “{v}” is a gross amount – please enter the net amount (excluding VAT).' });
+// Backlog 1577: Sammelmeldung – inzwischen außer Betrieb genommene Fahrzeuge mit Kennzeichen (Server-Meldung „Außer Betrieb – bitte abwählen: …“)
+Object.assign(VALIDATION_TEXTS.uk, { batch_off: 'Виведено з експлуатації – зніміть позначку: {v}' });
+Object.assign(VALIDATION_TEXTS.en, { batch_off: 'Out of service – please deselect: {v}' });
 Object.assign(VALIDATION_TEXTS.uk, { int_sep: '{f}: «{v}» – вводьте без розділювача тисяч (напр. {x}).' });
 Object.assign(VALIDATION_TEXTS.en, { int_sep: '{f}: “{v}” – please enter without thousands separator (e.g. {x}).' });
 // Backlog 1001: Betrag in fremder Währung (Server-Meldung „<Feld>: „<Wert>“ ist ein Betrag in <Code> – …“) und Hinweis direkt am Betragsfeld
@@ -544,6 +548,7 @@ export function translateValidation(lang, msg) {
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): ganze Zahl\.$/))) return T.integer.replace('{f}', f(m[1]));
   if ((m = msg.match(/^(Zählmenge .{1,210}|.{1,60}): höchstens 2 Nachkommastellen\.$/))) return T.cents.replace('{f}', f(m[1]));
   if ((m = msg.match(/^Maximal (\d{1,6}) Zeilen je Import\.$/))) return T.max_rows.replace('{n}', m[1]);
+  if ((m = msg.match(/^Außer Betrieb – bitte abwählen: (.{1,400})$/)) && T.batch_off) return T.batch_off.replace('{v}', () => m[1]); // Backlog 1577
   if ((m = msg.match(/^Zeile (\d{1,7}): Anführungszeichen nicht geschlossen – bitte die Datei prüfen\.$/)) && T.csv_quote) return T.csv_quote.replace('{n}', m[1]);
   if ((m = msg.match(/^Zeile ([\d, …]{1,60}): mehr Werte als Spalten in der Kopfzeile – Trennzeichen im Wert\? Werte mit Komma in Anführungszeichen setzen oder als CSV mit Semikolon speichern\.$/)) && T.csv_columns) return T.csv_columns.replace('{n}', m[1]);
   if ((m = msg.match(/^Höchstens (\d{1,4}) aktive Hinweise je Fahrzeug – bitte erledigte archivieren\.$/))) return T.notes_max.replace('{n}', m[1]);

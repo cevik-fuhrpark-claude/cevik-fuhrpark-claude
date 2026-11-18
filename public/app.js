@@ -6266,12 +6266,12 @@ async function viewNewMulti() {
   render(`<h1>${esc(t('multi_title'))}</h1><p class="small muted">${esc(t('multi_intro'))}</p><form id="f" novalidate>
     <label for="vq">${esc(t('multi_choose'))}</label><input id="vq" placeholder="SZ-…" autocomplete="off" style="margin-bottom:8px">
     <p class="small" id="mcount" role="status" aria-live="polite"></p>
-    <div class="vehpick multi" id="mpick" role="group" aria-label="${esc(t('multi_choose'))}">${vs.map((v) => `<label><input type="checkbox" name="mveh" value="${esc(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>
-    <label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('multi_desc_hint'))}</span></label><textarea id="d" dir="auto" required minlength="5" maxlength="4000"></textarea>
+    <div class="vehpick multi" id="mpick" data-fkey="vehicle_ids" role="group" aria-label="${esc(t('multi_choose'))}">${vs.map((v) => `<label><input type="checkbox" name="mveh" value="${esc(v.id)}">${plate(v.plate, { locked: v.availability === 'gesperrt' })}<span class="small muted">${v.kind === 'anhaenger' ? esc(t('vk_anhaenger')) + ' · ' : ''}${esc(v.site || '')}</span></label>`).join('')}</div>
+    <label for="d">${esc(t('what_wrong'))}<span class="hint">${esc(t('multi_desc_hint'))}</span></label><textarea id="d" dir="auto" required minlength="5" maxlength="4000" data-fkey="description"></textarea>
     <label id="lbl_prio">${esc(t('urgency'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_prio">${['niedrig', 'mittel', 'kritisch'].map((p, i) => `<label class="choice c-${p}"><input type="radio" name="prio" value="${p}"${i === 0 ? ' checked' : ''}><span><b>${esc(t('prio_' + p))}</b></span></label>`).join('')}</div>
     <label id="lbl_drv">${esc(t('driveable'))}</label><div class="choices" role="radiogroup" aria-labelledby="lbl_drv">${['fahrbereit', 'eingeschraenkt', 'nicht_fahrbereit', 'unbekannt'].map((p) => `<label class="choice${p === 'nicht_fahrbereit' ? ' c-kritisch' : ''}"><input type="radio" name="drv" value="${p}"${p === 'unbekannt' ? ' checked' : ''}><span><b>${esc(t('drv_' + p))}</b></span></label>`).join('')}</div>
-    <label for="w">${esc(t('workshop'))}</label><select id="w"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
-    <label for="l">${esc(t('location'))}</label><input id="l" maxlength="300">
+    <label for="w">${esc(t('workshop'))}</label><select id="w" data-fkey="workshop_site"><option value="">–</option>${ws.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>
+    <label for="l">${esc(t('location'))}</label><input id="l" data-fkey="location_note" maxlength="300">
     ${occurredFields(null)}
     <p class="small muted" data-multiphotos>${esc(t('multi_photos_hint'))}</p>
     <div class="actions"><button class="btn block" id="sb">${esc(t('multi_send'))}</button></div></form>`, 'new');
@@ -6308,6 +6308,14 @@ async function viewNewMulti() {
     } catch (err) {
       sb.disabled = false;
       toast(err.offline ? t('multi_offline') : err.message, true);
+      // Backlog 1577: inzwischen außer Betrieb genommene/unbekannte Fahrzeuge – Kästchen trotz Suchfilter zeigen, am ersten den Fokus;
+      // die Auswahlliste selbst markiert danach die Formular-Sperre (field_key vehicle_ids → data-fkey)
+      const badIds = err.data && Array.isArray(err.data.vehicle_ids) ? new Set(err.data.vehicle_ids) : null;
+      if (badIds && badIds.size && sb.isConnected) {
+        const hit = $$('input[name=mveh]').filter((x) => badIds.has(x.value));
+        hit.forEach((x) => { const l = x.closest('label'); if (l) { l.hidden = false; l.dataset.mbad = '1'; x.addEventListener('change', () => { delete l.dataset.mbad; }, { once: true }); } });
+        if (hit[0]) { try { hit[0].focus(); } catch {} }
+      }
     }
   };
 }
@@ -6558,6 +6566,12 @@ async function viewNew(preId) {
         return;
       }
       toast(err.message, true); sb.disabled = false;
+      // Backlog 1578: gewähltes Fahrzeug inzwischen außer Betrieb/unbekannt – Auswahl markieren, Fokus aufs Kästchen, Fahrzeugliste auffrischen
+      if (err.data && err.data.field_key === 'vehicle_id' && sb.isConnected) {
+        const r = $('input[name=veh]:checked'); const g = r && r.closest('.vehpick');
+        if (g) { const det = g.closest('details'); if (det) det.open = true; const l = r.closest('label'); if (l) l.hidden = false; markInvalid(g, err.message); try { r.focus(); } catch {} }
+        setTimeout(() => vehCacheRefresh(true), 0);
+      }
     }
   };
 }

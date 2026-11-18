@@ -1268,11 +1268,23 @@ export async function createCaseBatch(env, ctx, user, envName, body) {
   if (!isManager(user)) throw forbidden();
   body = body && typeof body === 'object' ? body : {};
   const key = str(body.request_key, { required: true, max: 64, field: 'request_key' });
-  if (!Array.isArray(body.vehicle_ids)) throw bad('validation', 'Bitte mindestens zwei Fahrzeuge wählen.');
-  const ids = body.vehicle_ids.map((x) => str(x, { required: true, max: 40, field: 'Fahrzeug' }));
-  if (new Set(ids).size !== ids.length) throw bad('validation', 'Fahrzeug doppelt gewählt.');
-  if (ids.length < 2) throw bad('validation', 'Bitte mindestens zwei Fahrzeuge wählen.');
-  if (ids.length > BATCH_MAX) throw bad('validation', 'Höchstens 12 Fahrzeuge je Aufruf.');
+  // Backlog 1577 (Backlog 1501 Stufe 19): Fehler der Fahrzeugauswahl nennen das Feld `vehicle_ids` (Oberfläche markiert die Auswahlliste)
+  const VK = { field_key: 'vehicle_ids' };
+  if (!Array.isArray(body.vehicle_ids)) throw bad('validation', 'Bitte mindestens zwei Fahrzeuge wählen.', VK);
+  const ids = withKey('vehicle_ids', () => body.vehicle_ids.map((x) => str(x, { required: true, max: 40, field: 'Fahrzeug' })));
+  if (new Set(ids).size !== ids.length) throw bad('validation', 'Fahrzeug doppelt gewählt.', VK);
+  if (ids.length < 2) throw bad('validation', 'Bitte mindestens zwei Fahrzeuge wählen.', VK);
+  if (ids.length > BATCH_MAX) throw bad('validation', 'Höchstens 12 Fahrzeuge je Aufruf.', VK);
+  // Fahrzeug inzwischen außer Betrieb genommen bzw. gelöscht (Auswahlliste stammt aus dem Zwischenspeicher der App): Kennzeichen nennen,
+  // damit die Leitung weiß, welches Kästchen sie abwählen muss – vorher nur „Fahrzeug ist außer Betrieb.“ ohne Angabe, welches von bis zu 40
+  const rows = (await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)).all()).results;
+  const byId = new Map(rows.map((v) => [v.id, v]));
+  const off = ids.filter((id) => byId.has(id) && !byId.get(id).active); const unknown = ids.filter((id) => !byId.has(id));
+  if (off.length || unknown.length) {
+    const bad_ids = [...off, ...unknown];
+    if (off.length) throw bad('validation', `Außer Betrieb – bitte abwählen: ${off.map((id) => byId.get(id).plate || id).join(', ')}`, { ...VK, vehicle_ids: bad_ids });
+    throw bad('validation', 'Fahrzeug unbekannt – bitte Seite neu laden.', { ...VK, vehicle_ids: bad_ids });
+  }
   const keys = await Promise.all(ids.map((id) => sha256Hex(`${key}|${id}`)));
   const common = { description: body.description, priority: body.priority, driveability: body.driveability, workshop_site: body.workshop_site,
     location_note: body.location_note, occurred_at: body.occurred_at, origin: 'meldung' };
@@ -1315,7 +1327,8 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   // außer Betrieb genommen (z. B. Offline-Meldung nach Stilllegung): eigene Meldung statt „unbekannt“ (19.10.2026)
   if (specs.some((x) => !vehicles.has(x.vehicleId))) {
     const known = await env.DB.prepare('SELECT 1 FROM vehicles WHERE active=0 AND id IN (SELECT value FROM json_each(?))').bind(J(specs.map((x) => x.vehicleId).filter((id) => !vehicles.has(id)))).first();
-    throw bad('validation', known ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.');
+    // Backlog 1578 (Backlog 1501 Stufe 20): Feld Fahrzeug – die Meldung markiert das gewählte Fahrzeug statt nur einen Toast zu zeigen
+    throw bad('validation', known ? 'Fahrzeug ist außer Betrieb.' : 'Fahrzeug unbekannt.', { field_key: 'vehicle_id' });
   }
   // Ursprungsvorgang (Folgeauftrag): muss in derselben Umgebung zum selben Fahrzeug existieren – sonst würde die Akte fremde Vorgangsnummern zeigen
   const parentIds = specs.map((x) => x.parentId).filter(Boolean);

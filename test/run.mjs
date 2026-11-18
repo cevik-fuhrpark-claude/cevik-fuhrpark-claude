@@ -44952,6 +44952,46 @@ await test('Backlog 1576 (Backlog 1501 Stufe 18, WCAG 3.3.1): Vertrag beenden (e
   for (const k of ['ended_on', 'end_date', 'end_note', 'workshop_site', 'planned_date', 'description', 'hours']) ok(app.includes(`name="${k}"`), 'Feld in der Oberfläche: ' + k);
 });
 
+await test('Backlog 1577 (Backlog 1501 Stufe 19, WCAG 3.3.1): Sammelmeldung – Fehler der Fahrzeugauswahl nennen field_key vehicle_ids, außer Betrieb genommene Fahrzeuge mit Kennzeichen', async () => {
+  const { U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const base = { description: 'Hagelschaden: Dellen im Dach', priority: 'mittel', driveability: 'fahrbereit' };
+  const P = (b) => U.fleet.post('/api/cases/batch', { ...base, request_key: rk(), ...b });
+  for (const [b, why] of [[{ vehicle_ids: 'x' }, 'keine Liste'], [{ vehicle_ids: [V1] }, 'nur eins'], [{ vehicle_ids: [V1, V1] }, 'doppelt'], [{ vehicle_ids: [V1, ''] }, 'leer'], [{ vehicle_ids: Array.from({ length: 13 }, (_, i) => 'VIN:X' + i) }, '13']]) {
+    const r = await P(b); eq(r.status, 400, why); eq(r.data.field_key, 'vehicle_ids', why);
+  }
+  // unbekanntes Fahrzeug (z. B. gelöscht/andere Datenbank): eigener Text, Kennung der abgelehnten Auswahl
+  let r = await P({ vehicle_ids: [V1, 'VIN:UNBEKANNT00000000'] }); eq(r.status, 400); eq(r.data.field_key, 'vehicle_ids'); eq(r.data.message, 'Fahrzeug unbekannt – bitte Seite neu laden.'); eq(JSON.stringify(r.data.vehicle_ids), JSON.stringify(['VIN:UNBEKANNT00000000']));
+  // Fahrzeug inzwischen außer Betrieb: Kennzeichen in der Meldung, nichts angelegt (atomar)
+  const plate2 = (await U.fleet.get(`/api/vehicles/${V2}`)).data.vehicle.plate; ok(plate2, 'Kennzeichen V2');
+  eq((await U.fleet.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Verkauft (Test)' })).status, 200, 'außer Betrieb');
+  r = await P({ vehicle_ids: [V1, V2] }); eq(r.status, 400, JSON.stringify(r.data)); eq(r.data.field_key, 'vehicle_ids');
+  eq(r.data.message, `Außer Betrieb – bitte abwählen: ${plate2}`); eq(JSON.stringify(r.data.vehicle_ids), JSON.stringify([V2]));
+  eq((await U.fleet.get('/api/cases?status=open')).data.cases.length, 0, 'nichts angelegt');
+  // Übersetzung UK/EN mit Kennzeichen; fester Text über V_MORE
+  const { translateValidation } = await import('../public/i18n.js');
+  eq(translateValidation('en', `Außer Betrieb – bitte abwählen: ${plate2}, SZ-YC 1`), `Out of service – please deselect: ${plate2}, SZ-YC 1`);
+  ok(translateValidation('uk', `Außer Betrieb – bitte abwählen: ${plate2}`).includes(plate2) && /зніміть/.test(translateValidation('uk', `Außer Betrieb – bitte abwählen: ${plate2}`)), 'UK');
+  eq(translateValidation('en', 'Fahrzeug unbekannt – bitte Seite neu laden.'), 'Vehicle unknown – please reload the page.');
+  // Oberfläche: Auswahlliste und Felder des Sammelformulars tragen data-fkey, abgelehnte Fahrzeuge werden sichtbar markiert
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const k of ['vehicle_ids', 'description', 'workshop_site', 'location_note', 'occurred_at']) ok(app.includes(`data-fkey="${k}"`), 'data-fkey ' + k);
+  ok(app.includes('err.data && Array.isArray(err.data.vehicle_ids)') && app.includes('l.dataset.mbad'), 'Kästchen markiert');
+  ok(/label\[data-mbad\][^{]*\{[^}]*border-style: dashed/.test(fs.readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8')), 'nicht nur Farbe');
+});
+
+await test('Backlog 1578 (Backlog 1501 Stufe 20, WCAG 3.3.1): Einzelmeldung an einem außer Betrieb genommenen bzw. unbekannten Fahrzeug nennt field_key vehicle_id', async () => {
+  const { U, V1 } = await freshWorld();
+  const V2 = 'VIN:WDB9630051L917317';
+  const base = { description: 'Rückleuchte links defekt', priority: 'niedrig', driveability: 'fahrbereit' };
+  let r = await U.fleet.post('/api/cases', { ...base, vehicle_id: 'VIN:UNBEKANNT00000000', request_key: rk() }); eq(r.status, 400); eq(r.data.field_key, 'vehicle_id', 'unbekannt'); eq(r.data.message, 'Fahrzeug unbekannt.');
+  eq((await U.fleet.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Verkauft (Test)' })).status, 200);
+  r = await U.fleet.post('/api/cases', { ...base, vehicle_id: V2, request_key: rk() }); eq(r.status, 400); eq(r.data.field_key, 'vehicle_id', 'außer Betrieb'); eq(r.data.message, 'Fahrzeug ist außer Betrieb.');
+  eq((await U.fleet.post('/api/cases', { ...base, vehicle_id: V1, request_key: rk() })).status, 201, 'anderes Fahrzeug weiterhin');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("err.data.field_key === 'vehicle_id'") && app.includes("$('input[name=veh]:checked')") && app.includes('vehCacheRefresh(true), 0)'), 'Oberfläche markiert die Fahrzeugauswahl und frischt die Liste auf');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

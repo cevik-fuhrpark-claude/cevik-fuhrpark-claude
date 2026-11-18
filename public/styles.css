@@ -243,6 +243,8 @@ input[type=checkbox], input[type=radio] { width: 22px; height: 22px; min-height:
 .vehpick label:has(input:checked) { border-color: var(--ink); }
 .vehpick input { position: absolute; opacity: 0; pointer-events: none; }
 .vehpick.multi label { position: relative; }
+/* Backlog 1577: Sammelmeldung – vom Server abgelehntes Fahrzeug (außer Betrieb): gestrichelter roter Rahmen (nicht nur Farbe), Kennzeichen steht zusätzlich in der Meldung */
+.vehpick.multi label[data-mbad]:has(input) { border-color: var(--stop); border-style: dashed; }
 .vehpick.multi label:has(input:checked)::after { content: '✓'; position: absolute; bottom: 8px; right: 10px; font-weight: 700; }
 .vehpick label:has(input:focus-visible), .choice:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: 2px; box-shadow: 0 0 0 2px var(--ink); }
 

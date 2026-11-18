@@ -4159,6 +4159,12 @@ async function viewNew(preId) {
         return;
       }
       toast(err.message, true); sb.disabled = false;
+
+      if (err.data && err.data.field_key === 'vehicle_id' && sb.isConnected) {
+        const r = $('input[name=veh]:checked'); const g = r && r.closest('.vehpick');
+        if (g) { const det = g.closest('details'); if (det) det.open = true; const l = r.closest('label'); if (l) l.hidden = false; markInvalid(g, err.message); try { r.focus(); } catch {} }
+        setTimeout(() => vehCacheRefresh(true), 0);
+      }
     }
   };
 }
