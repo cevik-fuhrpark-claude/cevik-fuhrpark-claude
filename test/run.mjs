@@ -45071,6 +45071,39 @@ await test('Backlog 1581 (Backlog 195, Blickwinkel „Leitung setzt die Fahrerak
   ok(line.includes('r.driver_handover') && line.includes("t('ue_drv_cases')") && line.includes("t('ue_drv_fines')"), 'Fahrerakte zeigt die Übergabe-Hinweise');
 });
 
+await test('Backlog 1582 (Backlog 195, Blickwinkel „Disponent scheidet aus – seine Handynummer steht noch als Notfallnummer“): Deaktivieren bzw. Rollen-/Umgebungswechsel eines Disposition-/Werkstattkontos nennt seine aktiven Fahrzeughinweise (mit Kennzeichen) und Notfallnummern (staff_handover); archivierte/abgelaufene zählen nicht; nichts wird archiviert', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db; const now = new Date().toISOString(); const V = 'VIN:WMA15SZZ2HM722774';
+  const plate = db.prepare('SELECT plate FROM vehicles WHERE id=?').get(V).plate;
+  db.prepare(`UPDATE users SET role='dispatch' WHERE id=?`).run(U.viewer.id); // Disposition (freshWorld hat kein Dispositionskonto)
+  const D = U.viewer.id;
+  const note = (id, by, extra = '') => db.prepare(`INSERT INTO vehicle_notes(id,vehicle_id,environment,text,created_by,created_at${extra ? ',' + extra.split('=')[0] : ''}) VALUES (?,?,'test','Bei Panne Dispo-Handy anrufen',?,?${extra ? ',?' : ''})`).run(...[id, V, by, now, ...(extra ? [extra.split('=')[1]] : [])]);
+  note('vn-1582-a', D); note('vn-1582-b', D, 'archived_at=' + now); note('vn-1582-c', D, 'valid_until=2020-01-01'); note('vn-1582-ws', U.ws.id);
+  const ec = (id, by, arch = null) => db.prepare(`INSERT INTO emergency_contacts(id,environment,kind,label,phone,created_by,created_at,updated_at,archived_at) VALUES (?, 'test', 'dispo', 'Dispo Nacht', '0170 0000000', ?, ?, ?, ?)`).run(id, by, now, now, arch);
+  ec('ec-1582-a', D); ec('ec-1582-b', D, now);
+  // Disposition deaktivieren: 1 Hinweis (archiviert/abgelaufen nicht), Kennzeichen, 1 Notfallnummer
+  let r = await U.own.patch(`/api/users/${D}`, { active: false }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.staff_handover), JSON.stringify({ notes: 1, notes_plates: [plate], emergency: 1 }), 'Disposition');
+  eq(r.data.fleet_handover, undefined, 'kein Leitungs-Zusatz');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM vehicle_notes WHERE created_by=? AND archived_at IS NULL`).get(D).n, 2, 'nichts archiviert');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM emergency_contacts WHERE created_by=? AND archived_at IS NULL`).get(D).n, 1, 'Notfallnummer bleibt');
+  eq((await U.own.patch(`/api/users/${D}`, { active: true })).data.staff_handover, undefined, 'Reaktivieren ohne Zusatz');
+  // Rollenwechsel Disposition → Lesen ebenso; Namensänderung nicht
+  eq((await U.own.patch(`/api/users/${D}`, { display_name: 'Dispo neu' })).data.staff_handover, undefined, 'nur Name geändert');
+  r = await U.own.patch(`/api/users/${D}`, { role: 'viewer' }); eq(r.status, 200, JSON.stringify(r.data)); eq(r.data.staff_handover && r.data.staff_handover.emergency, 1, 'Rollenwechsel');
+  // Werkstatt deaktivieren: eigener Hinweis
+  r = await U.own.patch(`/api/users/${U.ws.id}`, { active: false }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(JSON.stringify(r.data.staff_handover), JSON.stringify({ notes: 1, notes_plates: [plate], emergency: 0 }), 'Werkstatt');
+  // Werkstatt ohne eigene Hinweise: kein Feld
+  eq((await U.own.patch(`/api/users/${U.wsMuc.id}`, { active: false })).data.staff_handover, undefined, 'ohne Hinweise nichts');
+  // Fahrer: kein staff_handover
+  eq((await U.own.patch(`/api/users/${U.driver.id}`, { active: false })).data.staff_handover, undefined, 'nicht für Fahrer');
+  const app = fs0().readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = app.slice(app.indexOf('function userUpdateHints('), app.indexOf('async function viewUsers('));
+  ok(fn.includes('r.staff_handover') && fn.includes("if (sh && sh.notes) h.push(t('ue_fleet_notes')") && fn.includes("if (sh && sh.emergency) h.push(t('ue_fleet_emerg')"), 'Benutzerverwaltung zeigt die Hinweise');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ue_fleet_notes.includes('{n}') && STRINGS[l].ue_fleet_emerg.includes('{n}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

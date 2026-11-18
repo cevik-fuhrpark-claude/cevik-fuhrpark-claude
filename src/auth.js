@@ -735,10 +735,21 @@ export async function updateUser(env, actor, userId, body) {
           AND (SELECT e.actor_id FROM case_events e WHERE e.case_id=c.id AND e.action='set_followup' ORDER BY e.created_at DESC LIMIT 1)=?1) AS followups`).bind(userId, target.environment, berlinDate()).first();
     if (h && (h.received_untriaged || h.notes || h.emergency || h.last_fleet || h.questions_open || h.followups)) handover = { received_untriaged: h.received_untriaged, notes: h.notes, ...(h.notes ? { notes_plates: String(h.notes_plates || '').split('|').filter(Boolean) } : {}), emergency: h.emergency, last_fleet: !!h.last_fleet, questions_open: h.questions_open || 0, followups: h.followups || 0 };
   }
+  // Backlog 1582 (Backlog 195, Blickwinkel „Disponent scheidet aus – seine Handynummer steht noch als Notfallnummer“): Disposition und Werkstatt
+  // legen ebenfalls Fahrzeughinweise an, die Disposition auch Notfallnummern (oft die eigene Diensthandynummer) – beim Deaktivieren bzw. Rollen-/
+  // Umgebungswechsel dieselben Zahlen wie bei der Leitung (Backlog 258d/552) als `staff_handover`. Nur Anzeige, nichts wird archiviert.
+  let staffHandover = null;
+  if (['dispatch', 'workshop'].includes(target.role) && (deact || role !== target.role || environment !== target.environment)) {
+    const h = await env.DB.prepare(`SELECT
+        (SELECT COUNT(*) FROM vehicle_notes WHERE created_by=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3)) AS notes,
+        (SELECT group_concat(p, '|') FROM (SELECT DISTINCT v.plate AS p FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.created_by=?1 AND n.environment=?2 AND n.archived_at IS NULL AND (n.valid_until IS NULL OR n.valid_until >= ?3) ORDER BY v.plate LIMIT 30)) AS notes_plates,
+        (SELECT COUNT(*) FROM emergency_contacts WHERE created_by=?1 AND environment=?2 AND archived_at IS NULL) AS emergency`).bind(userId, target.environment, berlinDate()).first();
+    if (h && (h.notes || h.emergency)) staffHandover = { notes: h.notes || 0, ...(h.notes ? { notes_plates: String(h.notes_plates || '').split('|').filter(Boolean) } : {}), emergency: h.emergency || 0 };
+  }
   return { ok: true, changed: Object.keys(changed), sessions_ended: role !== target.role || environment !== target.environment || !active || siteChanged,
     ...(driverFile ? { driver_file_active: driverFile } : {}), ...(orphaned ? { workshop_orphaned_cases: orphaned, workshop_site: oldSite } : {}), ...(invitesVoided ? { invites_voided: invitesVoided } : {}),
     ...(endedAssign.length ? { ended_assignments: [...new Set(endedAssign.map((a) => a.plate || a.vehicle_id))] } : {}), ...(handover ? { fleet_handover: handover } : {}),
-    ...(cardDl ? { card_download: cardDl } : {}), ...(drvHandover ? { driver_handover: drvHandover } : {}) };
+    ...(cardDl ? { card_download: cardDl } : {}), ...(drvHandover ? { driver_handover: drvHandover } : {}), ...(staffHandover ? { staff_handover: staffHandover } : {}) };
 }
 
 export async function resetInvite(env, actor, userId) {

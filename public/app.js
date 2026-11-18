@@ -12282,6 +12282,10 @@ function userUpdateHints(r) {
   if (dh && dh.cases_total) h.push(t('ue_drv_cases').replace('{n}', dh.cases_total).replace('{list}', dh.cases.join(', ') + (dh.cases_total > dh.cases.length ? ', …' : '')));
   if (dh && dh.fines) h.push(t('ue_drv_fines').replace('{n}', dh.fines));
   if (r && r.card_download) h.push(r.card_download.last_on ? t('ue_card_dl').replace('{d}', fmtD(r.card_download.last_on)) : t('ue_card_dl_none'));
+  // Backlog 1582: Disposition/Werkstatt – eigene Fahrzeughinweise und Notfallnummern
+  const sh = r && r.staff_handover;
+  if (sh && sh.notes) h.push(t('ue_fleet_notes').replace('{n}', sh.notes) + ((sh.notes_plates || []).length ? ' · ' + sh.notes_plates.join(', ') : ''));
+  if (sh && sh.emergency) h.push(t('ue_fleet_emerg').replace('{n}', sh.emergency));
   if (fh) { if (fh.received_untriaged) h.push(t('ue_fleet_recv').replace('{n}', fh.received_untriaged)); if (fh.notes) h.push(t('ue_fleet_notes').replace('{n}', fh.notes) + ((fh.notes_plates || []).length ? ' · ' + fh.notes_plates.join(', ') : '')); if (fh.emergency) h.push(t('ue_fleet_emerg').replace('{n}', fh.emergency)); if (fh.questions_open) h.push(t('ue_fleet_questions').replace('{n}', fh.questions_open)); if (fh.followups) h.push(t('ue_fleet_followups').replace('{n}', fh.followups)); if (fh.last_fleet) h.push(t('ue_fleet_last')); }
   return h;
 }
