@@ -44992,6 +44992,24 @@ await test('Backlog 1578 (Backlog 1501 Stufe 20, WCAG 3.3.1): Einzelmeldung an e
   ok(app.includes("err.data.field_key === 'vehicle_id'") && app.includes("$('input[name=veh]:checked')") && app.includes('vehCacheRefresh(true), 0)'), 'Oberfläche markiert die Fahrzeugauswahl und frischt die Liste auf');
 });
 
+await test('Backlog 1579 (Backlog 195, Blickwinkel „Leitung nimmt einen verkauften Lkw außer Betrieb, während noch Bußgeldverfahren laufen“): Außer Betrieb nehmen nennt offene Bußgeld-/Anhörungsverfahren dieser Umgebung; erledigte und andere Umgebung zählen nicht; nichts wird geändert; Text DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const plate = (await U.fleet.get(`/api/vehicles/${V1}`)).data.vehicle.plate; ok(plate, 'Kennzeichen');
+  const body = (ref) => ({ kind: 'anhoerung', authority: 'Stadt Dortmund Bußgeldstelle', reference: ref, offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), location: 'B1, Dortmund', plate_in_letter: plate, amount_eur: 70 });
+  const ids = [];
+  for (const ref of ['AZ-1579-1', 'AZ-1579-2', 'AZ-1579-3']) { const r = await U.fleet.post('/api/fines', body(ref)); eq(r.status, 201, JSON.stringify(r.data)); eq(r.data.vehicle_matched, true, ref); ids.push(r.data.id); }
+  db.prepare(`UPDATE fines SET status='bezahlt' WHERE id=?`).run(ids[2]); // erledigt → zählt nicht
+  db.prepare(`UPDATE fines SET environment='production' WHERE id=?`).run(ids[1]); // andere Umgebung → zählt nicht
+  const r = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'Verkauft' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.open_fines, 1, 'nur das offene Verfahren dieser Umgebung');
+  eq(db.prepare(`SELECT status FROM fines WHERE id=?`).get(ids[0]).status, 'eingegangen', 'Bußgeld unverändert');
+  const r2 = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: true }); eq(r2.status, 200); eq(r2.data.open_fines, undefined, 'beim Wieder-in-Betrieb nicht');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("r.open_fines ? tn('fines_open_deact', r.open_fines) : ''"), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].fines_open_deact.includes('{n}'), l); const p = PLURALS[l].fines_open_deact; ok(p && p.one.includes('{n}') && p.other.includes('{n}') && (l !== 'uk' || (p.few && p.many)), l + ' Pluralformen'); ok(p.other.includes(STRINGS[l].fines), l + ' nennt den Bereich'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -705,6 +705,7 @@ UI-Rangierunfall eigener Lkw gegen eigenen Lkw: Hinweis eigenes Fahrzeug im Vers
 UI-Zweifahrerbetrieb: Bußgeld ohne Zuordnung mit zwei Kontrollen vor der Tatzeit, Hinweis weiterhin zugeordneter Fahrer (DE/UK/EN; Backlog 854/855)|ui-zweifahrer.py|/tmp/cfp-zweifahrer.log
 UI-Werkstatt-Nacharbeit: frühere Aufträge mit Werkstatt/Fremdfirma, Hinweis gleiche Firma im Formular Fremdleistung (DE/UK/EN; Backlog 856/857)|ui-nacharbeit.py|/tmp/cfp-nacharbeit.log
 UI-Verkauf: Außer Betrieb nennt laufende Gewährleistungen (DE/UK/EN; Backlog 859)|ui-verkauf-gewaehrleistung.py|/tmp/cfp-verkauf-gewaehrleistung.log
+UI-Verkauf: Außer Betrieb nennt offene Bußgeldverfahren (DE/UK/EN; Backlog 1579)|ui-verkauf-bussgeld.py|/tmp/cfp-verkauf-bussgeld.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
 UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
 UI-Foto-dunkel: sehr dunkle Fotos in Melden, Abfahrtskontrolle und am Vorgang lösen einen Hinweis aus, Senden bleibt möglich (DE/UK/EN; Backlog 863)|ui-foto-dunkel.py|/tmp/cfp-foto-dunkel.log

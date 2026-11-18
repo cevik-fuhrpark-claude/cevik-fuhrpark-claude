@@ -835,12 +835,15 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   // Nur Hinweis: nichts wird geschlossen oder archiviert.
   // Backlog 859 (Blickwinkel „Inhaber prüft vor dem Verkauf eines Lkw die laufenden Gewährleistungen“): laufende Gewährleistungen
   // (Teile/Fremdleistungen mit „Gewährleistung bis“ ab heute, diese Umgebung) zählen – Ansprüche vor der Abgabe prüfen bzw. Unterlagen übergeben.
-  const hint = active ? { r: 0, d: 0, p: 0, o: 0, os: 0, cl: 0, n: 0, w: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
+  const hint = active ? { r: 0, d: 0, p: 0, o: 0, os: 0, cl: 0, n: 0, f: 0, w: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
       (SELECT COUNT(*) FROM telematics_latest WHERE vehicle_id=?1) AS d, (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen') AS o,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS os,
       (SELECT COUNT(*) FROM insurance_claims WHERE vehicle_id=?1 AND environment=?3 AND status IN ('gemeldet','in_pruefung')) AS cl,
       (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?3 AND archived_at IS NULL) AS n,
+      -- Backlog 1579 (Backlog 195, Blickwinkel „Leitung nimmt einen verkauften Lkw außer Betrieb, während noch Bußgeldverfahren laufen“):
+      -- offene Bußgelder/Zeugenfragebögen dieser Umgebung (nicht bezahlt/eingestellt/erledigt) nennen – Fristen der Behörde laufen weiter.
+      (SELECT COUNT(*) FROM fines WHERE vehicle_id=?1 AND environment=?3 AND status NOT IN ('bezahlt','eingestellt','erledigt')) AS f,
       (SELECT COUNT(*) FROM (SELECT x.case_id FROM parts x JOIN cases c ON c.id=x.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND x.warranty_until >= ?2
         UNION ALL SELECT x.case_id FROM external_costs x JOIN cases c ON c.id=x.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND x.warranty_until >= ?2)) AS w`).bind(vehicleId, berlinDate(), envName).first();
   // Wieder in Betrieb: dasselbe Kennzeichen an einem anderen aktiven Fahrzeug (Nachfolger) – Hinweis wie beim Anlegen, Bußgelder/Importe sind sonst „mehrdeutig“ (23.10.2026)
@@ -860,7 +863,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
     const rows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND id<>? AND (kind='anhaenger' OR trailer_plate IS NOT NULL)`).bind(vehicleId).all()).results;
     if (!rows.some((y) => y.kind !== 'anhaenger' && normPlate(y.trailer_plate) === k)) trailerLeft = rows.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === k).map((x) => ({ id: x.id, plate: x.plate }));
   }
-  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? {} : { open_items: hint.o, open_items_safety: hint.os, open_claims: hint.cl, active_notes: hint.n, active_warranties: hint.w }), ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
+  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? {} : { open_items: hint.o, open_items_safety: hint.os, open_claims: hint.cl, open_fines: hint.f || 0, active_notes: hint.n, active_warranties: hint.w }), ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
     ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}), ...(trailerLeft.length ? { coupled_trailer_left: trailerLeft } : {}) };
 }
 
