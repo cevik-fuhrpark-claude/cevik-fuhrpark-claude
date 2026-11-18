@@ -44924,6 +44924,34 @@ await test('Backlog 1575 (Sonde zu 1572/1573, Backlog 195): estnisch „veok kuk
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].help_report_s.includes(`veok kukkus kraavi`), `Hilfe nennt: ` + l);
 });
 
+await test('Backlog 1576 (Backlog 1501 Stufe 18, WCAG 3.3.1): Vertrag beenden (einzeln/gesammelt), Aufträge aus Prüftermin/Winterreifen/Freigabe, Meldung und Tagesgrenze Arbeitszeit nennen field_key', async () => {
+  const { U, cmd, toRepair, V1 } = await freshWorld();
+  const mk = async (b) => { const r = await U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'versicherung', evidence: 'Police (Test)', partner: 'Feld AG', ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const c1 = await mk({ contract_no: 'F-1', start_date: bDayOff(-30) });
+  const E = (b) => U.fleet.post(`/api/contracts/${c1}/end`, { end_note: 'Test', ...b });
+  eq((await E({ ended_on: '2026-02-30' })).data.field_key, 'ended_on', 'Beenden: Datum ungültig');
+  eq((await E({ ended_on: bDayOff(3) })).data.field_key, 'ended_on', 'Beenden: Datum in der Zukunft');
+  eq((await E({ ended_on: bDayOff(-40) })).data.field_key, 'ended_on', 'Beenden: vor Vertragsbeginn');
+  eq((await E({ ended_on: bDayOff(-1), end_note: '' })).data.field_key, 'end_note', 'Beenden: Grund fehlt');
+  const B = (b) => U.fleet.post('/api/contracts/batch', { ids: [c1], ...b });
+  eq((await B({ mode: 'end', ended_on: bDayOff(5), end_note: 'Test' })).data.field_key, 'ended_on', 'Sammel-Beenden: Datum in der Zukunft');
+  eq((await B({ mode: 'end_date', end_date: '' })).data.field_key, 'end_date', 'Sammel-Vertragsende: fehlt');
+  eq((await B({ mode: 'end_date', end_date: '31.12.2026' })).data.field_key, 'end_date', 'Sammel-Vertragsende: Format');
+  // Winterreifen-Auftrag: unbekannte Werkstatt, Termin in der Vergangenheit
+  const W = (b) => U.fleet.post(`/api/vehicles/${V1}/tires/winter-order`, { request_key: rk(), ...b });
+  const w1 = await W({ workshop_site: 'GIBTESNICHT' }); eq(w1.status, 400); eq(w1.data.field_key, 'workshop_site', 'Winterreifen: Werkstatt');
+  const w2 = await W({ workshop_site: 'DORTMUND', planned_date: bDayOff(-2) }); eq(w2.status, 400); eq(w2.data.field_key, 'planned_date', 'Winterreifen: Termin vergangen');
+  // Meldung: Beschreibung zu kurz; Freigabe mit unbekannter Werkstatt
+  const m1 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'abc', priority: 'niedrig', driveability: 'fahrbereit' }); eq(m1.status, 400); eq(m1.data.field_key, 'description', 'Meldung: zu kurz');
+  const id = await toRepair();
+  // Tagesgrenze Arbeitszeit (über alle Vorgänge) → Feld Stunden
+  eq((await cmd(U.ws, id, 'record_work', { hours: 20, description: 'Arbeit Teil 1' })).status, 200, 'erste Buchung');
+  const w3 = await cmd(U.ws, id, 'record_work', { hours: 6, description: 'Arbeit Teil 2' }); eq(w3.status, 400); eq(w3.data.field_key, 'hours', 'Tagesgrenze → Stunden');
+  // Wächter: jedes neue field_key gibt es als Feldname in der Oberfläche
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const k of ['ended_on', 'end_date', 'end_note', 'workshop_site', 'planned_date', 'description', 'hours']) ok(app.includes(`name="${k}"`), 'Feld in der Oberfläche: ' + k);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

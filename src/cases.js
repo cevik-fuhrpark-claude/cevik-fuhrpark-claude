@@ -1153,7 +1153,7 @@ export async function orderFromMaintenance(env, ctx, user, envName, ruleId, body
   if (rule.kind === 'Rückruf' && rule.last_done_date) throw conflict('already_done', 'Dieser Rückruf ist bereits durchgeführt.');
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
-  if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (!rule.ws_code) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität', { key: 'priority' });
   const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Rückruf: Referenz laut Schreiben in den Auftrag, damit die Werkstatt die richtige Aktion durchführt
@@ -1189,7 +1189,7 @@ export async function orderFromInspectionDefect(env, ctx, user, envName, eventId
   if (open && body.request_key && open.request_key === String(body.request_key) && open.reporter_id === user.id) return { id: open.id, case_no: open.case_no, duplicate: true };
   if (open) throw conflict('order_exists', `Für diese Prüfung gibt es bereits den offenen Auftrag ${open.case_no}.`, { case_id: open.id, case_no: open.case_no });
   const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
-  if (!ev.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (!ev.ws_code) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
   const priority = oneOf(body.priority || (ev.result === 'erhebliche_maengel' ? 'mittel' : 'kritisch'), PRIORITIES, 'Priorität');
   const driveability = oneOf(body.driveability || (ev.result === 'verkehrsunsicher' ? 'nicht_fahrbereit' : 'unbekannt'), DRIVEABILITY, 'Fahrbereitschaft');
   const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
@@ -1225,12 +1225,12 @@ export async function orderWinterTires(env, ctx, user, envName, vehicleId, body 
   const w = winterStatus(v.kind, winterMarks(ev));
   if (w.status === 'erfuellt') throw conflict('winter_ok', 'Winterreifen laut Erfassung bereits erfüllt – kein Auftrag nötig.');
   const site = str(body.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
-  if (!v.ws_code) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (!v.ws_code) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
   const priority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Priorität', { key: 'priority' });
   const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Termin vor dem Anlegen prüfen (sonst bliebe bei ungültigem Termin eine nicht freigegebene Meldung zurück)
   const planned = body.planned_date ? planDate(body.planned_date) : null;
-  if (planned && planned < berlinDate()) throw bad('validation', 'Werkstatttermin darf nicht in der Vergangenheit liegen.');
+  if (planned && planned < berlinDate()) throw bad('validation', 'Werkstatttermin darf nicht in der Vergangenheit liegen.', { field_key: 'planned_date' });
   const parts = [];
   if (w.noncompliant.length) parts.push(`ohne Alpine-Symbol: ${w.noncompliant.join(', ')}`);
   if (w.missing.length) parts.push(`nicht erfasst: ${w.missing.join(', ')}`);
@@ -1291,7 +1291,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
   for (const body of bodies) {
     const vehicleId = str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 40, field: 'Fahrzeug' });
     const description = str(body.description, { key: 'description', required: true, max: 4000, field: 'Fehlerbeschreibung' });
-    if (description.length < 5) throw bad('validation', 'Fehlerbeschreibung ist zu kurz.');
+    if (description.length < 5) throw bad('validation', 'Fehlerbeschreibung ist zu kurz.', { field_key: 'description' });
     const reportedPriority = oneOf(body.priority || 'niedrig', PRIORITIES, 'Dringlichkeit', { key: 'priority' });
     const driveability = oneOf(body.driveability || 'unbekannt', DRIVEABILITY, 'Fahrbereitschaft', { key: 'driveability' });
     const suggested = body.workshop_site ? str(body.workshop_site, { key: 'workshop_site', max: 20, field: 'Werkstatt' }) : null;
@@ -1330,7 +1330,7 @@ export async function createCases(env, ctx, user, envName, bodies, internal = {}
     // inzwischen geschlossene Werkstatt (App/Postausgang noch mit alter Werkstattliste): Vorschlag entfällt statt die ganze Meldung abzuweisen –
     // vorher 400 bei jedem „Erneut senden“, nur „Verwerfen“ (Fotos weg) blieb (Backlog 190, Teilagent „Werkstatt schließt“)
     for (const x of specs) if (x.suggested && closed.has(x.suggested)) x.suggested = null;
-    if (specs.some((x) => x.suggested && !ok.has(x.suggested))) throw bad('validation', 'Unbekannte Werkstatt.');
+    if (specs.some((x) => x.suggested && !ok.has(x.suggested))) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
   }
   const hashes = await Promise.all(specs.map((x) => sha256Hex(JSON.stringify([x.vehicleId, x.description, x.reportedPriority, x.driveability, x.suggested, x.location, x.parentId, ...(x.occurred ? [x.occurred] : [])]))));
   specs.forEach((x, i) => { x.contentHash = hashes[i]; });
@@ -1612,7 +1612,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'approve_repair': {
       const site = str(p.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
-      if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+      if (!ws) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
       requireNote('Bitte Reparaturumfang/Freigabevermerk angeben.');
       set.workshop_site = site; set.approval_scope = note; set.priority_reviewed = 1;
       if (p.priority) { const np = oneOf(p.priority, PRIORITIES, 'Priorität', { key: 'priority' }); if (np !== c.priority) { set.priority = np; payload.priority_from = c.priority; payload.priority_to = np; } }
@@ -1833,7 +1833,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     case 'reassign_workshop': {
       const site = str(p.workshop_site, { key: 'workshop_site', required: true, max: 20, field: 'Werkstatt' });
       const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
-      if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+      if (!ws) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'workshop_site' });
       requireNote('Bitte Grund für den Werkstattwechsel angeben.');
       if (site === c.workshop_site) throw bad('validation', 'Werkstatt ist unverändert.', { field_key: 'workshop_site' });
       // Termin gehörte zur bisherigen Werkstatt – die neue legt ihren eigenen bei der Übernahme fest (bleibt im Verlauf)
@@ -1991,7 +1991,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // höchstens 24 Stunden je Benutzerkonto und Arbeitstag über alle Vorgänge (vorher 3 × 24 h am selben Tag möglich, 17.10.2026) – Vorprüfung
       // für die verständliche Meldung, Prüfung im Stapel gegen gleichzeitige Buchungen
       const { h: dayH, lim: dayLim } = await workHoursOn(env, user.id, date);
-      if (dayH + hours > dayLim + 1e-9) throw bad('validation', workDayMsg(date, dayH, dayLim));
+      if (dayH + hours > dayLim + 1e-9) throw bad('validation', workDayMsg(date, dayH, dayLim), { field_key: 'hours' });
       const wid = uuid();
       // Standort zum Buchungszeitpunkt (Werkstatt-Auslastung bleibt nach einem Werkstattwechsel bei der buchenden Werkstatt, Migration 0060)
       extra.push(env.DB.prepare('INSERT INTO work_entries(id,case_id,user_id,work_date,hours,description,created_at,site) VALUES (?,?,?,?,?,?,?,?)')
@@ -2295,7 +2295,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
     }
     if (String(e && e.message).includes('CHECK') && workGuard) {
       const { h: dayH, lim: dayLim } = await workHoursOn(env, user.id, workGuard.date);
-      if (dayH + workGuard.hours > dayLim + 1e-9) throw bad('validation', workDayMsg(workGuard.date, dayH, dayLim));
+      if (dayH + workGuard.hours > dayLim + 1e-9) throw bad('validation', workDayMsg(workGuard.date, dayH, dayLim), { field_key: 'hours' });
     }
     if (String(e && e.message).includes('CHECK')) {
       throw conflict('version_conflict', 'Der Vorgang wurde zwischenzeitlich geändert. Bitte neu laden.');

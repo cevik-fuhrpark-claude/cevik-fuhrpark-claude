@@ -273,13 +273,13 @@ export async function updateContract(env, user, id, body, envName) {
 export async function endContract(env, user, id, body) {
   if (!isMgr(user)) throw forbidden();
   const c = await loadContract(env, id);
-  const on = date(body.ended_on, 'Beendet am', { notFuture: true }) || berlinDate();
+  const on = withKey('ended_on', () => date(body.ended_on, 'Beendet am', { notFuture: true })) || berlinDate();
   const note = str(body.end_note, { key: 'end_note', required: true, max: 300, field: 'Grund' });
   // Backlog 805g (Funkloch): Wiederholung nach verlorener Antwort – genau so beendet → Erfolg; sonst wie bisher „bereits beendet“
   if (c.ended_on && c.ended_on === on && (c.end_note || null) === note) return { id, ended_on: on, duplicate: true };
   if (c.ended_on) throw bad('contract_ended', 'Vertrag ist bereits beendet.');
   // Storno vor Beginn (Beginn noch in der Zukunft): Beenden vor dem Beginn zulässig – sonst blieb er „aktiv“ und zählte ab Beginn Raten (18.10.2026)
-  if (c.start_date && on < c.start_date && c.start_date <= berlinDate()) throw bad('validation', 'Beendet am liegt vor dem Vertragsbeginn.');
+  if (c.start_date && on < c.start_date && c.start_date <= berlinDate()) throw bad('validation', 'Beendet am liegt vor dem Vertragsbeginn.', { field_key: 'ended_on' });
   const r = await env.DB.prepare('UPDATE vehicle_contracts SET ended_on=?, end_note=?, updated_at=? WHERE id=? AND ended_on IS NULL AND updated_at=?').bind(on, note, laterIso(c.updated_at), id, c.updated_at).run();
   if (!(r.meta && r.meta.changes)) throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   await audit(env, user.id, 'contract.end', id, { vehicle: c.plate, ended_on: on, note });
@@ -299,8 +299,8 @@ export async function contractBatch(env, user, body) {
   if (ids.some((x) => !/^[\w-]{1,64}$/.test(x))) throw bad('validation', 'Auswahl ungültig – bitte neu laden.');
   const today = berlinDate();
   let on = null; let note = null; let endDate = null;
-  if (mode === 'end') { on = date(body.ended_on, 'Beendet am', { notFuture: true }) || today; note = str(body.end_note, { key: 'end_note', required: true, max: 300, field: 'Grund' }); }
-  else { endDate = date(body.end_date, 'Vertragsende'); if (!endDate) throw bad('validation', 'Vertragsende angeben.'); }
+  if (mode === 'end') { on = withKey('ended_on', () => date(body.ended_on, 'Beendet am', { notFuture: true })) || today; note = str(body.end_note, { key: 'end_note', required: true, max: 300, field: 'Grund' }); }
+  else { endDate = withKey('end_date', () => date(body.end_date, 'Vertragsende')); if (!endDate) throw bad('validation', 'Vertragsende angeben.', { field_key: 'end_date' }); }
   const replace = flagLike(body.replace);
   const rows = (await env.DB.prepare(`SELECT c.id, c.kind, c.partner, c.contract_no, c.start_date, c.end_date, c.ended_on, c.updated_at, v.plate FROM vehicle_contracts c JOIN vehicles v ON v.id=c.vehicle_id
     WHERE c.id IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(ids)).all()).results;
