@@ -45648,6 +45648,23 @@ await test('Backlog 1603 (Blickwinkel „Werkstatt wechselt den platten Reifen i
   for (const t of ['Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.']) ok(src.includes(`['${t}', '`), 'Übersetzung ' + t);
 });
 
+await test('Backlog 1604 (Folge aus 1603): Werkstattauftrag mit Reifenbezug bietet „Reifenwechsel zu diesem Auftrag erfassen ›“ (Akte, Abschnitt Reifen, mit Auftragsbezug für die ganze Erfassungsreihe); nur bei vollem Zugriff in Arbeit, nicht beim Winterauftrag; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("[/^#\\/vehicles\\/(VIN:[A-Z0-9]+)\\?sec=tires&case=([\\w-]+)&no=([\\w-]+)$/, (vid, cid, no) => viewVehicle(vid, null, 'tires', { id: cid, no })]"), 'Route');
+  ok(app.includes("async function viewVehicle(id, focusEv = null, sec = null, tcase = null) {") && app.includes("{ open: true, ...(tcase ? { cs: tcase } : {}) }"), 'Akte reicht den Auftrag weiter');
+  ok(app.includes("const csMode = tf && !woMode && keep && keep.cs && keep.cs.id ? keep.cs : null;") && app.includes("tf.case_id.value = csMode.id;") && app.includes("wo: woMode, ...(csMode ? { cs: csMode } : {}) });"), 'Formular mit Auftragsbezug, bleibt nach dem Speichern');
+  const line = app.split('\n').find((l) => l.includes('id="ctires"'));
+  ok(line && line.includes("!d.tire_winter && d.access === 'full' && (d.wheel_changed || TIRE_WORDS.test(String(c.description || '')))") && line.includes("['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status)") && line.includes('?sec=tires&case=${esc(c.id)}&no=${esc(c.case_no)}'), 'Link im Vorgang');
+  const tw = new RegExp(app.match(/\nconst TIRE_WORDS = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Reifen platt hinten links', 'Rad verloren', 'Räder wackeln', 'flat tyre rear left', 'tire blown', 'спущене колесо', 'пробита шина']) ok(tw.test(x), 'Reifenbezug: ' + x);
+  for (const x of ['Rückleuchte defekt', 'Bremse quietscht', 'Radio defekt', 'Fahrradträger lose']) ok(!tw.test(x), 'kein Reifenbezug: ' + x);
+  // Auftragsnummern passen auf das Routenmuster
+  const re = /^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires&case=([\w-]+)&no=([\w-]+)$/;
+  ok(re.test('#/vehicles/VIN:WMA15SZZ2HM722774?sec=tires&case=3f2a9c1e-1b2c-4d5e-8f90-123456789abc&no=T-2026-0042'), 'Muster');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].tf_case_link, 'tf_case_link ' + l); ok(STRINGS[l].tf_case_for && STRINGS[l].tf_case_for.includes('{no}'), 'tf_case_for ' + l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

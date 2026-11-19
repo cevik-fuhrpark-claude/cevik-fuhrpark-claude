@@ -362,7 +362,7 @@ async function loadVehicleNotes(vid, showArchive = false) {
     const nb = { text: fd.get('text'), for_driver: fd.get('for_driver') === 'on', valid_until: fd.get('valid_until') || null }; nb.request_key = rkFor(e.target, nb);
     try { await api('POST', base, nb, { timeoutMs: SEND_TIMEOUT_MS }); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } };
 }
-async function viewVehicle(id, focusEv = null, sec = null) {
+async function viewVehicle(id, focusEv = null, sec = null, tcase = null) {
   const d = await api('GET', '/api/vehicles/' + encodeURIComponent(id));
   const v = d.vehicle;
   const canMaint = isMgr() || S.me.role === 'workshop';
@@ -474,7 +474,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
 
 
 
-  renderTires(id, $('#tires'), sec === 'tires' ? { open: true } : sec === 'wo' ? { open: true, wo: true } : null).then(() => { if (sec !== 'tires' && sec !== 'wo') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
+  renderTires(id, $('#tires'), sec === 'tires' ? { open: true, ...(tcase ? { cs: tcase } : {}) } : sec === 'wo' ? { open: true, wo: true } : null).then(() => { if (sec !== 'tires' && sec !== 'wo') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
   if (d.contracts) bindCtSection(id, () => viewVehicle(id), d.odometer || []);
   const prt = $('#prt'); if (prt) prt.onclick = () => window.print();
   const docf = $('#docf'); if (docf) docf.onsubmit = async (e) => {
@@ -789,6 +789,15 @@ async function renderTires(id, el, keep = null) {
   if (tf) { tf.position.onchange = updSpec; tf.event_type.onchange = updSpec; updSpec(); if (keep && keep.wo) woMode = applyWo(); }
 
 
+  const csMode = tf && !woMode && keep && keep.cs && keep.cs.id ? keep.cs : null;
+  if (csMode) {
+    tf.closest('details').open = true; tf.case_id.value = csMode.id;
+    if (!keep.saved) tf.event_type.value = 'wechsel';
+    const n = $('#tfwo', tf); n.hidden = false; n.setAttribute('data-tfcase', ''); n.textContent = t('tf_case_for').replace('{no}', csMode.no || '');
+    updSpec();
+  }
+
+
 
   const twg = $('#tfwheelgo', el); if (twg) twg.onclick = () => {
     const txt = t('wheel_rt_text'); const box = $('#vnotes');
@@ -814,7 +823,7 @@ async function renderTires(id, el, keep = null) {
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS });   const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : w.code === 'size_differs' ? t('size_differs').replace('{pos}', (w.positions || []).map(posL).join(', ')).replace('{size}', w.size).replace('{spec}', w.spec).replace('{axle}', t('axle_' + w.axle))   : w.code === 'tire_km_lower' ? t('tire_km_lower').replace('{km}', fmtNum(w.km)).replace('{prev}', fmtNum(w.prev_km)) : w.code === 'tread_rise' ? t('tread_rise').replace('{pos}', posL(w.position)).replace('{mm}', fmtNum(w.tread_mm)).replace('{prev}', fmtNum(w.prev_mm)).replace('{d}', fmtD(w.prev_at))   : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true);   if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
       const ap = [...tf.position.options].map((o) => o.value); const nx = !b.positions && ap.indexOf(b.position) >= 0 ? ap[ap.indexOf(b.position) + 1] : null;
       if (b.event_type === 'wechsel' && !b.case_id) el.dataset.wheel = '1';
-      renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
+      renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode, ...(csMode ? { cs: csMode } : {}) }); }
     catch (err) { toast(err.message, true); }
   };
   offDayWatch($$('#woform input[name=planned_date]', el));
