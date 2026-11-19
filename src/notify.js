@@ -9,7 +9,7 @@ import { localizedAgentBody, localizedAgentTitle } from './agent.js';
 const PRIO = { de: { niedrig: 'niedrig', mittel: 'mittel', kritisch: 'kritisch' }, uk: { niedrig: 'низький', mittel: 'середній', kritisch: 'критичний' }, en: { niedrig: 'low', mittel: 'medium', kritisch: 'critical' } };
 const T = {
   de: {
-    planned_on: 'Termin', plan_note_chg: 'Hinweis zum Termin geändert', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})', in_ws: 'Auftrag {c} noch in Werkstatt', in_ws_cpl: 'Auftrag {c} ({p}) noch in Werkstatt', pdr_ended: 'Fahrt bis zur Teilelieferung beendet – Fahrzeug in die Werkstatt', parts_eta_changed: 'Liefertermin der Teile geändert', eta_on: 'Liefertermin', eta_removed: 'Liefertermin entfernt',
+    planned_on: 'Termin', plan_note_chg: 'Hinweis zum Termin geändert', ready_on: 'fertig ca.', ready_changed: 'Voraussichtlich fertig: neues Datum', pickup_hint: 'Abholhinweis: Mein Fahrzeug', rest_open: 'offene Restarbeiten: {n}', locked_by: 'gesperrt durch {c} ({p})', in_ws: 'Auftrag {c} noch in Werkstatt', in_ws_cpl: 'Auftrag {c} ({p}) noch in Werkstatt', pdr_ended: 'Fahrt bis zur Teilelieferung beendet – Fahrzeug in die Werkstatt', cost_not_needed: 'Kostenfreigabe nicht mehr nötig', parts_eta_changed: 'Liefertermin der Teile geändert', eta_on: 'Liefertermin', eta_removed: 'Liefertermin entfernt',
     created: 'Neue Schadensmeldung', created_urgent: 'KRITISCH: neue Meldung (ungeprüft)', received: 'Meldung ist eingegangen',
     priority_changed: 'Priorität geändert', approved: 'Neuer Werkstattauftrag', forwarded: 'Meldung an Werkstatt übergeben', rejected: 'Meldung abgelehnt', reopened: 'Meldung wieder geöffnet', withdrawn: 'Werkstattauftrag ohne Reparatur beendet',
     acknowledged: 'Werkstatt hat übernommen', started: 'Reparatur begonnen', waiting_parts: 'Wartet auf Teile', resumed: 'Reparatur fortgesetzt',
@@ -21,7 +21,7 @@ const T = {
     res_gefaehrliche_maengel: 'gefährliche Mängel', res_verkehrsunsicher: 'verkehrsunsicher', do_not_plan: 'nicht einplanen',
   },
   uk: {
-    planned_on: 'Термін', plan_note_chg: 'Примітку до терміну змінено', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})', in_ws: 'замовлення {c} ще в майстерні', in_ws_cpl: 'замовлення {c} ({p}) ще в майстерні', pdr_ended: 'Рух до постачання запчастин завершено – транспорт до майстерні', parts_eta_changed: 'Термін постачання запчастин змінено', eta_on: 'Термін постачання', eta_removed: 'Термін постачання видалено',
+    planned_on: 'Термін', plan_note_chg: 'Примітку до терміну змінено', ready_on: 'готово орієнт.', ready_changed: 'Орієнтовна готовність: нова дата', pickup_hint: 'Інформація для отримання: Мій транспорт', rest_open: 'відкриті залишкові роботи: {n}', locked_by: 'блокує {c} ({p})', in_ws: 'замовлення {c} ще в майстерні', in_ws_cpl: 'замовлення {c} ({p}) ще в майстерні', pdr_ended: 'Рух до постачання запчастин завершено – транспорт до майстерні', cost_not_needed: 'Погодження витрат більше не потрібне', parts_eta_changed: 'Термін постачання запчастин змінено', eta_on: 'Термін постачання', eta_removed: 'Термін постачання видалено',
     created: 'Нове повідомлення про пошкодження', created_urgent: 'КРИТИЧНО: нове повідомлення (неперевірене)', received: 'Повідомлення отримано',
     priority_changed: 'Пріоритет змінено', approved: 'Нове замовлення для майстерні', forwarded: 'Повідомлення передано до майстерні', rejected: 'Повідомлення відхилено', reopened: 'Повідомлення знову відкрито', withdrawn: 'Замовлення майстерні завершено без ремонту',
     acknowledged: 'Майстерня прийняла', started: 'Ремонт розпочато', waiting_parts: 'Очікування запчастин', resumed: 'Ремонт продовжено',
@@ -33,7 +33,7 @@ const T = {
     res_gefaehrliche_maengel: 'небезпечні дефекти', res_verkehrsunsicher: 'небезпечний для руху', do_not_plan: 'не планувати',
   },
   en: {
-    planned_on: 'Workshop date', plan_note_chg: 'Note on the date changed', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})', in_ws: 'order {c} still in the workshop', in_ws_cpl: 'order {c} ({p}) still in the workshop', pdr_ended: 'Driving until parts delivery ended – vehicle to the workshop', parts_eta_changed: 'Parts delivery date changed', eta_on: 'Parts delivery', eta_removed: 'Parts delivery date removed',
+    planned_on: 'Workshop date', plan_note_chg: 'Note on the date changed', ready_on: 'ready approx.', ready_changed: 'Expected ready: new date', pickup_hint: 'Pick-up note: My vehicle', rest_open: 'open items: {n}', locked_by: 'locked by {c} ({p})', in_ws: 'order {c} still in the workshop', in_ws_cpl: 'order {c} ({p}) still in the workshop', pdr_ended: 'Driving until parts delivery ended – vehicle to the workshop', cost_not_needed: 'Cost approval no longer needed', parts_eta_changed: 'Parts delivery date changed', eta_on: 'Parts delivery', eta_removed: 'Parts delivery date removed',
     created: 'New damage report', created_urgent: 'CRITICAL: new report (unverified)', received: 'Report received',
     priority_changed: 'Priority changed', approved: 'New workshop order', forwarded: 'Report handed over to workshop', rejected: 'Report rejected', reopened: 'Report reopened', withdrawn: 'Workshop order ended without repair',
     acknowledged: 'Workshop accepted', started: 'Repair started', waiting_parts: 'Waiting for parts', resumed: 'Repair resumed',
@@ -126,6 +126,8 @@ export function localizedBody(n, lang) {
   // Backlog 466: fester Zusatz „Abholhinweis: Mein Fahrzeug“ der Freigabe an zugeordnete Fahrer
   // Backlog 1039: fester Zusatz „Fahrt bis zur Teilelieferung beendet – …“ von „Reparatur fortgesetzt“ (Backlog 1032) – blieb beim Sprachwechsel stehen
   let pde = '';
+  // Backlog 1597: fester Zusatz „Kostenfreigabe nicht mehr nötig“ (Markierung durch geänderte Grenze/Buchung aufgehoben)
+  if (n.kind === 'cost_approved') for (const l of LANGS) { const x = ' · ' + T[l].cost_not_needed; if (core.endsWith(x)) { core = core.slice(0, -x.length); pde = ' · ' + T[L].cost_not_needed; break; } }
   if (n.kind === 'resumed') for (const l of LANGS) { const x = ' · ' + T[l].pdr_ended; if (core.endsWith(x)) { core = core.slice(0, -x.length); pde = ' · ' + T[L].pdr_ended; break; } }
   let pk = '';
   if (n.kind === 'released') for (const l of LANGS) { const x = ' · ' + T[l].pickup_hint; if (core.endsWith(x)) { core = core.slice(0, -x.length); pk = ' · ' + T[L].pickup_hint; break; } }
@@ -388,6 +390,29 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
   }
   const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: !!r.urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
   const job = deliverPush(env, created);
+  if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
+  return created.length;
+}
+
+// Backlog 1597 (Blickwinkel „Werkstatt wartet laut Hinweis auf die Kostenfreigabe, der Inhaber hebt die Grenze an, und die Werkstatt erfährt
+// nichts“): Markierung „Kostenfreigabe ausstehend“ still aufgehoben (revalidateCostMarks) → Hinweis „Kosten freigegeben · Kostenfreigabe nicht
+// mehr nötig“ nur an die Werkstatt des Auftrags (gleiche Art wie „Kosten freigeben“, also gleiche Stummschaltung), ohne Betrag, nie dringend.
+// Gesammelt: eine Abfrage für Vorgänge + Empfänger, eine Einfüge- und eine Zustellrunde – unabhängig von der Anzahl (Sammelweg bis 200 Fälle).
+export async function notifyCostCleared(env, ctx, caseIds, actorId = null) {
+  if (!caseIds || !caseIds.length) return 0;
+  const res = (await env.DB.prepare(`SELECT c.id, c.case_no, c.environment, c.priority, c.version, v.plate, u.id AS uid, u.language
+      FROM cases c LEFT JOIN vehicles v ON v.id=c.vehicle_id
+      JOIN users u ON u.role='workshop' AND u.active=1 AND u.password_hash IS NOT NULL AND u.environment=c.environment AND u.workshop_site=c.workshop_site
+      WHERE c.id IN (SELECT value FROM json_each(?1)) AND c.workshop_site IS NOT NULL AND u.id IS NOT ?2`).bind(JSON.stringify(caseIds), actorId).all()).results;
+  if (!res.length) return 0;
+  const now = nowIso();
+  const rows = res.map((r) => {
+    const lang = T[r.language] ? r.language : 'de';
+    return { id: uuid(), environment: r.environment, user_id: r.uid, case_id: r.id, event_key: `${r.id}:cost_cleared:${r.version}`, kind: 'cost_approved', urgent: 0, title: T[lang].cost_approved,
+      body: `${r.case_no} · ${r.plate || ''} · ${PRIO[lang][r.priority] || r.priority} · ${T[lang].cost_not_needed}${r.environment === 'test' ? ' · TEST' : ''}`, created_at: now, lang };
+  });
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: false, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
+  const job = deliverPush(env, created, { collapse: true });
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;
 }

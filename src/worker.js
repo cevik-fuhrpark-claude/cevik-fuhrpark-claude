@@ -895,7 +895,7 @@ async function handleApi(request, env, ctx, url) {
     requireRole(user, ['owner']);
     const r = await rates.removeRatePeriod(env, mm[1]);
     await auth.audit(env, user.id, 'settings.hourly_rate_period_removed', null, { valid_until: r.valid_until, rate_net: r.rate_net });
-    const costs_revalidated = (await cases.revalidateCostMarks(env, user.id)).length;
+    const costs_revalidated = (await cases.revalidateCostMarks(env, user.id, null, ctx)).length;
     return json({ ok: true, removed: r, ...(costs_revalidated ? { costs_revalidated } : {}) });
   }
   if (path === '/api/settings' && m === 'PUT') {
@@ -940,7 +940,7 @@ async function handleApi(request, env, ctx, url) {
     if (pairs.length) await auth.audit(env, user.id, 'settings.update', null, Object.fromEntries(pairs)); // nur geprüfte, gespeicherte Werte (unbekannte Schlüssel nicht ins Protokoll)
     if (kept) await auth.audit(env, user.id, 'settings.hourly_rate_period', null, kept);
     // Grenze/Stundensatz geändert: offene Markierungen „Kostenfreigabe ausstehend“ neu bewerten (19.10.2026)
-    const costs_revalidated = pairs.some(([k]) => k === 'repair_cost_limit_net' || k === 'workshop_hourly_rate_net') ? (await cases.revalidateCostMarks(env, user.id)).length : 0;
+    const costs_revalidated = pairs.some(([k]) => k === 'repair_cost_limit_net' || k === 'workshop_hourly_rate_net') ? (await cases.revalidateCostMarks(env, user.id, null, ctx)).length : 0;
     return json({ ok: true, ...(costs_revalidated ? { costs_revalidated } : {}), ...(kept ? { hourly_rate_period: kept } : {}) });
   }
 

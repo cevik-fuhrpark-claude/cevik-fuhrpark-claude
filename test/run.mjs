@@ -45534,6 +45534,31 @@ await test('Backlog 1596 (Blickwinkel „Leitung schickt den Lkw zur Nacharbeit 
   ok(app.includes("if (fd.has('pickup_note') && c.pickup_note && !String(fd.get('pickup_note')).trim()) p.pickup_note = '';") && app.includes("if (p.pickup_note || p.pickup_note === '') q.pickup_note = p.pickup_note;"), 'Formular sendet geleertes Feld (auch „Kontrolle + Freigabe“)');
 });
 
+await test('Backlog 1597: Kostenfreigabe durch geänderte Grenze aufgehoben → Werkstatt des Auftrags erhält „Kostenfreigabe nicht mehr nötig“ (ohne Betrag, nie dringend, einmalig)', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '100' })).status, 200);
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Turbolader', quantity: 1, unit_price_net: 150 })).status, 200);
+  ok((await U.fleet.get(`/api/cases/${id}`)).data.case.cost_over_limit_at, 'markiert');
+  const mine = async () => (await U.ws.get('/api/notifications')).data.notifications.filter((n) => n.case_id === id && n.kind === 'cost_approved');
+  eq((await mine()).length, 0, 'vorher kein Hinweis');
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '' })).data.costs_revalidated, 1, 'Grenze gelöscht → aufgehoben');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.cost_over_limit_at, null);
+  const ns = await mine(); eq(ns.length, 1, 'genau ein Hinweis an die Werkstatt');
+  ok(/Kostenfreigabe nicht mehr nötig/.test(ns[0].body), ns[0].body); ok(!/€|150/.test(ns[0].body), 'kein Betrag: ' + ns[0].body); ok(!ns[0].urgent, 'nie dringend');
+  // Leitung/Inhaber bekommen diesen Hinweis nicht
+  ok(!(await U.fleet.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && /nicht mehr nötig/.test(n.body || '')), 'Leitung ohne Hinweis');
+  // Sprachwechsel: fester Zusatz wird übersetzt
+  const { localizedBody } = await import('../src/notify.js');
+  ok(localizedBody({ kind: 'cost_approved', body: ns[0].body }, 'uk').includes(' · Погодження витрат більше не потрібне'), localizedBody({ kind: 'cost_approved', body: ns[0].body }, 'uk'));
+  ok(localizedBody({ kind: 'cost_approved', body: ns[0].body }, 'en').includes(' · low · Cost approval no longer needed'), localizedBody({ kind: 'cost_approved', body: ns[0].body }, 'en'));
+  // erneut speichern: nichts mehr markiert → kein weiterer Hinweis
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '' })).data.costs_revalidated, undefined); eq((await mine()).length, 1);
+  // eigene Buchung der Werkstatt hebt die Markierung auf (Grenze 100, Teil 150 → Teil durch Fremdleistung ersetzt): Auslöser selbst ohne Hinweis
+  const { revalidateCostMarks } = await import('../src/cases.js');
+  ok(revalidateCostMarks.length >= 2 && /notifyCostCleared\(env, ctx, ids, actorId\)/.test(revalidateCostMarks.toString()), 'Auslöser wird übergeben');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

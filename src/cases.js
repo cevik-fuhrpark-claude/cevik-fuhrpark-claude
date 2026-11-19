@@ -2,7 +2,7 @@
 import { claimForCase, day as pastDay } from './claims.js';
 import { caseDescText, checkKeysFor } from '../public/check-labels.js';
 import { withKey, nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden, notFound, conflict, str, oneOf, flag, num, hoursNum, qtyNum, qtyUnitOf, berlinDate, testMasterReadonly, isCalendarDate, hideDriverName, addMonths, berlinDayStartIso, berlinDaySql, likeEsc, caseVariants, intParam, PLATE_KEY_SQL, COUPLING_PREFERRED_SQL, rateOf, roundCents, quoteCell , commaDec, pointDec, kmNum, normPlate, cutText, cleanText, berlinLocalToIso, occurredCsv, RATE_PERIODS_SQL, ratePeriods, valueWork, otherEnvNotFound } from './util.js';
-import { notifyCaseEvent, notifyCasesCreated } from './notify.js';
+import { notifyCaseEvent, notifyCasesCreated, notifyCostCleared } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
 import { siteSelection } from './reports.js';
@@ -802,7 +802,7 @@ async function repairInspection(env, caseId) {
 // Markierung „Kostenfreigabe ausstehend“ nach Änderung der Einstellungen neu bewerten (19.10.2026: Grenze entfernt/erhöht bzw. Stundensatz
 // gesenkt – die Freigabe blieb blockiert): liegen die bewerteten Kosten nicht mehr über max(Grenze, freigegebener Betrag) bzw. ist die
 // Grenze aus, wird die Markierung aufgehoben und im Verlauf vermerkt. Nur offene Vorgänge; ohne erteilte Freigabe (kein Betrag erfunden).
-export async function revalidateCostMarks(env, actorId, caseIds = null) {
+export async function revalidateCostMarks(env, actorId, caseIds = null, ctx = null) {
   // Sammelweg (20.10.2026): vorher je markiertem Vorgang eine Kostenabfrage + ein Stapel – 30 Markierungen = 96 D1-Abfragen beim Speichern
   // der Einstellungen (Budget 50). Jetzt: eine Abfrage (Vorgänge + Positionen), ein Stapel (Ereignisse + Freigabe mit Stand-Prüfung).
   const limit = await costLimit(env);
@@ -841,7 +841,10 @@ export async function revalidateCostMarks(env, actorId, caseIds = null) {
     env.DB.prepare(`UPDATE cases SET cost_over_limit_at=NULL, updated_at=?2, version=version+1
       WHERE id IN (SELECT id FROM (${MATCH}) WHERE id = cases.id AND at = cases.cost_over_limit_at) RETURNING id`).bind(J, now),
   ]);
-  return (res[1].results || []).map((x) => x.id);
+  const ids = (res[1].results || []).map((x) => x.id);
+  // Backlog 1597: Werkstatt des Auftrags erfährt, dass sie nicht mehr auf die Kostenfreigabe warten muss (Auslöser selbst nicht)
+  if (ids.length) await notifyCostCleared(env, ctx, ids, actorId);
+  return ids;
 }
 async function checkCostLimit(env, ctx, user, envName, c) {
   if (c.cost_over_limit_at) return false;
@@ -2238,7 +2241,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Grenze erst nach der letzten Buchung überschritten (Stundensatz erhöht, Grenze gesenkt, Satz nachgetragen – 18.10.2026: Freigabe
       // ohne Kostenfreigabe möglich): jetzt markieren (Hinweis an die Leitung) und die Freigabe abweisen
       // Markierung aus einer früheren Grenze/einem höheren Stundensatz: erst neu bewerten (Versions-Guard: neu laden, dann freigeben)
-      if (c.cost_over_limit_at && (await revalidateCostMarks(env, user.id, [c.id])).length) throw conflict('version_conflict', 'Kostenfreigabe nicht mehr nötig – bitte neu laden und erneut freigeben.');
+      if (c.cost_over_limit_at && (await revalidateCostMarks(env, user.id, [c.id], ctx)).length) throw conflict('version_conflict', 'Kostenfreigabe nicht mehr nötig – bitte neu laden und erneut freigeben.');
       if (c.cost_over_limit_at || await checkCostLimit(env, ctx, user, envName, c)) throw bad('cost_approval_open', 'Kostenfreigabe ausstehend – bitte zuerst „Kosten freigeben“ (oder mit der Werkstatt klären), dann das Fahrzeug freigeben.');
       const so = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (so.n > 0) throw bad('safety_items_open', 'Offene sicherheitsrelevante Restarbeiten – keine Freigabe möglich.');
@@ -2361,7 +2364,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const cost_limit_exceeded = COST_ACTIONS.includes(action) ? await checkCostLimit(env, ctx, user, envName, updated) : undefined;
   // schon markiert und Kosten jetzt nicht mehr über der Schwelle (z. B. Fremdleistung „ersetzt eigene Arbeit/Teile“): Markierung aufheben
   // (21.10.2026: „Kostenfreigabe ausstehend“ blieb stehen, technische Freigabe endete mit 409)
-  const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id])).length > 0 : false;
+  const cost_limit_cleared = COST_ACTIONS.includes(action) && updated.cost_over_limit_at ? (await revalidateCostMarks(env, user.id, [c.id], ctx)).length > 0 : false;
   // Kostengrenze überschritten bzw. Markierung aufgehoben → Version um 1 erhöht; Antwort nennt diese (18.10.2026: sonst 409 beim nächsten Befehl)
   const version = cost_limit_exceeded || cost_limit_cleared ? newVersion + 1 : newVersion;
   // Backlog 1519 (Folge aus 1518, Blickwinkel „Leitung/Werkstatt legt den Werkstatttermin eines Schadens fest – UVV, Tacho-Prüfung oder SP des
