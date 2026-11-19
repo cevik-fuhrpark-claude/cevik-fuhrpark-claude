@@ -248,6 +248,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       // Auftrag ohne Reparatur beendet: Melder, Werkstatt (Arbeit einstellen) und Disposition (Fahrzeug kommt nicht repariert zurück)
       // Backlog 609: Werkstatt hat danach keinen Zugriff mehr (Status abgelehnt) – Hinweis ohne Vorgangslink (wie „an andere Werkstatt übergeben“)
       add(reporter); add(workshopUsers.map((u) => ({ ...u, away: 1 }))); add(usersByRole(['dispatch']));
+      // Backlog 1598: naher Werkstatttermin entfällt → zugeordnete Fahrer (nicht Melder) wie bei „Termin entfernt“ (Backlog 460/461)
+      if (ctxData.ack_plan_near) add(assignedDrivers().map((u) => ({ ...u, kind: 'plan_changed' })));
       break;
     case 'approved': case 'rework':
       add(workshopUsers);

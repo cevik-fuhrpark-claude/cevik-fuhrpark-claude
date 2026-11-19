@@ -7502,6 +7502,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     const oi = d && Array.isArray(d.open_items) ? d.open_items.filter((o) => o.status === 'offen') : [];
     if (oi.some((o) => o.safety_relevant)) f.push(`<p class="panel warn small" id="wdsafety">${esc(t('err_safety_items_open'))}</p>`);
     else if (oi.length) f.push(`<p class="small" id="wdleft">${esc(t('withdraw_left').replace('{n}', oi.length))}</p>`);
+    // Backlog 1598/1600: Termin entfällt; Lagerteile bleiben gebucht (Bestand wird nicht zurückgebucht) – vor dem Absenden nennen
+    if (c.planned_date) f.push(`<p class="small" id="wdplan">${esc(t('withdraw_plan').replace('{d}', fmtD(c.planned_date)))}</p>`);
+    const sp = d && Array.isArray(d.parts) ? d.parts.filter((x) => x.stock_item_id).length : 0;
+    if (sp) f.push(`<p class="small" id="wdstock">${esc(t('withdraw_stock').replace('{n}', sp))}</p>`);
   }
   if ((isRel || action === 'lift_safety_lock') && d && Array.isArray(d.open_items) && d.open_items.some((o) => o.status === 'offen' && o.safety_relevant)) f.push(`<p class="panel warn small" id="relsafety">${esc(t('err_safety_items_open'))}</p>`);
   if (isRel || action === 'lift_safety_lock') f.push(`<label class="check"><input type="checkbox" name="confirm" required> ${esc(t('confirm'))}</label>`);
@@ -10508,6 +10512,8 @@ function evFromTo(e) {
   }
   if (e.action === 'set_parts_drive' && e.payload) return `<div class="small muted" data-ev-pdr>${esc(t(e.payload.cleared ? 'pdr_ev_off' : 'pdr_ev_on'))}</div>`;
   if (e.payload && e.payload.parts_drive_ended) return `<div class="small muted" data-ev-pdrend>${esc(t('pdr_ev_ended'))}</div>` + evFromTo({ ...e, payload: (({ parts_drive_ended: _x, ...r }) => r)(e.payload) });
+  // Backlog 1598/1600: beim Beenden ohne Reparatur entfallener Termin bzw. weiter gebuchte Lagerteile
+  if (e.action === 'withdraw_order' && e.payload && (e.payload.planned_date_before || e.payload.stock_parts_left)) return [e.payload.planned_date_before ? t('ev_wd_plan').replace('{d}', fmtD(e.payload.planned_date_before)) : '', e.payload.stock_parts_left ? t('withdraw_stock').replace('{n}', e.payload.stock_parts_left) : ''].filter(Boolean).map((x) => `<div class="small muted" data-ev-wd>${esc(x)}</div>`).join('');
   if (e.action === 'set_work_state' && e.payload && e.payload.cleared) return `<div class="small muted" data-ev-wstclear>${esc(t('wst_cleared'))}</div>`;
   const p = e.payload; if (!p || typeof p !== 'object' || !('from' in p) || !('to' in p)) return '';
   // Backlog 876: beim Werkstattwechsel zurückgesetzte Angaben zu Schlüssel/Fahrzeugschein der bisherigen Werkstatt

@@ -45559,6 +45559,46 @@ await test('Backlog 1597: Kostenfreigabe durch geänderte Grenze aufgehoben → 
   ok(revalidateCostMarks.length >= 2 && /notifyCostCleared\(env, ctx, ids, actorId\)/.test(revalidateCostMarks.toString()), 'Auslöser wird übergeben');
 });
 
+await test('Backlog 1598–1600 (Blickwinkel „Leitung beendet einen Auftrag ohne Reparatur, nachdem die Werkstatt schon einen Termin gesetzt und Teile aus dem Lager entnommen hat“): Termin entfällt (Verlauf), naher Termin → zugeordnete Fahrer „Werkstatttermin geändert“ (ohne Datum, nie dringend); Liefertermin entfällt; Lagerteile im Verlauf gezählt, Bestand unverändert; Dialog nennt beides', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'z.fahrer2', display_name: 'Fahrer Zwei', role: 'driver', environment: 'test', language: 'de' });
+  const F2 = new Client(worker, e, 'z.fahrer2'); await F2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: x.data.id, evidence: 'Dienstplan' })).status, 201, 'Zuordnung');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const pcOf = async (c, id) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed');
+  // 1) Termin morgen, Lagerteil entnommen, wartet auf Teile → ohne Reparatur beenden
+  const st = await U.ws.post('/api/stock', { name: 'Rückleuchte links', part_number: 'RL-1', unit_price_net: '40', initial_qty: 3 }); eq(st.status, 201);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(1) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: st.data.id, quantity: 1 })).status, 200);
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: day(5) }, 'Glas bestellt')).status, 200);
+  const before = (await pcOf(F2, id)).length;
+  const r = await cmd(U.fleet, id, 'withdraw_order', {}, 'Fahrzeug wird verkauft'); eq(r.status, 200, JSON.stringify(r.data));
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.status, 'abgelehnt'); eq(d.case.planned_date, null, 'Termin entfällt'); eq(d.case.parts_expected_date, null, 'Liefertermin entfällt');
+  const ev = d.events.find((q) => q.action === 'withdraw_order');
+  eq(ev.payload.planned_date_before, day(1)); eq(ev.payload.parts_expected_before, day(5)); eq(ev.payload.stock_parts_left, 1, 'Lagerteil gezählt');
+  eq((await U.ws.get('/api/stock')).data.items.find((i) => i.id === st.data.id).on_hand, 2, 'Bestand bleibt abgebucht (kein stilles Zurückbuchen)');
+  const pc = (await pcOf(F2, id)).slice(before); eq(pc.length, 1, 'zugeordneter Fahrer: „Werkstatttermin geändert“');
+  ok(!pc[0].urgent && !/\d{2}\.\d{2}\.\d{4}/.test(pc[0].body) && pc[0].case_id === null, 'ohne Datum, nicht dringend, ohne Link: ' + JSON.stringify(pc[0]));
+  ok((await U.driver.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && n.kind === 'withdrawn'), 'Melder wie bisher „ohne Reparatur beendet“');
+  ok(!(await U.driver.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && n.kind === 'plan_changed'), 'Melder kein zweiter Hinweis');
+  // 2) Termin in 20 Tagen bzw. ohne Termin → kein Fahrerhinweis, kein Lagerzähler
+  const n0 = (await pcOf(F2)).length;
+  const id2 = await newCase(); eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(20) }, 'Termin')).status, 200);
+  eq((await cmd(U.fleet, id2, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  const e2 = (await U.fleet.get(`/api/cases/${id2}`)).data; eq(e2.case.planned_date, null); ok(!('stock_parts_left' in e2.events.find((q) => q.action === 'withdraw_order').payload), 'ohne Lagerteile kein Zähler');
+  const id3 = await newCase(); eq((await cmd(U.fleet, id3, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.fleet, id3, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  eq((await pcOf(F2)).length, n0, 'weit weg/ohne Termin: kein Hinweis');
+  // 3) Oberfläche: Dialog und Verlauf, Texte in allen Sprachen
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="wdplan"') && app.includes('id="wdstock"') && app.includes("e.action === 'withdraw_order' && e.payload && (e.payload.planned_date_before || e.payload.stock_parts_left)"), 'Dialog/Verlauf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['withdraw_plan', 'withdraw_stock', 'ev_wd_plan']) ok(STRINGS[l][k] && (k === 'withdraw_stock' ? STRINGS[l][k].includes('{n}') : STRINGS[l][k].includes('{d}')), `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

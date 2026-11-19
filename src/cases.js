@@ -1944,8 +1944,19 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (c.safety_lock) throw bad('withdraw_locked', 'Vorgang mit aktiver Sicherheitssperre kann nicht ohne Reparatur beendet werden. Zuerst Sperre fachlich aufheben (z. B. „Fahrzeug wird außer Betrieb genommen“).');
       const safetyOpenW = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (safetyOpenW.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
-      const openRest = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
-      payload = { from_status: c.status, open_items_left: openRest.n };
+      // Backlog 1600: Lagerteile des Auftrags in derselben Abfrage zählen (bleiben gebucht – Hinweis im Verlauf, Bestand wird nicht zurückgebucht)
+      const openRest = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM open_items WHERE case_id=?1 AND status='offen') AS n,
+        (SELECT COUNT(*) FROM parts WHERE case_id=?1 AND stock_item_id IS NOT NULL) AS stock_n`).bind(c.id).first();
+      payload = { from_status: c.status, open_items_left: openRest.n, ...(openRest.stock_n ? { stock_parts_left: openRest.stock_n } : {}) };
+      // Backlog 1598 (Blickwinkel „Leitung beendet einen Auftrag ohne Reparatur, nachdem die Werkstatt schon einen Termin gesetzt und Teile
+      // entnommen hat“): Werkstatttermin entfällt (wie beim Werkstattwechsel; alter Wert im Verlauf) – lag er heute bis +7 Tage, erfahren auch die
+      // zugeordneten Fahrer es als „Werkstatttermin geändert“ (ohne Datum = entfernt); Melder/Disposition bekommen „ohne Reparatur beendet“
+      if (c.planned_date) {
+        payload.planned_date_before = c.planned_date; set.planned_date = null; set.planned_note = null;
+        if (c.planned_date >= berlinDate() && c.planned_date <= addDaysIso(berlinDate(), 7)) ackPlanNear = true;
+      }
+      // Backlog 1599: Liefertermin aus „wartet auf Teile“ endet mit (wie „Teile eingetroffen“) – Integrations-API lieferte ihn sonst am beendeten Auftrag
+      if (c.parts_expected_date) { payload.parts_expected_before = c.parts_expected_date; set.parts_expected_date = null; }
       toStatus = 'abgelehnt'; set.closed_at = now;
       // Backlog 609: bisherige Hinweise der Werkstatt zum Auftrag ausblenden (Link → „Vorgang nicht gefunden“), wie beim Werkstattwechsel; Melder behält sie
       if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL
