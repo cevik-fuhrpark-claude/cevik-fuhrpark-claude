@@ -227,6 +227,8 @@ function returnCheckText(rc) {
 
     rc.active_notes ? tn('rc_notes', rc.active_notes) : '', rc.open_items ? tn('rc_open_items', rc.open_items) + (rc.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(rc.open_items_safety)) : '') : '', rc.last_km_at ? t('rc_km').replace('{d}', fmtD(rc.last_km_at)) : t('rc_km_none'),
 
+    rc.open_recalls ? tn('rc_recalls', rc.open_recalls) : '', rc.planned_appointments ? tn('rc_planned', rc.planned_appointments) : '', rc.missed_appointments ? tn('rc_missed', rc.missed_appointments) : '',
+
     (rc.coupled_inactive || []).length ? t('rc_coupled_inactive').replace('{list}', () => rc.coupled_inactive.map((x) => x.plate).join(', ')) : ''].filter(Boolean);
   return `${t('rc_head')}: ${parts.join(' · ')}`;
 }
@@ -360,7 +362,7 @@ async function loadVehicleNotes(vid, showArchive = false) {
     const nb = { text: fd.get('text'), for_driver: fd.get('for_driver') === 'on', valid_until: fd.get('valid_until') || null }; nb.request_key = rkFor(e.target, nb);
     try { await api('POST', base, nb, { timeoutMs: SEND_TIMEOUT_MS }); loadVehicleNotes(vid, showArchive); } catch (err) { toast(err.message, true); } };
 }
-async function viewVehicle(id, focusEv = null, sec = null) {
+async function viewVehicle(id, focusEv = null, sec = null, tcase = null) {
   const d = await api('GET', '/api/vehicles/' + encodeURIComponent(id));
   const v = d.vehicle;
   const canMaint = isMgr() || S.me.role === 'workshop';
@@ -472,7 +474,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
 
 
 
-  renderTires(id, $('#tires'), sec === 'tires' ? { open: true } : sec === 'wo' ? { open: true, wo: true } : null).then(() => { if (sec !== 'tires' && sec !== 'wo') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
+  renderTires(id, $('#tires'), sec === 'tires' ? { open: true, ...(tcase ? { cs: tcase } : {}) } : sec === 'wo' ? { open: true, wo: true } : null).then(() => { if (sec !== 'tires' && sec !== 'wo') return; const h = $('#tires-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus({ preventScroll: true }); } });
   if (d.contracts) bindCtSection(id, () => viewVehicle(id), d.odometer || []);
   const prt = $('#prt'); if (prt) prt.onclick = () => window.print();
   const docf = $('#docf'); if (docf) docf.onsubmit = async (e) => {
@@ -527,7 +529,7 @@ async function viewVehicle(id, focusEv = null, sec = null) {
         : `<p class="small">✓ ${esc(t('vdq_none'))}</p>`) + `<p class="small muted">${esc(t('vdq_hint'))} <a href="${hj('#/quality')}">${esc(t('dq'))} ›</a></p>`;
     } catch (err) { vdq.dataset.loaded = ''; box.innerHTML = `<p class="small" style="color:var(--stop)">${esc(err.message)}</p>`; }
   };
-  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }, { timeoutMs: SEND_TIMEOUT_MS }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : '', r.open_items ? tn('oi_open_deact', r.open_items) + (r.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(r.open_items_safety)) : '') : '', r.open_claims ? tn('claims_open_deact', r.open_claims) : '', r.open_fines ? tn('fines_open_deact', r.open_fines) : '', r.active_notes ? tn('notes_active_deact', r.active_notes) : '', r.active_warranties ? tn('warr_active_deact', r.active_warranties) : '', (r.trailer_of_trucks || []).length ? t('trailer_deact_warn').replace('{list}', r.trailer_of_trucks.map((x) => x.plate).join(', ')) : '', (r.coupled_trailer_left || []).length ? t('trailer_left_deact').replace('{list}', () => r.coupled_trailer_left.map((x) => x.plate).join(', ')) : '', (r.ended_drivers || []).length ? t('deact_drivers_ended').replace('{list}', () => r.ended_drivers.map((x) => x.display_name).join(', ')) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) {   if (lostDup(deact, { active: false }, err, ['already_inactive'])) { toast(t('saved_before')); viewVehicle(id); return; } lostMark(deact, { active: false }, err); toast(err.code === 'open_cases' ? `${err.message} ${t('deact_open_hint')}` : err.message, true); } };
+  const deact = $('#deact'); if (deact) deact.onclick = async () => { const reason = prompt(t('deactivate_reason')); if (!reason) return; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: false, reason }, { timeoutMs: SEND_TIMEOUT_MS }); const hints = [r.running_contracts ? tn('ct_running_deact', r.running_contracts) : '', r.telematics_devices ? tn('tm_devices_deact', r.telematics_devices) : '', r.planned_appointments ? tn('mt_planned_deact', r.planned_appointments) : '', r.open_items ? tn('oi_open_deact', r.open_items) + (r.open_items_safety ? ' ' + t('oi_safety_deact').replace('{n}', fmtNum(r.open_items_safety)) : '') : '', r.open_claims ? tn('claims_open_deact', r.open_claims) : '', r.open_fines ? tn('fines_open_deact', r.open_fines) : '', r.open_recalls ? tn('recalls_open_deact', r.open_recalls) : '', r.missed_appointments ? tn('missed_appt_deact', r.missed_appointments) : '', r.active_notes ? tn('notes_active_deact', r.active_notes) : '', r.active_warranties ? tn('warr_active_deact', r.active_warranties) : '', (r.trailer_of_trucks || []).length ? t('trailer_deact_warn').replace('{list}', r.trailer_of_trucks.map((x) => x.plate).join(', ')) : '', (r.coupled_trailer_left || []).length ? t('trailer_left_deact').replace('{list}', () => r.coupled_trailer_left.map((x) => x.plate).join(', ')) : '', (r.ended_drivers || []).length ? t('deact_drivers_ended').replace('{list}', () => r.ended_drivers.map((x) => x.display_name).join(', ')) : ''].filter(Boolean); if (hints.length) toast(hints.join(' · '), true); else toast('✓'); viewVehicle(id); } catch (err) {   if (lostDup(deact, { active: false }, err, ['already_inactive'])) { toast(t('saved_before')); viewVehicle(id); return; } lostMark(deact, { active: false }, err); toast(err.code === 'open_cases' ? `${err.message} ${t('deact_open_hint')}` : err.message, true); } };
   const react = $('#react'); if (react) react.onclick = async () => { let reason = prompt(t('return_reason')); if (reason === null) return; reason = reason.trim() || null; try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/active`, { active: true, reason }, { timeoutMs: SEND_TIMEOUT_MS }); const rc = returnCheckText(r && r.return_check); toast(rc ? `✓ ${t('saved_ok')} – ${rc}` : '✓', !!rc); await viewVehicle(id);
 
     const d = r && r.duplicate_plates; if (d && d.length) setTimeout(() => toast(t('dup_plate_warn').replace('{p}', String(d[0].plate || '').toUpperCase()).replace('{list}', d.slice(0, 3).map((x) => String(x.id).replace(/^VIN:/, '')).join(', ') + (d.length > 3 ? ` +${d.length - 3}` : '')), true), 400);
@@ -715,7 +717,7 @@ async function renderTires(id, el, keep = null) {
       <label>${esc(t('winter_mark'))}</label><select name="winter_mark"><option value="">${esc(t('wm_none'))}</option>${(S.meta.tire_winter_marks || []).map((w) => `<option value="${w}">${esc(t('wm_' + w))}</option>`).join('')}</select>
       <label for="tfkm">${esc(t('km'))}${d.vehicle && d.vehicle.kind === 'anhaenger' ? `<span class="hint" id="tfkmtr">${esc(t('kmtr_hint'))}</span>` : ''}${d.last_km ? `<span class="hint" id="tfkmlast">${esc(t('irv_last_km').replace('{km}', fmtNum(d.last_km.km)).replace('{d}', fmtD(d.last_km.measured_at)))}</span>` : ''}</label><input id="tfkm" name="odometer_km" inputmode="numeric"><div id="tfkmd" aria-live="polite"></div><label>${esc(t('note'))}</label><input name="note" maxlength="1000">
       <input type="hidden" name="case_id"><p class="panel small" id="tfwo" hidden></p><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}</section>
-    ${d.history.length ? `<details class="panel" id="tirehistd"><summary>${esc(t('history'))} (${d.history.length}${d.history_truncated ? '+' : ''})</summary>${d.history_truncated ? `<p class="small muted" id="tiretrunc">${esc(t('tire_hist_truncated').replace('{n}', d.history.length))} <a href="${tlHash(id, 'tire')}">${esc(t('timeline'))}</a></p>` : ''}<div class="scroll"><table class="stack" id="tirehist"><thead><tr><th>${esc(t('date'))}</th><th>${esc(t('position'))}</th><th>${esc(t('kind'))}</th><th>${esc(t('audit_person'))}</th></tr></thead><tbody>${d.history.map((h) => `<tr><td class="small">${fmtDT(h.created_at)}</td><td>${esc(posL(h.position))}</td><td>${esc(t('te_' + h.event_type))}${h.tread_mm !== null ? ' · ' + esc(fmtMm(h.tread_mm)) : ''}${h.pressure_bar !== null ? ' · ' + esc(fmtBar(h.pressure_bar)) : ''}${h.size ? ' · ' + esc(h.size) : ''}${h.brand ? ' · ' + esc(h.brand) : ''}${h.winter_mark ? ' · ' + esc(t('wm_' + h.winter_mark)) : ''}${h.note ? '<br><span class="small muted">' + esc(h.note) + '</span>' : ''}</td><td class="small">${esc(pnm(h.recorded_by_name, h.recorded_by_name_hidden))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`;
+    ${d.history.length ? `<details class="panel" id="tirehistd"><summary>${esc(t('history'))} (${d.history.length}${d.history_truncated ? '+' : ''})</summary>${d.history_truncated ? `<p class="small muted" id="tiretrunc">${esc(t('tire_hist_truncated').replace('{n}', d.history.length))} <a href="${tlHash(id, 'tire')}">${esc(t('timeline'))}</a></p>` : ''}<div class="scroll"><table class="stack" id="tirehist"><thead><tr><th>${esc(t('date'))}</th><th>${esc(t('position'))}</th><th>${esc(t('kind'))}</th><th>${esc(t('audit_person'))}</th></tr></thead><tbody>${d.history.map((h) => `<tr><td class="small">${fmtDT(h.created_at)}</td><td>${esc(posL(h.position))}</td><td>${esc(t('te_' + h.event_type))}${h.tread_mm !== null ? ' · ' + esc(fmtMm(h.tread_mm)) : ''}${h.pressure_bar !== null ? ' · ' + esc(fmtBar(h.pressure_bar)) : ''}${h.size ? ' · ' + esc(h.size) : ''}${h.brand ? ' · ' + esc(h.brand) : ''}${h.winter_mark ? ' · ' + esc(t('wm_' + h.winter_mark)) : ''}${h.case ? ` · <span data-tecase>${h.case.id ? `<a href="#/cases/${esc(h.case.id)}">${esc(t('tc_order').replace('{no}', h.case.case_no))}</a>` : esc(t('tc_order').replace('{no}', h.case.case_no))}</span>` : ''}${h.note ? '<br><span class="small muted">' + esc(h.note) + '</span>' : ''}</td><td class="small">${esc(pnm(h.recorded_by_name, h.recorded_by_name_hidden))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}`;
   stackTables(el);
   const tf = $('#tf', el);
 
@@ -787,6 +789,15 @@ async function renderTires(id, el, keep = null) {
   if (tf) { tf.position.onchange = updSpec; tf.event_type.onchange = updSpec; updSpec(); if (keep && keep.wo) woMode = applyWo(); }
 
 
+  const csMode = tf && !woMode && keep && keep.cs && keep.cs.id ? keep.cs : null;
+  if (csMode) {
+    tf.closest('details').open = true; tf.case_id.value = csMode.id;
+    if (!keep.saved) tf.event_type.value = 'wechsel';
+    const n = $('#tfwo', tf); n.hidden = false; n.setAttribute('data-tfcase', ''); n.textContent = t('tf_case_for').replace('{no}', csMode.no || '');
+    updSpec();
+  }
+
+
 
   const twg = $('#tfwheelgo', el); if (twg) twg.onclick = () => {
     const txt = t('wheel_rt_text'); const box = $('#vnotes');
@@ -812,7 +823,7 @@ async function renderTires(id, el, keep = null) {
     try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/tires/events`, b, { timeoutMs: SEND_TIMEOUT_MS });   const wl = (r.warning_items && r.warning_items.length ? r.warning_items.map((w) => (['tread_below_min', 'spare_below_min'].includes(w.code) ? t(w.code).replace('{mm}', fmtNum(w.tread_mm)).replace('{min}', fmtNum(w.min_mm)) : w.code === 'tacho_check_possible' ? t('tacho_check_possible') : w.code === 'size_differs' ? t('size_differs').replace('{pos}', (w.positions || []).map(posL).join(', ')).replace('{size}', w.size).replace('{spec}', w.spec).replace('{axle}', t('axle_' + w.axle))   : w.code === 'tire_km_lower' ? t('tire_km_lower').replace('{km}', fmtNum(w.km)).replace('{prev}', fmtNum(w.prev_km)) : w.code === 'tread_rise' ? t('tread_rise').replace('{pos}', posL(w.position)).replace('{mm}', fmtNum(w.tread_mm)).replace('{prev}', fmtNum(w.prev_mm)).replace('{d}', fmtD(w.prev_at))   : '')).filter(Boolean) : r.warnings || []).filter(Boolean); if (wl.length) toast(wl.join(' · '), true);   if (!r.warnings || !r.warnings.length) toast(r.positions && r.positions.length > 1 ? '✓ ' + r.positions.map(posL).join(', ') : '✓');
       const ap = [...tf.position.options].map((o) => o.value); const nx = !b.positions && ap.indexOf(b.position) >= 0 ? ap[ap.indexOf(b.position) + 1] : null;
       if (b.event_type === 'wechsel' && !b.case_id) el.dataset.wheel = '1';
-      renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode }); }
+      renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode, ...(csMode ? { cs: csMode } : {}) }); }
     catch (err) { toast(err.message, true); }
   };
   offDayWatch($$('#woform input[name=planned_date]', el));

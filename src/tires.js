@@ -140,7 +140,10 @@ export async function tireOverview(env, user, envName, vehicleId) {
   // neuesten 200: Positionen mit älterem letzten Ereignis (z. B. Reserverad, Anhänger) fielen dann aus Akte und Winterstatus heraus,
   // während die Flottenübersicht sie zeigte.
   const [histRows, all, lastKm] = await Promise.all([
-    env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS recorded_by_role FROM tire_events t JOIN users u ON u.id=t.recorded_by
+    // Backlog 1605: Auftragsnummer zum Ereignis (Link nur bei Zugriff, `linkable`)
+    env.DB.prepare(`SELECT t.*, u.display_name AS recorded_by_name, CASE WHEN u.role='driver' OR u.was_driver=1 THEN 'driver' ELSE u.role END AS recorded_by_role,
+      cs.case_no AS case_no_, cs.status AS case_status_, cs.reporter_id AS case_rep_, cs.workshop_site AS case_ws_, cs.suggested_workshop_site AS case_sws_
+    FROM tire_events t JOIN users u ON u.id=t.recorded_by LEFT JOIN cases cs ON cs.id=t.case_id
     WHERE t.environment=? AND t.vehicle_id=? ORDER BY t.created_at DESC LIMIT ?`).bind(envName, vehicleId, TIRE_HIST_MAX + 1).all(),
     env.DB.prepare(`SELECT position, event_type, tread_mm, dot, winter_mark, size, created_at FROM tire_events WHERE environment=? AND vehicle_id=? ORDER BY created_at DESC`).bind(envName, vehicleId).all(),
     lastKmOf(env, vehicleId), // Backlog 828: Bezug für das km-Feld der Erfassung
@@ -152,7 +155,9 @@ export async function tireOverview(env, user, envName, vehicleId) {
     hideDriverName(user, e, 'recorded_by_name', 'recorded_by_role');
     if (user.role === 'driver' && e.recorded_by !== user.id) delete e.recorded_by;
     if (otherDriver) { e.recorded_by_name = null; e.recorded_by_name_hidden = true; }
-    return e;
+    const { case_no_: no, case_status_: st, case_rep_: rp, case_ws_: ws, case_sws_: sws, ...r } = e;
+    if (r.case_id && no) r.case = linkable(user, Object.defineProperty({ id: r.case_id, case_no: no }, 'acc', { value: { status: st, reporter_id: rp, workshop_site: ws, suggested_workshop_site: sws }, enumerable: false }));
+    return r;
   });
   const allEv = all.results;
   const latest = {};
@@ -220,8 +225,13 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.', { field_key: 'dot' });
   const caseId = body.case_id ? str(body.case_id, { key: 'case_id', max: 40, field: 'Vorgang' }) : null;
   if (caseId) {
-    const c = await env.DB.prepare('SELECT id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
+    const c = await env.DB.prepare('SELECT id, status, workshop_site, suggested_workshop_site, reporter_id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
+    // Backlog 1603 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag und erfasst ihn in der Reifenakte“): eine andere Werkstatt
+    // hängte den Wechsel an den Auftrag (Auftrag zeigte dann „Rad gewechselt“ und den Radmuttern-Hinweis), ebenso an abgelehnte/ohne Reparatur
+    // beendete Vorgänge – Werkstatt nur an Aufträge mit vollem Zugriff, niemand an abgelehnte Vorgänge
+    if (c.status === 'abgelehnt') throw bad('validation', 'Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.');
+    if (user.role === 'workshop' && caseAccess(user, c) !== 'full') throw bad('validation', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.');
   }
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung', { key: 'winter_mark' });
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);

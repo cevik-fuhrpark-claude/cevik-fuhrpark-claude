@@ -183,6 +183,8 @@ const V_MORE = [
   ['Werkstatt/Lager ist erforderlich.', 'Потрібно вказати майстерню/склад.', 'Workshop/store is required.'],
   ['Werkstatt ist für Rolle Werkstatt erforderlich.', 'Для ролі «Майстерня» потрібно вказати майстерню.', 'A workshop is required for the workshop role.'],
   ['Vorgang passt nicht zu diesem Fahrzeug.', 'Заявка не відповідає цьому транспорту.', 'The case does not match this vehicle.'],
+  ['Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.', 'Заявку відхилено або завершено без ремонту – внесіть шини без заявки.', 'The case was rejected or ended without repair – record the tyres without a case.'],
+  ['Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.', 'Замовлення не належить вашій майстерні – внесіть шини без заявки.', 'The order does not belong to your workshop – record the tyres without a case.'],
   ['Vertragsende muss nach dem Vertragsbeginn liegen.', 'Кінець договору має бути після його початку.', 'The contract end must be after the contract start.'],
   ['Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.', 'Документ договору: виберіть документ з архіву документів цього транспорту.', 'Contract document: please choose a document from this vehicle’s documents.'],
   ['Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.', 'Договір страхування: виберіть договір страхування цього транспорту.', 'Insurance contract: please choose an insurance contract of this vehicle.'],
@@ -1399,6 +1401,10 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1587: Räder/Reifen am Auftrag gewechselt – Radmuttern nachziehen (Hinweis im Abschluss-/Freigabeformular, Satz für den Abholvermerk)
 // Backlog 1588: Reifenwechsel ohne Auftrag in der Fahrzeugakte → Hinweis zum Fahrzeug für die Fahrer vorbereiten
 // Backlog 1591: eigene, als Dublette geschlossene Meldung („bereits gemeldet“ statt „abgelehnt“)
+// Backlog 1598/1600: Auftrag ohne Reparatur beenden – Termin entfällt, Lagerteile bleiben gebucht
+// Backlog 1601/1602: offene Rückrufe und gespeicherte Termine beim Außer-Betrieb-Nehmen bzw. bei der Rückkehr
+// Backlog 1604: Reifenwechsel aus dem Werkstattauftrag erfassen
+// Backlog 1605: Reifenwechsel am Auftrag / Auftrag in der Reifenakte
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -455,7 +455,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
       'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1),
       'wheel', EXISTS(SELECT 1 FROM tire_events te WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel')) AS qc_state` : '';
   // Backlog 1026: Name der übernehmenden Werkstattperson in derselben Abfrage (Abfragebudget Vorgangsdetail)
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name,
+      (SELECT json_group_array(json_object('position', x.position, 'size', x.size, 'dot', x.dot, 'winter_mark', x.winter_mark, 'created_at', x.created_at)) FROM (SELECT te.position, te.size, te.dot, te.winter_mark, te.created_at FROM tire_events te
+        WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel' ORDER BY te.created_at, te.position LIMIT 40) x) AS tire_changes FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
   const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null, workshop_ack_by_name: vq && c0.workshop_ack_by ? vq.ack_by_name || null : null };
   const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
@@ -555,6 +557,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
     maintenance_event: mevent || null,
     tire_winter: tireWinter,
     ...(wheelChanged ? { wheel_changed: true } : {}),
+    // Backlog 1605 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag“): mit Auftragsbezug erfasste Reifenwechsel (Position, Größe,
+    // DOT) – Leitung sieht bei Abschlusskontrolle/Freigabe und danach, was montiert wurde; gleiche Rollen wie Arbeiten/Teile (in derselben Abfrage)
+    ...(seesWork && vq && vq.tire_changes && JSON.parse(vq.tire_changes).length ? { tire_changes: JSON.parse(vq.tire_changes) } : {}),
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
@@ -1944,8 +1949,19 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (c.safety_lock) throw bad('withdraw_locked', 'Vorgang mit aktiver Sicherheitssperre kann nicht ohne Reparatur beendet werden. Zuerst Sperre fachlich aufheben (z. B. „Fahrzeug wird außer Betrieb genommen“).');
       const safetyOpenW = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen' AND safety_relevant=1`).bind(c.id).first();
       if (safetyOpenW.n > 0) throw bad('safety_items_open', 'Es gibt offene sicherheitsrelevante Restarbeiten.');
-      const openRest = await env.DB.prepare(`SELECT COUNT(*) AS n FROM open_items WHERE case_id=? AND status='offen'`).bind(c.id).first();
-      payload = { from_status: c.status, open_items_left: openRest.n };
+      // Backlog 1600: Lagerteile des Auftrags in derselben Abfrage zählen (bleiben gebucht – Hinweis im Verlauf, Bestand wird nicht zurückgebucht)
+      const openRest = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM open_items WHERE case_id=?1 AND status='offen') AS n,
+        (SELECT COUNT(*) FROM parts WHERE case_id=?1 AND stock_item_id IS NOT NULL) AS stock_n`).bind(c.id).first();
+      payload = { from_status: c.status, open_items_left: openRest.n, ...(openRest.stock_n ? { stock_parts_left: openRest.stock_n } : {}) };
+      // Backlog 1598 (Blickwinkel „Leitung beendet einen Auftrag ohne Reparatur, nachdem die Werkstatt schon einen Termin gesetzt und Teile
+      // entnommen hat“): Werkstatttermin entfällt (wie beim Werkstattwechsel; alter Wert im Verlauf) – lag er heute bis +7 Tage, erfahren auch die
+      // zugeordneten Fahrer es als „Werkstatttermin geändert“ (ohne Datum = entfernt); Melder/Disposition bekommen „ohne Reparatur beendet“
+      if (c.planned_date) {
+        payload.planned_date_before = c.planned_date; set.planned_date = null; set.planned_note = null;
+        if (c.planned_date >= berlinDate() && c.planned_date <= addDaysIso(berlinDate(), 7)) ackPlanNear = true;
+      }
+      // Backlog 1599: Liefertermin aus „wartet auf Teile“ endet mit (wie „Teile eingetroffen“) – Integrations-API lieferte ihn sonst am beendeten Auftrag
+      if (c.parts_expected_date) { payload.parts_expected_before = c.parts_expected_date; set.parts_expected_date = null; }
       toStatus = 'abgelehnt'; set.closed_at = now;
       // Backlog 609: bisherige Hinweise der Werkstatt zum Auftrag ausblenden (Link → „Vorgang nicht gefunden“), wie beim Werkstattwechsel; Melder behält sie
       if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL

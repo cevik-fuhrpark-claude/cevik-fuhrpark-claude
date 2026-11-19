@@ -18032,7 +18032,7 @@ await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): 
   eq(new Set(['de', 'uk', 'en'].map((l) => STRINGS[l].help_costs_s.split('|').length)).size, 1, 'Hilfe Kosten: gleiche Absatzzahl');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("\\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')]") && (app.match(/encodeURIComponent\(x\.vehicle_id\)\}\?sec=tires/g) || []).length >= 4, 'Reifen-/Winterlisten springen zum Abschnitt');
-  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode })") && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
+  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode, ...(csMode ? { cs: csMode } : {}) })") /* Backlog 1604: Auftragsbezug bleibt */ && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
   ok(app.includes("part=items`)") && app.includes('data-cinact'), 'Kosten: Knopf Einzelpositionen, Status-Chip');
 });
 
@@ -23176,7 +23176,7 @@ await test('Backlog 408 (Blickwinkel „Reifendienst wechselt an einem Tag die R
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const fn = app.slice(app.indexOf('const applyWo = () => {'), app.indexOf('let woMode = false;'));
   ok(fn.includes("tf.winter_mark.value = ''; tf.winter_mark.required = true;") && fn.includes("tf.event_type.value = bad0 ? 'wechsel' : 'sichtpruefung';") && fn.includes('tf.case_id.value = w.open_order && w.open_order.id') && !fn.includes('tf.size.value'), 'Vorbereitung ohne Vorgabe von Kennzeichnung/Größe');
-  ok(app.includes("$('#tfspecgo', tf).onclick = () => { tf.size.value = s.size;") && app.includes('?sec=wo" id="cwrec"') && app.includes("(vid) => viewVehicle(vid, null, 'wo')") && app.includes('wo: woMode }'), 'eingebunden');
+  ok(app.includes("$('#tfspecgo', tf).onclick = () => { tf.size.value = s.size;") && app.includes('?sec=wo" id="cwrec"') && app.includes("(vid) => viewVehicle(vid, null, 'wo')") && app.includes('wo: woMode, ...(csMode ? { cs: csMode } : {}) }'), 'eingebunden'); // Backlog 1604
   ok(app.includes("const posAxle = (p) => (/^VA/.test(p) ? 'lenkachse' : /^LA/.test(p) ? 'liftachse' : /^HA/.test(p) ? 'antriebsachse'"), 'Achszuordnung wie tire_specs');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['wo_rec', 'wo_rec_for', 'wo_rec_for_noorder', 'wo_rec_done', 'tfspec_hint', 'tfspec_take']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_tires_s.includes(STRINGS[l].wo_rec), 'Hilfe ' + l); }
@@ -45557,6 +45557,146 @@ await test('Backlog 1597: Kostenfreigabe durch geänderte Grenze aufgehoben → 
   // eigene Buchung der Werkstatt hebt die Markierung auf (Grenze 100, Teil 150 → Teil durch Fremdleistung ersetzt): Auslöser selbst ohne Hinweis
   const { revalidateCostMarks } = await import('../src/cases.js');
   ok(revalidateCostMarks.length >= 2 && /notifyCostCleared\(env, ctx, ids, actorId\)/.test(revalidateCostMarks.toString()), 'Auslöser wird übergeben');
+});
+
+await test('Backlog 1598–1600 (Blickwinkel „Leitung beendet einen Auftrag ohne Reparatur, nachdem die Werkstatt schon einen Termin gesetzt und Teile aus dem Lager entnommen hat“): Termin entfällt (Verlauf), naher Termin → zugeordnete Fahrer „Werkstatttermin geändert“ (ohne Datum, nie dringend); Liefertermin entfällt; Lagerteile im Verlauf gezählt, Bestand unverändert; Dialog nennt beides', async () => {
+  const { e, U, cmd, newCase, V1 } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'z.fahrer2', display_name: 'Fahrer Zwei', role: 'driver', environment: 'test', language: 'de' });
+  const F2 = new Client(worker, e, 'z.fahrer2'); await F2.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  eq((await U.fleet.post(`/api/vehicles/${V1}/drivers`, { user_id: x.data.id, evidence: 'Dienstplan' })).status, 201, 'Zuordnung');
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const pcOf = async (c, id) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed');
+  // 1) Termin morgen, Lagerteil entnommen, wartet auf Teile → ohne Reparatur beenden
+  const st = await U.ws.post('/api/stock', { name: 'Rückleuchte links', part_number: 'RL-1', unit_price_net: '40', initial_qty: 3 }); eq(st.status, 201);
+  const id = await newCase();
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(1) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id, 'start_repair')).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: st.data.id, quantity: 1 })).status, 200);
+  eq((await cmd(U.ws, id, 'wait_parts', { parts_expected_date: day(5) }, 'Glas bestellt')).status, 200);
+  const before = (await pcOf(F2, id)).length;
+  const r = await cmd(U.fleet, id, 'withdraw_order', {}, 'Fahrzeug wird verkauft'); eq(r.status, 200, JSON.stringify(r.data));
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data;
+  eq(d.case.status, 'abgelehnt'); eq(d.case.planned_date, null, 'Termin entfällt'); eq(d.case.parts_expected_date, null, 'Liefertermin entfällt');
+  const ev = d.events.find((q) => q.action === 'withdraw_order');
+  eq(ev.payload.planned_date_before, day(1)); eq(ev.payload.parts_expected_before, day(5)); eq(ev.payload.stock_parts_left, 1, 'Lagerteil gezählt');
+  eq((await U.ws.get('/api/stock')).data.items.find((i) => i.id === st.data.id).on_hand, 2, 'Bestand bleibt abgebucht (kein stilles Zurückbuchen)');
+  const pc = (await pcOf(F2, id)).slice(before); eq(pc.length, 1, 'zugeordneter Fahrer: „Werkstatttermin geändert“');
+  ok(!pc[0].urgent && !/\d{2}\.\d{2}\.\d{4}/.test(pc[0].body) && pc[0].case_id === null, 'ohne Datum, nicht dringend, ohne Link: ' + JSON.stringify(pc[0]));
+  ok((await U.driver.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && n.kind === 'withdrawn'), 'Melder wie bisher „ohne Reparatur beendet“');
+  ok(!(await U.driver.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && n.kind === 'plan_changed'), 'Melder kein zweiter Hinweis');
+  // 2) Termin in 20 Tagen bzw. ohne Termin → kein Fahrerhinweis, kein Lagerzähler
+  const n0 = (await pcOf(F2)).length;
+  const id2 = await newCase(); eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(20) }, 'Termin')).status, 200);
+  eq((await cmd(U.fleet, id2, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  const e2 = (await U.fleet.get(`/api/cases/${id2}`)).data; eq(e2.case.planned_date, null); ok(!('stock_parts_left' in e2.events.find((q) => q.action === 'withdraw_order').payload), 'ohne Lagerteile kein Zähler');
+  const id3 = await newCase(); eq((await cmd(U.fleet, id3, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.fleet, id3, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  eq((await pcOf(F2)).length, n0, 'weit weg/ohne Termin: kein Hinweis');
+  // 3) Oberfläche: Dialog und Verlauf, Texte in allen Sprachen
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="wdplan"') && app.includes('id="wdstock"') && app.includes("e.action === 'withdraw_order' && e.payload && (e.payload.planned_date_before || e.payload.stock_parts_left)"), 'Dialog/Verlauf');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['withdraw_plan', 'withdraw_stock', 'ev_wd_plan']) ok(STRINGS[l][k] && (k === 'withdraw_stock' ? STRINGS[l][k].includes('{n}') : STRINGS[l][k].includes('{d}')), `${l}.${k}`);
+});
+
+await test('Backlog 1601/1602 (Blickwinkel „Leitung nimmt einen Lkw mit offenen Terminen/Rückrufen außer Betrieb“): Außer-Betrieb-Nahme nennt offene Rückrufe (auch ohne Frist) und verstrichene, nicht eingetragene Termine; Rückkehr-Prüfung nennt offene Rückrufe sowie noch eingetragene künftige/verstrichene Termine; nichts wird geändert', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const rr = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Rückruf', evidence: 'Herstellerschreiben ohne Frist' }); eq(rr.status, 201, JSON.stringify(rr.data));
+  const uvv = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', interval_months: 12, last_done_date: day(-300), evidence: 'Prüfbuch' }); eq(uvv.status, 201, JSON.stringify(uvv.data));
+  eq((await U.fleet.post(`/api/maintenance/${uvv.data.id}/plan`, { planned_date: day(-2) })).status, 200, 'verstrichener Termin');
+  const off = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'verkauft' }); eq(off.status, 200, JSON.stringify(off.data));
+  eq(off.data.open_recalls, 1, 'offener Rückruf ohne Frist genannt'); eq(off.data.missed_appointments, 1, 'verstrichener Termin genannt'); eq(off.data.planned_appointments, 0, 'kein künftiger Termin');
+  const on = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: true }); eq(on.status, 200);
+  const rc = on.data.return_check; eq(rc.open_recalls, 1, 'Rückkehr: Rückruf'); eq(rc.missed_appointments, 1, 'Rückkehr: verstrichener Termin'); eq(rc.planned_appointments, 0);
+  // künftiger Termin, Rückruf erledigt → Rückkehr nennt den Termin, keinen Rückruf; nichts gelöscht
+  eq((await U.fleet.post(`/api/maintenance/${uvv.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  eq((await U.ws.post(`/api/maintenance/${rr.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Rechnung Rückruf' })).status, 200);
+  const off2 = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'abgemeldet' }); eq(off2.status, 200);
+  eq(off2.data.open_recalls, 0); eq(off2.data.missed_appointments, 0); eq(off2.data.planned_appointments, 1, 'künftiger Termin wie bisher');
+  const rc2 = (await U.fleet.post(`/api/vehicles/${V1}/active`, { active: true })).data.return_check;
+  eq(rc2.open_recalls, 0); eq(rc2.planned_appointments, 1, 'Termin lebt wieder auf – genannt'); eq(rc2.missed_appointments, 0);
+  ok((await U.fleet.get('/api/maintenance')).data.rows.some((x) => x.id === uvv.data.id && x.planned_date === day(3)), 'Termin unverändert gespeichert');
+  // Oberfläche: Bausteine in Toast und Rückkehr-Text, alle Sprachen mit Mehrzahlformen
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("tn('recalls_open_deact', r.open_recalls)") && app.includes("tn('missed_appt_deact', r.missed_appointments)") && app.includes("tn('rc_recalls', rc.open_recalls)") && app.includes("tn('rc_planned', rc.planned_appointments)") && app.includes("tn('rc_missed', rc.missed_appointments)"), 'Oberfläche nutzt die Zähler');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const k of ['recalls_open_deact', 'missed_appt_deact', 'rc_recalls', 'rc_planned', 'rc_missed']) {
+    for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), `${l}.${k}`);
+    ok(PLURALS.de[k].one && PLURALS.de[k].other && PLURALS.en[k].one && PLURALS.en[k].other && PLURALS.uk[k].one && PLURALS.uk[k].few && PLURALS.uk[k].many, 'Mehrzahl ' + k);
+  }
+});
+
+await test('Backlog 1603 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag und erfasst ihn in der Reifenakte“): Reifenereignis mit Auftragsbezug nur an Aufträge der eigenen Werkstatt (voller Zugriff) und nie an abgelehnte/ohne Reparatur beendete Vorgänge; ohne Bezug weiter erlaubt; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase, toRepair, V1 } = await freshWorld();
+  const id = await toRepair();
+  const ev = (c, b) => c.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', size: '315/70 R22.5', request_key: rk(), ...b });
+  const m = await ev(U.wsMuc, { case_id: id }); eq(m.status, 400, 'andere Werkstatt: abgewiesen'); ok(/nicht zu Ihrer Werkstatt/.test(m.data.message || m.data.error_message || JSON.stringify(m.data)), JSON.stringify(m.data));
+  ok(!(await U.fleet.get(`/api/cases/${id}`)).data.wheel_changed, 'Auftrag zeigt keinen fremden Wechsel');
+  eq((await ev(U.wsMuc, {})).status, 201, 'ohne Auftragsbezug weiter erlaubt');
+  eq((await ev(U.ws, { case_id: id })).status, 201, 'eigene Werkstatt mit Auftrag');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.wheel_changed, true);
+  // gemeldeter Vorgang (Vorschau) für die Werkstatt nicht, für die Leitung schon
+  const g = await newCase(); eq((await ev(U.ws, { case_id: g })).status, 400, 'Werkstatt: gemeldeter Vorgang (nur Vorschau)');
+  eq((await ev(U.fleet, { case_id: g })).status, 201, 'Leitung: gemeldeter Vorgang');
+  // abgelehnt bzw. ohne Reparatur beendet: niemand
+  const r = await newCase(); eq((await cmd(U.fleet, r, 'reject', {}, 'Testdaten')).status, 200);
+  const x = await ev(U.fleet, { case_id: r }); eq(x.status, 400, 'abgelehnt: abgewiesen'); ok(/abgelehnt bzw\. ohne Reparatur beendet/.test(JSON.stringify(x.data)), JSON.stringify(x.data));
+  const w = await toRepair(); eq((await cmd(U.fleet, w, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  eq((await ev(U.ws, { case_id: w })).status, 400, 'ohne Reparatur beendet: abgewiesen');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const t of ['Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.']) ok(src.includes(`['${t}', '`), 'Übersetzung ' + t);
+});
+
+await test('Backlog 1604 (Folge aus 1603): Werkstattauftrag mit Reifenbezug bietet „Reifenwechsel zu diesem Auftrag erfassen ›“ (Akte, Abschnitt Reifen, mit Auftragsbezug für die ganze Erfassungsreihe); nur bei vollem Zugriff in Arbeit, nicht beim Winterauftrag; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("[/^#\\/vehicles\\/(VIN:[A-Z0-9]+)\\?sec=tires&case=([\\w-]+)&no=([\\w-]+)$/, (vid, cid, no) => viewVehicle(vid, null, 'tires', { id: cid, no })]"), 'Route');
+  ok(app.includes("async function viewVehicle(id, focusEv = null, sec = null, tcase = null) {") && app.includes("{ open: true, ...(tcase ? { cs: tcase } : {}) }"), 'Akte reicht den Auftrag weiter');
+  ok(app.includes("const csMode = tf && !woMode && keep && keep.cs && keep.cs.id ? keep.cs : null;") && app.includes("tf.case_id.value = csMode.id;") && app.includes("wo: woMode, ...(csMode ? { cs: csMode } : {}) });"), 'Formular mit Auftragsbezug, bleibt nach dem Speichern');
+  const line = app.split('\n').find((l) => l.includes('id="ctires"'));
+  ok(line && line.includes("!d.tire_winter && d.access === 'full' && (d.wheel_changed || TIRE_WORDS.test(String(c.description || '')))") && line.includes("['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status)") && line.includes('?sec=tires&case=${esc(c.id)}&no=${esc(c.case_no)}'), 'Link im Vorgang');
+  const tw = new RegExp(app.match(/\nconst TIRE_WORDS = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Reifen platt hinten links', 'Rad verloren', 'Räder wackeln', 'flat tyre rear left', 'tire blown', 'спущене колесо', 'пробита шина']) ok(tw.test(x), 'Reifenbezug: ' + x);
+  for (const x of ['Rückleuchte defekt', 'Bremse quietscht', 'Radio defekt', 'Fahrradträger lose']) ok(!tw.test(x), 'kein Reifenbezug: ' + x);
+  // Auftragsnummern passen auf das Routenmuster
+  const re = /^#\/vehicles\/(VIN:[A-Z0-9]+)\?sec=tires&case=([\w-]+)&no=([\w-]+)$/;
+  ok(re.test('#/vehicles/VIN:WMA15SZZ2HM722774?sec=tires&case=3f2a9c1e-1b2c-4d5e-8f90-123456789abc&no=T-2026-0042'), 'Muster');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].tf_case_link, 'tf_case_link ' + l); ok(STRINGS[l].tf_case_for && STRINGS[l].tf_case_for.includes('{no}'), 'tf_case_for ' + l); }
+});
+
+await test('Backlog 1605 (Folge aus 1603/1604): Vorgang nennt die mit Auftragsbezug erfassten Reifenwechsel (Position, Größe, DOT; Leitung/ausführende Werkstatt, auch nach Freigabe, nicht Fahrer/Betrachter/Disposition); Reifenakte nennt den Auftrag (Link nur bei Zugriff)', async () => {
+  const { U, cmd, toRepair, V1 } = await freshWorld();
+  const id = await toRepair(); const no = (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  ok(!('tire_changes' in (await U.fleet.get(`/api/cases/${id}`)).data), 'ohne Wechsel kein Feld');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 9, case_id: id, request_key: rk() })).status, 201);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', size: '315/70 R22.5', dot: '2324', case_id: id, request_key: rk() })).status, 201);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-R', size: '385/65 R22.5', request_key: rk() })).status, 201, 'ohne Auftrag');
+  const tc = (await U.fleet.get(`/api/cases/${id}`)).data.tire_changes;
+  eq(tc.length, 1, 'nur Wechsel mit Auftragsbezug'); eq(tc[0].position, 'HA-L-aussen'); eq(tc[0].size, '315/70 R22.5'); eq(tc[0].dot, '2324');
+  eq((await U.ws.get(`/api/cases/${id}`)).data.tire_changes.length, 1, 'ausführende Werkstatt');
+  const dr = await U.driver.get(`/api/cases/${id}`); if (dr.status === 200) ok(!('tire_changes' in dr.data), 'Fahrer nicht');
+  ok(!('tire_changes' in (await U.viewer.get(`/api/cases/${id}`)).data), 'Betrachter nicht');
+  ok(!('tire_changes' in (await U.wsMuc.get(`/api/cases/${id}`)).data), 'andere Werkstatt nicht');
+  // nach Freigabe weiter sichtbar
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Reifen gewechselt' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  { const r = await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(r.status, 200, JSON.stringify(r.data)); }
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.tire_changes.length, 1, 'nach Freigabe');
+  // Reifenakte: Auftrag am Ereignis, Link nur bei Zugriff
+  const h = (c) => c.get(`/api/vehicles/${V1}/tires`).then((r) => r.data.history);
+  const hf = (await h(U.fleet)).find((x) => x.position === 'HA-L-aussen' && x.event_type === 'wechsel');
+  eq(JSON.stringify(hf.case), JSON.stringify({ id, case_no: no }), 'Leitung: Nummer mit Link');
+  ok(!('case_no_' in hf) && !('case_status_' in hf), 'keine Hilfsspalten');
+  const hm = (await h(U.wsMuc)).find((x) => x.position === 'HA-L-aussen' && x.event_type === 'wechsel');
+  eq(JSON.stringify(hm.case), JSON.stringify({ case_no: no }), 'andere Werkstatt: nur Nummer');
+  ok(!(await h(U.fleet)).find((x) => x.position === 'VA-R').case, 'ohne Auftrag kein Bezug');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="ctirech"') && app.includes('data-tecase'), 'Anzeige in Vorgang und Reifenakte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].tc_title, 'tc_title ' + l); ok(STRINGS[l].tc_order.includes('{no}'), 'tc_order ' + l); }
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
