@@ -2426,7 +2426,7 @@ function qChip(c) { return c.q_state ? ` · <span class="chip ${c.q_state === 'o
 function rejBox(c, d) {
   if (c.status !== 'abgelehnt' || isWithdrawn(c) || c.reporter_id !== S.me.id || isMgr()) return '';
   const rj = (d.events || []).filter((e) => e.action === 'reject'); const ev = rj[rj.length - 1];
-  return `<div class="panel" id="rejbox"><b>${esc(t('rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(ev.note)}>${esc(ev.note)}</p>` : ''}<p class="small muted" style="margin:0">${esc(t('rej_box_s'))}</p></div>`;
+  return `<div class="panel" id="rejbox"><b>${esc(t('rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(stdTx(ev.note))}>${esc(stdTx(ev.note))}</p>` : ''}<p class="small muted" style="margin:0">${esc(t('rej_box_s'))}</p></div>`;
 }
 function qBanner(c) {
   if (!c.q_state) return '';
@@ -7154,7 +7154,10 @@ const langAttr = (s) => { const l = freeLang(s); return l === null ? '' : ` lang
 // (nur wörtlich, Reihenfolge de/uk/en) in die Sprache der lesenden Person übertragen; übriger Freitext bleibt unverändert. Gespeichert bleibt das Original.
 // Texte = `wheel_rt_text` in public/i18n.js (Test „Backlog 1589“ prüft Gleichheit).
 const STD_SENT = [['Räder wurden gewechselt: Radmuttern nach Herstellervorgabe nachziehen lassen.', 'Колеса замінено: підтягнути колісні гайки згідно з вимогами виробника.', 'Wheels were changed: have the wheel nuts re-torqued as specified by the manufacturer.']];
-const stdTx = (s) => { let x = String(s ?? ''); const i = ['de', 'uk', 'en'].indexOf(S.lang); if (i < 0) return x; for (const row of STD_SENT) for (const from of row) if (from !== row[i] && x.includes(from)) x = x.split(from).join(row[i]); return x; };
+// Backlog 1590 (Blickwinkel „Ukrainischer Fahrer liest, warum seine Meldung als Dublette abgelehnt wurde“): Beim Ablehnen setzt die App
+// „Dublette von <Nr>“ (`dup_of`) in den Grund – nur am Textanfang in die Sprache der lesenden Person (Ablehnungskasten, Verlauf). Test prüft Gleichheit mit `dup_of`.
+const STD_PRE = [['Dublette von ', 'Дублікат ', 'Duplicate of ']];
+const stdTx = (s) => { let x = String(s ?? ''); const i = ['de', 'uk', 'en'].indexOf(S.lang); if (i < 0) return x; for (const row of STD_SENT) for (const from of row) if (from !== row[i] && x.includes(from)) x = x.split(from).join(row[i]); for (const row of STD_PRE) for (const from of row) if (from !== row[i] && x.startsWith(from) && /^\S/.test(x.slice(from.length))) { x = row[i] + x.slice(from.length); break; } return x; };
 // Freitext escapen und – nur wenn er nicht in der Oberflächensprache steht – in <span lang> einschließen
 const ltxt = (s) => { const a = langAttr(s); return a ? `<span${a}>${esc(s)}</span>` : esc(s); };
 
@@ -10551,6 +10554,7 @@ function evNote(e) {
     if ((a = n.match(/^Mängelbeseitigung aus ([^:]{1,40}?) vom (\d{2})\.(\d{2})\.(\d{4})(?:: ([\s\S]*))?$/))) return t('ev_order_defects').replace('{k}', mk(a[1])).replace('{d}', fmtD(`${a[4]}-${a[3]}-${a[2]}`)) + (a[5] ? ': ' + a[5] : '');
     if ((a = n.match(/^Auftrag Winterreifen(?:: ([\s\S]*))?$/))) return t('ev_order_winter') + (a[1] ? ': ' + a[1] : '');
   }
+  if (e.action === 'reject') return stdTx(n); // Backlog 1590: „Dublette von <Nr>“ in der Oberflächensprache
   if (e.action !== 'inspection') return n;
   const m = n.match(/^(?:(\d+) Mangel\/Mängel festgestellt|Kontrolle ohne Mängel)(?: · km-Stand (\d+) (?:größer als später erfasst \((\d+)\)|kleiner als zuletzt erfasst \((\d+)\)) – nicht in die Fahrzeugakte übernommen)?$/);
   if (!m) return n;

@@ -45264,8 +45264,8 @@ await test('Backlog 1588 (Blickwinkel „Reifenwechsel ohne Auftrag – Radmutte
 await test('Backlog 1589 (Blickwinkel „Ukrainischer Fahrer liest den deutschen Radmuttern-Hinweis“): Standardsatz aus Abholvermerk/Hinweis zum Fahrzeug erscheint in der Sprache der lesenden Person, Freitext bleibt unverändert, gespeichert bleibt das Original', async () => {
   const { STRINGS } = await import('../public/i18n.js');
   const fs = fs0(); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const l1 = app.match(/^const STD_SENT = .*;$/m), l2 = app.match(/^const stdTx = .*;$/m); ok(l1 && l2, 'STD_SENT/stdTx in app.js');
-  const S = { lang: 'de' }; const stdTx = new Function('S', `${l1[0]}\n${l2[0]}\nreturn stdTx;`)(S);
+  const l1 = app.match(/^const STD_SENT = .*;$/m), l2 = app.match(/^const stdTx = .*;$/m), l3 = app.match(/^const STD_PRE = .*;$/m); ok(l1 && l2 && l3, 'STD_SENT/STD_PRE/stdTx in app.js');
+  const S = { lang: 'de' }; const stdTx = new Function('S', `${l1[0]}\n${l3[0]}\n${l2[0]}\nreturn stdTx;`)(S);
   const sent = new Function(`${l1[0]}\nreturn STD_SENT;`)();
   eq(JSON.stringify(sent[0]), JSON.stringify(['de', 'uk', 'en'].map((l) => STRINGS[l].wheel_rt_text)), 'Satz = wheel_rt_text DE/UK/EN');
   const de = STRINGS.de.wheel_rt_text, uk = STRINGS.uk.wheel_rt_text, en = STRINGS.en.wheel_rt_text;
@@ -45284,6 +45284,41 @@ await test('Backlog 1589 (Blickwinkel „Ukrainischer Fahrer liest den deutschen
   const { U, V1 } = await freshWorld();
   const n = await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: de, for_driver: true, valid_until: null, request_key: 'rk1589' }); eq(n.status, 201, JSON.stringify(n.data));
   ok((await U.fleet.get(`/api/vehicles/${V1}/notes`)).data.notes.some((x) => x.text === de), 'Original gespeichert');
+});
+
+await test('Backlog 1590 (Blickwinkel „Ukrainischer Fahrer liest, warum seine Meldung als Dublette abgelehnt wurde“): „Dublette von <Nr>“ am Anfang des Ablehnungsgrunds erscheint in der Sprache der lesenden Person (Ablehnungskasten, Verlauf), übriger Text und gespeichertes Original bleiben', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = fs0(); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const l1 = app.match(/^const STD_SENT = .*;$/m), l2 = app.match(/^const stdTx = .*;$/m), l3 = app.match(/^const STD_PRE = .*;$/m); ok(l1 && l2 && l3, 'STD_SENT/STD_PRE/stdTx in app.js');
+  const S = { lang: 'de' }; const stdTx = new Function('S', `${l1[0]}\n${l3[0]}\n${l2[0]}\nreturn stdTx;`)(S);
+  const pre = new Function(`${l3[0]}\nreturn STD_PRE;`)();
+  eq(JSON.stringify(pre[0]), JSON.stringify(['de', 'uk', 'en'].map((l) => STRINGS[l].dup_of + ' ')), 'Vorsatz = dup_of DE/UK/EN (wie das Formular ihn einsetzt)');
+  const cs = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(cs.includes('note = `Dublette von ${o.case_no}`'), 'Server-Vorgabe ohne Grund = deutscher Vorsatz');
+  ok(app.includes("ta.value = `${t('dup_of')} ${o.textContent.split(' · ')[0]}`"), 'Formular setzt dup_of + Leerzeichen + Nummer');
+  const no = 'V-2026-0042';
+  S.lang = 'uk'; eq(stdTx(`Dublette von ${no}`), `Дублікат ${no}`, 'deutscher Grund → ukrainisch');
+  eq(stdTx(`Dublette von ${no} – gleicher Spiegel, Fotos dort`), `Дублікат ${no} – gleicher Spiegel, Fotos dort`, 'ergänzter Freitext bleibt');
+  eq(stdTx(`Duplicate of ${no}`), `Дублікат ${no}`); eq(stdTx(`Дублікат ${no}`), `Дублікат ${no}`, 'eigene Sprache unverändert');
+  S.lang = 'en'; eq(stdTx(`Дублікат ${no}`), `Duplicate of ${no}`); eq(stdTx(`Dublette von ${no}`), `Duplicate of ${no}`);
+  S.lang = 'de'; eq(stdTx(`Duplicate of ${no}`), `Dublette von ${no}`);
+  eq(stdTx(`Keine Dublette von ${no}`), `Keine Dublette von ${no}`, 'nur am Textanfang'); eq(stdTx('Duplicate of '), 'Duplicate of ', 'ohne Nummer unverändert');
+  eq(stdTx(`Gleicher Schaden. Duplicate of ${no}`), `Gleicher Schaden. Duplicate of ${no}`, 'mitten im Text unverändert');
+  S.lang = 'en'; const de = STRINGS.de.wheel_rt_text; eq(stdTx(`Dublette von ${no}. ${de}`), `Duplicate of ${no}. ${STRINGS.en.wheel_rt_text}`, 'Satz und Vorsatz zusammen');
+  S.lang = 'xx'; eq(stdTx(`Dublette von ${no}`), `Dublette von ${no}`, 'unbekannte Sprache: unverändert');
+  // Anzeigestellen: Ablehnungskasten des Melders und Verlauf (evNote für reject)
+  ok(app.includes('<p style="white-space:pre-wrap;margin:6px 0"${langAttr(stdTx(ev.note))}>${esc(stdTx(ev.note))}</p>'), 'Ablehnungskasten überträgt');
+  const src = app.slice(app.indexOf('function evNote(e) {'), app.indexOf('\n}\n', app.indexOf('function evNote(e) {')) + 2);
+  S.lang = 'uk'; const evNote = new Function('t', 'tn', 'fmtNum', 'stdTx', src + '\nreturn evNote;')((k) => `[${k}]`, (k, n) => `[${k}:${n}]`, (n) => String(n), stdTx);
+  eq(evNote({ action: 'reject', note: `Dublette von ${no}`, payload: { duplicate_of: 'x' } }), `Дублікат ${no}`, 'Verlauf: reject übertragen');
+  eq(evNote({ action: 'comment', note: `Dublette von ${no}`, payload: null }), `Dublette von ${no}`, 'Kommentare bleiben wörtlich');
+  // Server speichert unverändert (Original bleibt maßgeblich), auch wenn die Leitung auf Ukrainisch ablehnt
+  const { U, newCase } = await freshWorld();
+  const orig = await newCase(); const dup = await newCase(); const dup2 = await newCase();
+  const oc = (await U.fleet.get(`/api/cases/${orig}`)).data.case;
+  const rej = async (id, note) => { const c = (await U.fleet.get(`/api/cases/${id}`)).data.case; return U.fleet.post(`/api/cases/${id}/commands`, { action: 'reject', command_id: rk(), expected_version: c.version, note, payload: { duplicate_of: orig } }); };
+  eq((await rej(dup, null)).status, 200); eq((await U.fleet.get(`/api/cases/${dup}`)).data.events.at(-1).note, `Dublette von ${oc.case_no}`, 'Server-Vorgabe deutsch gespeichert');
+  eq((await rej(dup2, `Дублікат ${oc.case_no}`)).status, 200); eq((await U.fleet.get(`/api/cases/${dup2}`)).data.events.at(-1).note, `Дублікат ${oc.case_no}`, 'ukrainischer Grund unverändert gespeichert');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
