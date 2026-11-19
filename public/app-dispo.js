@@ -21,7 +21,8 @@ async function dispoHome(cases) {
   const [dcs, dmo, dvs] = await Promise.all([cases === null ? [] : api('GET', '/api/cases?status=open&limit=500' + (hq ? '&vsite=' + hq : '')).then((r) => r.cases).catch(() => []), cases === null ? null : api('GET', '/api/maintenance' + (hq ? '?site=' + hq : '')).catch(() => null),
     cases === null ? [] : api('GET', '/api/vehicles').then((r) => r.vehicles).catch(() => [])]);
   html += dispoBoard(dcs, dmo && dmo.defects_without_case ? dmo.defects_without_case : [], new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
-  if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));
+
+  if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), dvs.length ? new Set(dvs.map((v) => v.id)) : null, new Set(dvs.filter((v) => v.eval_excluded).map((v) => v.id)));
   html += dispoApw(dcs);
 
 
@@ -127,7 +128,11 @@ function dueSoonPlan(r, due, today) {
 
 
 const cpState = (cp) => (cp && ['werkstatt', 'gesperrt'].includes(cp.availability) ? `<b data-cpstate>⚠ 🔗 ${esc(t('vk_' + cp.kind))} ${esc(cp.plate)}: ${esc(t('av_' + cp.availability))}</b>` : '');
-async function dispoBack(open, hq = '', cpl = new Map()) {
+
+
+
+
+async function dispoBack(open, hq = '', cpl = new Map(), act = null, dormant = new Set()) {
   let rows;
   try { rows = (await api('GET', `/api/cases?status=fahrzeug_freigegeben&sort=updated&limit=${DISPO_BACK_LIMIT}${hq ? '&vsite=' + hq : ''}`)).cases; } catch { return ''; }
 
@@ -137,16 +142,18 @@ async function dispoBack(open, hq = '', cpl = new Map()) {
 
 
   const today0 = bDate(); const blocked = new Set(open.filter((c) => dispoBlocks(c, today0)).map((c) => c.vehicle_id));
+  const newOpen = new Map(); for (const c of open) if (!dispoBlocks(c, today0) && !dispoUpcoming(c, today0)) newOpen.set(c.vehicle_id, [...(newOpen.get(c.vehicle_id) || []), c]);
+  const dbNew = (vid) => { const l = newOpen.get(vid); return l ? ` · <b data-dbnew>⚠ ${esc(t('av_meldung_offen'))}: ${l.map((x) => esc(x.case_no)).join(', ')}${l.some((x) => x.reported_driveability === 'eingeschraenkt') ? ' – ' + esc(t('dispo_upcoming_limited')) : ''}</b>` : ''; };
   const byV = new Map();
   for (const c of rows) {
-    if (!c.closed_at || BERLIN_FMT.format(new Date(c.closed_at)) < from || blocked.has(c.vehicle_id)) continue;
+    if (!c.closed_at || BERLIN_FMT.format(new Date(c.closed_at)) < from || blocked.has(c.vehicle_id) || (act && !act.has(c.vehicle_id))) continue;
     const cur = byV.get(c.vehicle_id); if (!cur || c.closed_at > cur.closed_at) byV.set(c.vehicle_id, c);
   }
 
   const more = rows.length >= DISPO_BACK_LIMIT && rows.length && BERLIN_FMT.format(new Date(rows[rows.length - 1].updated_at)) >= from;
   const list = [...byV.values()].sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)));
   if (!list.length) return '';
-  return `<h2 id="dback">${esc(from === bDate(-1) ? t('dispo_back') : t('dispo_back_since').replace('{d}', fmtD(from)))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span><span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${cpState(cpl.get(c.vehicle_id)) ? ' · ' + cpState(cpl.get(c.vehicle_id)) : ''}${c.open_items > 0 ? ` · <b data-dbitems style="white-space:nowrap">${esc(tn('rc_open_items', c.open_items))}</b> (${esc(t('dback_ns'))})` : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(stdTx(c.pickup_note))}>${esc(clipTxt(stdTx(c.pickup_note), 120))}</span>` : ''}</span></a>`).join('')}</div>`;
+  return `<h2 id="dback">${esc(from === bDate(-1) ? t('dispo_back') : t('dispo_back_since').replace('{d}', fmtD(from)))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span>${dormant.has(c.vehicle_id) ? ` <span class="chip" data-dormant>${esc(t('eval_excluded'))}</span>` : ''}<span class="sub wrap">${esc(c.case_no)}${dbNew(c.vehicle_id)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${cpState(cpl.get(c.vehicle_id)) ? ' · ' + cpState(cpl.get(c.vehicle_id)) : ''}${c.open_items > 0 ? ` · <b data-dbitems style="white-space:nowrap">${esc(tn('rc_open_items', c.open_items))}</b> (${esc(t('dback_ns'))})` : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(stdTx(c.pickup_note))}>${esc(clipTxt(stdTx(c.pickup_note), 120))}</span>` : ''}</span></a>`).join('')}</div>`;
 }
 
 

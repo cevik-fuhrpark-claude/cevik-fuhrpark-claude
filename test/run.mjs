@@ -24570,7 +24570,7 @@ await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher
     ok(STRINGS[lang].help_dispo_s.includes(STRINGS[lang].dispo_back) && STRINGS[lang].help_dispo_s.includes(STRINGS[lang].pu_title), lang + ': Hilfe Disposition');
   }
   eq(await run('de')(open.concat([{ vehicle_id: (await D.get(`/api/cases/${a}`)).data.case.vehicle_id, status: 'gemeldet', safety_lock: 1 }]), ''), '', 'gesperrt durch neue Meldung → nicht wieder einsatzbereit');
-  ok(app.includes("if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])));") /* Backlog 1080: Gespann-Zustand */, 'Startseite Disposition ruft den Abschnitt auf');
+  ok(app.includes("if (cases !== null) html += await dispoBack(dcs, hq, new Map(dvs.filter((v) => v.coupled).map((v) => [v.id, v.coupled])), dvs.length") /* Backlog 1080: Gespann-Zustand; 1608: Fahrzeuge in Betrieb/ruhende */, 'Startseite Disposition ruft den Abschnitt auf');
   void b;
 });
 
@@ -45730,6 +45730,32 @@ await test('Backlog 1606/1607 (Blickwinkel „Leitung verlangt einen kleineren R
   eq((await cmd(U.fleet, id, 'approve_costs', {}, 'nur Bremse, Stoßfänger nicht')).status, 200);
   const evW = (await U.ws.get(`/api/cases/${id}`)).data.events.find((x) => x.action === 'approve_costs');
   ok(evW && !JSON.stringify(evW).includes('Stoßfänger nicht'), 'Werkstatt sieht den Freigabevermerk nicht: ' + JSON.stringify(evW));
+});
+
+await test('Backlog 1608/1609 (Blickwinkel „Disposition sucht morgens ein Ersatzfahrzeug“): „Wieder einsatzbereit“ nur für Fahrzeuge in Betrieb, ruhende mit Chip; neue offene Meldung ohne Sperre steht als „Meldung offen: <Nr.>“ in der Zeile (eingeschränkt fahrbereit benannt)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('const DISPO_BLOCK_ST'); const src = app.slice(i0, app.indexOf('\nfunction dispoCases(', i0));
+  const { STRINGS } = await import('../public/i18n.js'); const { federalHoliday } = await import('../public/holidays.js');
+  const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  const T0 = '2026-11-18'; const bDate = (n = 0) => new Date(Date.parse(T0 + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const rel = { id: 'c1', case_no: 'V-1', vehicle_id: 'v1', plate: 'SZ-YC 5513', status: 'fahrzeug_freigegeben', closed_at: bDate(-1) + 'T09:00:00Z', updated_at: bDate(-1) + 'T09:00:00Z', pickup_note: '', open_items: 0 };
+  const { dispoBack } = new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', 'federalHoliday', 'fmtD', 'stdTx', 'tn', src + '\nreturn { dispoBack };')(
+    async () => ({ cases: [rel] }), bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS.de[k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '', federalHoliday, (v) => v, (v) => String(v ?? ''), (k, n) => String(n));
+  // 1608: außer Betrieb (nicht in der Fahrzeugliste) → nicht gezeigt; ohne Liste (null) wie bisher; ruhend → Chip
+  ok((await dispoBack([], '', new Map(), null)).includes('data-dback'), 'ohne Fahrzeugliste wie bisher');
+  ok(!(await dispoBack([], '', new Map(), new Set(['v2']))).includes('data-dback'), 'außer Betrieb: nicht wieder einsatzbereit');
+  const dm = await dispoBack([], '', new Map(), new Set(['v1']), new Set(['v1']));
+  ok(dm.includes('data-dback') && dm.includes('data-dormant') && dm.includes(STRINGS.de.eval_excluded), 'ruhend gekennzeichnet');
+  ok(!(await dispoBack([], '', new Map(), new Set(['v1']), new Set())).includes('data-dormant'), 'in Betrieb ohne Chip');
+  // 1609: neue Meldung ohne Sperre → Zeile bleibt, mit Hinweis und Vorgangsnummer
+  const h = await dispoBack([{ vehicle_id: 'v1', case_no: 'V-9', status: 'gemeldet', reported_driveability: 'eingeschraenkt' }], '');
+  ok(h.includes('data-dback') && h.includes('data-dbnew') && h.includes('V-9') && h.includes(STRINGS.de.av_meldung_offen) && h.includes(STRINGS.de.dispo_upcoming_limited), h);
+  const h2 = await dispoBack([{ vehicle_id: 'v1', case_no: 'V-8', status: 'gemeldet' }], '');
+  ok(h2.includes('data-dbnew') && h2.includes('V-8') && !h2.includes(STRINGS.de.dispo_upcoming_limited), 'ohne Fahrbarkeitsangabe');
+  ok(!(await dispoBack([{ vehicle_id: 'v1', case_no: 'V-7', status: 'werkstatt_freigegeben', planned_date: bDate(5) }], '')).includes('data-dbnew'), 'späterer Werkstatttermin: eigener Abschnitt, kein Zusatz');
+  ok(!(await dispoBack([{ vehicle_id: 'v2', case_no: 'V-6', status: 'gemeldet' }], '')).includes('data-dbnew'), 'anderes Fahrzeug: kein Zusatz');
+  // Aufruf in dispoHome übergibt Fahrzeuge in Betrieb und ruhende
+  ok(/dispoBack\(dcs, hq, [^\n]*dvs\.length \? new Set\(dvs\.map\(\(v\) => v\.id\)\) : null, new Set\(dvs\.filter\(\(v\) => v\.eval_excluded\)/.test(app), 'Aufruf');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
