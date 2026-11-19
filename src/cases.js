@@ -1569,7 +1569,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   let noWorkshopUser = false; let externalWs = false; // Backlog 386: Werkstatt „EXTERN“ ohne Konto – Hinweis statt Warnung // Reparatur an eine Werkstatt ohne aktives Konto freigegeben (Antwort-Hinweis, 23.10.2026)
   let stockGuardItem = null; // Lagerentnahme mit Bestandsprüfung im Stapel (Fehlerbild unterscheiden)
   const extra = []; // zusätzliche Statements in derselben Transaktion
-  let notifyKind = null; let ackPlanNear = false; // Backlog 1594
+  let notifyKind = null; let ackPlanNear = false; // Backlog 1594/1595: naher Termin bei Übernahme geändert bzw. mit Werkstattwechsel entfallen
 
   const requireNote = (msg) => { if (!note || note.length < 3) throw bad('note_required', msg); };
   // Backlog 1033: Lieferschein (Foto/PDF) zu „Teillieferung eingegangen“ bzw. „Reparatur fortsetzen“ – optional eine Datei dieses Vorgangs derselben Umgebung
@@ -1876,6 +1876,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // der Hinweis „an andere Werkstatt übergeben“ entsteht danach neu
       if (c.workshop_site) extra.push(env.DB.prepare(`UPDATE notifications SET hidden_at=? WHERE case_id=? AND hidden_at IS NULL
         AND user_id IN (SELECT id FROM users WHERE role='workshop' AND workshop_site=?) AND user_id<>?`).bind(now, c.id, c.workshop_site, c.reporter_id || '')); // Melder behält seine Hinweise (Lesezugriff)
+      // Backlog 1595 (Blickwinkel „Disponentin hat den Lkw für morgen als ‚in der Werkstatt‘ eingeplant, die Leitung wechselt heute die Werkstatt
+      // und der Termin entfällt“): gleiche Regel wie „Termin entfernen“ (Backlog 460) – lag der Termin heute bis +7 Tage, erfahren Disposition,
+      // Melder und zugeordnete Fahrer es als „Werkstatttermin geändert“ (ohne Datum = entfernt)
+      if (c.planned_date && c.planned_date >= berlinDate() && c.planned_date <= addDaysIso(berlinDate(), 7)) ackPlanNear = true;
       notifyKind = 'reassigned';
       break;
     }
@@ -2215,7 +2219,10 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         payload = { winter_status: w.status, ...(!['erfuellt', 'nicht_pflichtig'].includes(w.status) ? { winter_open_confirmed: true, noncompliant: w.noncompliant, missing: w.missing } : {}) };
       }
       // Abholvermerk (Backlog 425): Werkstatt weiß, wo Schlüssel/Fahrzeugschein und Fahrzeug zur Abholung liegen – optional, ≤ 300
-      { const pn = str(p.pickup_note, { key: 'pickup_note', max: 300, field: 'Abholung' }); if (pn) { set.pickup_note = pn; payload = { ...(payload || {}), pickup_note: true }; } }
+      { const pn = str(p.pickup_note, { key: 'pickup_note', max: 300, field: 'Abholung' }); if (pn) { set.pickup_note = pn; payload = { ...(payload || {}), pickup_note: true }; }
+        // Backlog 1596 (Blickwinkel „Leitung schickt den Lkw zur Nacharbeit zurück, der Vorgang zeigt weiter den alten Abholvermerk“): Werkstatt leert
+        // das vorbelegte Feld ausdrücklich ("" gesendet) → alter Vermerk entfällt (vorher blieb er, weil nur bei Inhalt geschrieben wurde)
+        else if (p.pickup_note === '' && c.pickup_note) { set.pickup_note = null; payload = { ...(payload || {}), pickup_cleared: true }; } }
       toStatus = 'abschlusskontrolle';
       notifyKind = 'quality_check';
       break;

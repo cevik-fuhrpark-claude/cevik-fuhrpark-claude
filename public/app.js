@@ -2371,8 +2371,10 @@ function handoverInfo(c) {
   return `<dt>${esc(t('ho_title'))}</dt><dd id="handover"><span style="white-space:nowrap">${esc(t('ho_keys'))}:</span> ${hoVal(c.handover_keys)}<br><span style="white-space:nowrap">${esc(t('ho_papers'))}:</span> ${hoVal(c.handover_papers)}</dd>`;
 }
 // Abholvermerk nach der Reparatur (Backlog 425, Migration 0088): wo Fahrzeug/Schlüssel/Fahrzeugschein zur Abholung liegen – laut Werkstatt/Leitung
+// Backlog 1596: nach „Nacharbeit anfordern“ steht der Lkw wieder in Arbeit – der Abholvermerk aus der Abschlusskontrolle gilt dann nicht
+// (bleibt gespeichert und füllt das Feld der nächsten Abschlusskontrolle vor)
 function pickupInfo(c) {
-  if (!c.pickup_note) return '';
+  if (!c.pickup_note || ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status)) return '';
   return `<dt>${esc(t('pu_title'))}</dt><dd id="pickup" style="white-space:pre-wrap"${langAttr(stdTx(c.pickup_note))}>${esc(stdTx(c.pickup_note))}</dd>`;
 }
 // Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die Übergabe
@@ -7571,6 +7573,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     // Hinweis zum Termin (Migration 0093): leer = entfernen (leere Felder werden sonst nicht gesendet); ohne Termin immer leer
     if (action === 'set_planned_date') p.planned_note = p.planned_date ? String(fd.get('planned_note') || '').trim() : '';
     if (action === 'set_ready_date') p.ready_expected_on = String(fd.get('ready_expected_on') || ''); // leer = entfernen (Backlog 871)
+    if (fd.has('pickup_note') && c.pickup_note && !String(fd.get('pickup_note')).trim()) p.pickup_note = ''; // Backlog 1596: geleert = alten Abholvermerk entfernen
     if (action === 'set_occurred_at') {
       const occ = occurredValue(fd.get('occ_date') || '', fd.get('occ_time') || ''); delete p.occ_date; delete p.occ_time;
       if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); return; }
@@ -7588,7 +7591,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
       // Backlog 629: erst „Zur Abschlusskontrolle“ (Abholvermerk, Winterreifen-Bestätigung), dann „Technisch freigeben“ mit der neuen Version;
       // scheitert der zweite Schritt (z. B. Kostenfreigabe nötig), steht der Vorgang in der Abschlusskontrolle und die Meldung nennt den Grund
       const note = fd.get('note') || null;
-      const q = {}; if (p.pickup_note) q.pickup_note = p.pickup_note; if (p.confirm_winter_open) q.confirm_winter_open = true;
+      const q = {}; if (p.pickup_note || p.pickup_note === '') q.pickup_note = p.pickup_note; if (p.confirm_winter_open) q.confirm_winter_open = true;
       const rel = { confirm: true }; if (p.pickup_for_driver) { rel.pickup_for_driver = true; if (p.pickup_valid_until) rel.pickup_valid_until = p.pickup_valid_until; }
       return cmd('request_quality_check', note, q, { formAction: action, next: async () => {
         try {

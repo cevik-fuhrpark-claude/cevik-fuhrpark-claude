@@ -2034,8 +2034,10 @@ function handoverInfo(c) {
   return `<dt>${esc(t('ho_title'))}</dt><dd id="handover"><span style="white-space:nowrap">${esc(t('ho_keys'))}:</span> ${hoVal(c.handover_keys)}<br><span style="white-space:nowrap">${esc(t('ho_papers'))}:</span> ${hoVal(c.handover_papers)}</dd>`;
 }
 
+
+
 function pickupInfo(c) {
-  if (!c.pickup_note) return '';
+  if (!c.pickup_note || ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile'].includes(c.status)) return '';
   return `<dt>${esc(t('pu_title'))}</dt><dd id="pickup" style="white-space:pre-wrap"${langAttr(stdTx(c.pickup_note))}>${esc(stdTx(c.pickup_note))}</dd>`;
 }
 
@@ -4992,6 +4994,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
 
     if (action === 'set_planned_date') p.planned_note = p.planned_date ? String(fd.get('planned_note') || '').trim() : '';
     if (action === 'set_ready_date') p.ready_expected_on = String(fd.get('ready_expected_on') || '');
+    if (fd.has('pickup_note') && c.pickup_note && !String(fd.get('pickup_note')).trim()) p.pickup_note = '';
     if (action === 'set_occurred_at') {
       const occ = occurredValue(fd.get('occ_date') || '', fd.get('occ_time') || ''); delete p.occ_date; delete p.occ_time;
       if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); return; }
@@ -5009,7 +5012,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
 
 
       const note = fd.get('note') || null;
-      const q = {}; if (p.pickup_note) q.pickup_note = p.pickup_note; if (p.confirm_winter_open) q.confirm_winter_open = true;
+      const q = {}; if (p.pickup_note || p.pickup_note === '') q.pickup_note = p.pickup_note; if (p.confirm_winter_open) q.confirm_winter_open = true;
       const rel = { confirm: true }; if (p.pickup_for_driver) { rel.pickup_for_driver = true; if (p.pickup_valid_until) rel.pickup_valid_until = p.pickup_valid_until; }
       return cmd('request_quality_check', note, q, { formAction: action, next: async () => {
         try {

@@ -308,6 +308,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       add(workshopUsers.map((u) => ({ ...u, kind: 'approved' })));
       // Melder (z. B. meldende Werkstatt) behält Lesezugriff – kein „abgegeben“ ohne Link
       add(pool.filter((u) => u.qualified && u.at_old_site && !u.at_site && !u.is_reporter).map((u) => pick(u, { kind: 'reassigned_away', away: 1 })));
+      // Backlog 1595: naher Termin der bisherigen Werkstatt entfällt → wie „Termin entfernt“ (Backlog 460/461)
+      if (ctxData.ack_plan_near) { const pc = (rows) => rows.map((u) => ({ ...u, kind: 'plan_changed' })); add(pc(usersByRole(['dispatch']))); add(pc(reporter)); add(pc(assignedDrivers())); }
       break;
     case 'released': case 'safety_lock': case 'safety_lock_lifted':
       add(reporter); add(usersByRole(['dispatch', 'fleet', 'owner'])); add(workshopUsers);

@@ -45476,6 +45476,64 @@ await test('Backlog 1594 (Blickwinkel „Leitung gibt mit Termin Freitag frei, d
   eq((await pcOf(D, id5)).filter((n) => n.case_id === id5).length, 0, 'ohne Terminangabe: kein Hinweis');
 });
 
+await test('Backlog 1595 (Blickwinkel „Disponentin hat den Lkw für morgen als ‚in der Werkstatt‘ eingeplant, die Leitung wechselt heute die Werkstatt und der Termin entfällt“): Werkstattwechsel mit Termin heute bis 7 Tage → „Werkstatttermin geändert“ (ohne Datum) an Disposition/Melder, nie dringend; Werkstätten wie bisher; weit weg/ohne Termin kein Hinweis', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'r.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test', language: 'de' });
+  const D = new Client(worker, e, 'r.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const pcOf = async (c, id) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed' && n.case_id === id);
+  const id = await newCase({ priority: 'kritisch' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(1) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  eq((await pcOf(D, id)).length, 0, 'vorher kein Hinweis');
+  eq((await cmd(U.fleet, id, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Ausfall')).status, 200);
+  const d = await pcOf(D, id); eq(d.length, 1, 'Disposition: „Werkstatttermin geändert“');
+  ok(d[0].title === 'Werkstatttermin geändert' && !/\d{2}\.\d{2}\.\d{4}/.test(d[0].body) && !d[0].urgent, 'ohne Datum, nicht dringend: ' + JSON.stringify(d[0]));
+  eq((await pcOf(U.driver, id)).length, 1, 'Melder informiert');
+  ok((await U.wsMuc.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && n.kind === 'approved'), 'neue Werkstatt: „Neuer Werkstattauftrag“ wie bisher');
+  eq((await pcOf(U.wsMuc, id)).length, 0, 'neue Werkstatt kein „geändert“');
+  ok((await U.ws.get('/api/notifications')).data.notifications.some((n) => n.kind === 'reassigned_away'), 'bisherige Werkstatt: abgegeben wie bisher');
+  // Termin weit weg bzw. ohne Termin → kein Hinweis
+  const id2 = await newCase(); eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(20) }, 'Termin')).status, 200);
+  eq((await cmd(U.fleet, id2, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Ausfall')).status, 200);
+  eq((await pcOf(D, id2)).length, 0, 'Termin in 20 Tagen: kein Hinweis');
+  const id3 = await newCase(); eq((await cmd(U.fleet, id3, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.fleet, id3, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Ausfall')).status, 200);
+  eq((await pcOf(D, id3)).length, 0, 'ohne Termin: kein Hinweis');
+  // Termin heute (Grenze) → Hinweis
+  const id4 = await newCase(); eq((await cmd(U.fleet, id4, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(0) }, 'Termin')).status, 200);
+  eq((await cmd(U.fleet, id4, 'reassign_workshop', { workshop_site: 'MUENCHEN' }, 'Ausfall')).status, 200);
+  eq((await pcOf(D, id4)).length, 1, 'Termin heute: Hinweis');
+});
+
+await test('Backlog 1596 (Blickwinkel „Leitung schickt den Lkw zur Nacharbeit zurück, der Vorgang zeigt weiter den alten Abholvermerk“): Anzeige nur ab Abschlusskontrolle; Werkstatt leert das vorbelegte Feld → Vermerk entfällt; ohne Angabe bleibt er; Formular sendet geleertes Feld', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', { pickup_note: 'Schlüssel Fach 7, Lkw Platz 4' }, 'fertig')).status, 200);
+  eq((await cmd(U.fleet, id, 'return_for_rework', {}, 'Bremse nachziehen')).status, 200);
+  let c = (await U.fleet.get(`/api/cases/${id}`)).data.case; eq(c.status, 'in_reparatur'); eq(c.pickup_note, 'Schlüssel Fach 7, Lkw Platz 4', 'Vermerk bleibt gespeichert (Vorbelegung)');
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  // ohne Angabe: bleibt
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'nachgearbeitet')).status, 200);
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.case.pickup_note, 'Schlüssel Fach 7, Lkw Platz 4', 'ohne Angabe unverändert');
+  eq((await cmd(U.fleet, id, 'return_for_rework', {}, 'nochmal')).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  // ausdrücklich geleert: entfällt, Verlauf vermerkt es
+  eq((await cmd(U.ws, id, 'request_quality_check', { pickup_note: '' }, 'nachgearbeitet')).status, 200);
+  const d = (await U.fleet.get(`/api/cases/${id}`)).data; eq(d.case.pickup_note, null, 'geleert = entfernt');
+  ok(d.events.some((x) => x.action === 'request_quality_check' && x.payload && x.payload.pickup_cleared), 'Verlauf: pickup_cleared');
+  // Oberfläche: Anzeige nur ab Abschlusskontrolle; geleertes Feld wird gesendet
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const src = app.match(/function pickupInfo\(c\) \{[\s\S]*?\n\}/)[0];
+  const f = new Function('esc', 't', 'stdTx', 'langAttr', src + '\nreturn pickupInfo;')((v) => String(v), (k) => k, (v) => v, () => '');
+  for (const st of ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile']) eq(f({ status: st, pickup_note: 'X' }), '', st + ': kein Abholvermerk');
+  for (const st of ['abschlusskontrolle', 'fahrzeug_freigegeben']) ok(f({ status: st, pickup_note: 'X' }).includes('X'), st + ': Abholvermerk');
+  ok(app.includes("if (fd.has('pickup_note') && c.pickup_note && !String(fd.get('pickup_note')).trim()) p.pickup_note = '';") && app.includes("if (p.pickup_note || p.pickup_note === '') q.pickup_note = p.pickup_note;"), 'Formular sendet geleertes Feld (auch „Kontrolle + Freigabe“)');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
