@@ -183,6 +183,8 @@ const V_MORE = [
   ['Werkstatt/Lager ist erforderlich.', 'Потрібно вказати майстерню/склад.', 'Workshop/store is required.'],
   ['Werkstatt ist für Rolle Werkstatt erforderlich.', 'Для ролі «Майстерня» потрібно вказати майстерню.', 'A workshop is required for the workshop role.'],
   ['Vorgang passt nicht zu diesem Fahrzeug.', 'Заявка не відповідає цьому транспорту.', 'The case does not match this vehicle.'],
+  ['Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.', 'Заявку відхилено або завершено без ремонту – внесіть шини без заявки.', 'The case was rejected or ended without repair – record the tyres without a case.'],
+  ['Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.', 'Замовлення не належить вашій майстерні – внесіть шини без заявки.', 'The order does not belong to your workshop – record the tyres without a case.'],
   ['Vertragsende muss nach dem Vertragsbeginn liegen.', 'Кінець договору має бути після його початку.', 'The contract end must be after the contract start.'],
   ['Vertragsdokument: bitte ein Dokument aus der Dokumentablage dieses Fahrzeugs wählen.', 'Документ договору: виберіть документ з архіву документів цього транспорту.', 'Contract document: please choose a document from this vehicle’s documents.'],
   ['Versicherungsvertrag: bitte einen Versicherungsvertrag dieses Fahrzeugs wählen.', 'Договір страхування: виберіть договір страхування цього транспорту.', 'Insurance contract: please choose an insurance contract of this vehicle.'],

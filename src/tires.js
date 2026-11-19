@@ -220,8 +220,13 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   if (dot && dotDate(dot) > berlinDate()) throw bad('validation', 'DOT: Herstellwoche liegt in der Zukunft.', { field_key: 'dot' });
   const caseId = body.case_id ? str(body.case_id, { key: 'case_id', max: 40, field: 'Vorgang' }) : null;
   if (caseId) {
-    const c = await env.DB.prepare('SELECT id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
+    const c = await env.DB.prepare('SELECT id, status, workshop_site, suggested_workshop_site, reporter_id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
     if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
+    // Backlog 1603 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag und erfasst ihn in der Reifenakte“): eine andere Werkstatt
+    // hängte den Wechsel an den Auftrag (Auftrag zeigte dann „Rad gewechselt“ und den Radmuttern-Hinweis), ebenso an abgelehnte/ohne Reparatur
+    // beendete Vorgänge – Werkstatt nur an Aufträge mit vollem Zugriff, niemand an abgelehnte Vorgänge
+    if (c.status === 'abgelehnt') throw bad('validation', 'Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.');
+    if (user.role === 'workshop' && caseAccess(user, c) !== 'full') throw bad('validation', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.');
   }
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung', { key: 'winter_mark' });
   const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);

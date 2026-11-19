@@ -45627,6 +45627,27 @@ await test('Backlog 1601/1602 (Blickwinkel „Leitung nimmt einen Lkw mit offene
   }
 });
 
+await test('Backlog 1603 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag und erfasst ihn in der Reifenakte“): Reifenereignis mit Auftragsbezug nur an Aufträge der eigenen Werkstatt (voller Zugriff) und nie an abgelehnte/ohne Reparatur beendete Vorgänge; ohne Bezug weiter erlaubt; Texte DE/UK/EN', async () => {
+  const { U, cmd, newCase, toRepair, V1 } = await freshWorld();
+  const id = await toRepair();
+  const ev = (c, b) => c.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', size: '315/70 R22.5', request_key: rk(), ...b });
+  const m = await ev(U.wsMuc, { case_id: id }); eq(m.status, 400, 'andere Werkstatt: abgewiesen'); ok(/nicht zu Ihrer Werkstatt/.test(m.data.message || m.data.error_message || JSON.stringify(m.data)), JSON.stringify(m.data));
+  ok(!(await U.fleet.get(`/api/cases/${id}`)).data.wheel_changed, 'Auftrag zeigt keinen fremden Wechsel');
+  eq((await ev(U.wsMuc, {})).status, 201, 'ohne Auftragsbezug weiter erlaubt');
+  eq((await ev(U.ws, { case_id: id })).status, 201, 'eigene Werkstatt mit Auftrag');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.wheel_changed, true);
+  // gemeldeter Vorgang (Vorschau) für die Werkstatt nicht, für die Leitung schon
+  const g = await newCase(); eq((await ev(U.ws, { case_id: g })).status, 400, 'Werkstatt: gemeldeter Vorgang (nur Vorschau)');
+  eq((await ev(U.fleet, { case_id: g })).status, 201, 'Leitung: gemeldeter Vorgang');
+  // abgelehnt bzw. ohne Reparatur beendet: niemand
+  const r = await newCase(); eq((await cmd(U.fleet, r, 'reject', {}, 'Testdaten')).status, 200);
+  const x = await ev(U.fleet, { case_id: r }); eq(x.status, 400, 'abgelehnt: abgewiesen'); ok(/abgelehnt bzw\. ohne Reparatur beendet/.test(JSON.stringify(x.data)), JSON.stringify(x.data));
+  const w = await toRepair(); eq((await cmd(U.fleet, w, 'withdraw_order', {}, 'Totalschaden')).status, 200);
+  eq((await ev(U.ws, { case_id: w })).status, 400, 'ohne Reparatur beendet: abgewiesen');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const t of ['Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.']) ok(src.includes(`['${t}', '`), 'Übersetzung ' + t);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
