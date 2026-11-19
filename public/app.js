@@ -2074,7 +2074,7 @@ function dispoApw(cs) {
 // (Vermerk bleibt lesbar; eine fehlende Kontrolle beweist umgekehrt nicht, dass der Lkw noch in der Werkstatt steht – dazu Frage an den Auftraggeber).
 function puBox(c, lc) {
   const stale = !!(lc && lc.created_at && c.closed_at && lc.created_at > c.closed_at);
-  return `<div class="panel small${stale ? ' muted' : ''}" id="vpickup"${stale ? ' data-pustale' : ''}><b>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(c.pickup_note)}</span> – <a href="#/cases/${esc(c.id)}" translate="no">${esc(c.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtDT(c.closed_at)}${stale ? `<br><span data-pustaletxt>ⓘ ${esc(t('pu_stale').replace('{d}', fmtDT(lc.created_at)))}</span>` : ''}</div>`;
+  return `<div class="panel small${stale ? ' muted' : ''}" id="vpickup"${stale ? ' data-pustale' : ''}><b>${esc(t('pu_title'))}:</b> <span${langAttr(stdTx(c.pickup_note))}>${esc(stdTx(c.pickup_note))}</span> – <a href="#/cases/${esc(c.id)}" translate="no">${esc(c.case_no)}</a> · ${esc(t('st_fahrzeug_freigegeben'))} ${fmtDT(c.closed_at)}${stale ? `<br><span data-pustaletxt>ⓘ ${esc(t('pu_stale').replace('{d}', fmtDT(lc.created_at)))}</span>` : ''}</div>`;
 }
 // Backlog 560: Warnhinweise der Dispo-Tafel im Ausdruck mit Kennzeichen (am Bildschirm nur Zähler mit Link auf die Liste)
 function dispoPrintLine(key, label, items, alert = false) {
@@ -2165,7 +2165,7 @@ async function dispoBack(open, hq = '', cpl = new Map()) {
   const more = rows.length >= DISPO_BACK_LIMIT && rows.length && BERLIN_FMT.format(new Date(rows[rows.length - 1].updated_at)) >= from;
   const list = [...byV.values()].sort((a, b) => String(b.closed_at).localeCompare(String(a.closed_at)));
   if (!list.length) return '';
-  return `<h2 id="dback">${esc(from === bDate(-1) ? t('dispo_back') : t('dispo_back_since').replace('{d}', fmtD(from)))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span><span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${cpState(cpl.get(c.vehicle_id)) ? ' · ' + cpState(cpl.get(c.vehicle_id)) : ''}${c.open_items > 0 ? ` · <b data-dbitems style="white-space:nowrap">${esc(tn('rc_open_items', c.open_items))}</b> (${esc(t('dback_ns'))})` : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(c.pickup_note)}>${esc(clipTxt(c.pickup_note, 120))}</span>` : ''}</span></a>`).join('')}</div>`;
+  return `<h2 id="dback">${esc(from === bDate(-1) ? t('dispo_back') : t('dispo_back_since').replace('{d}', fmtD(from)))} <span class="chip ok">${list.length}${more ? '+' : ''}</span></h2><p class="small muted">${esc(t('dispo_back_hint'))}</p><div class="list">${list.map((c) => `<a class="row p-niedrig" href="#/cases/${esc(c.id)}" data-dback>${plate(c.plate)}<span class="title" style="white-space:normal">${ltxt(clipTxt(cDesc(c.description), 80))}</span><span class="chip ok" style="white-space:nowrap">${esc(t('dispo_back_at'))} ${fmtDT(c.closed_at)}</span><span class="sub wrap">${esc(c.case_no)}${c.workshop_site ? ' · ' + esc(wsName(c.workshop_site)) : ''}${cpState(cpl.get(c.vehicle_id)) ? ' · ' + cpState(cpl.get(c.vehicle_id)) : ''}${c.open_items > 0 ? ` · <b data-dbitems style="white-space:nowrap">${esc(tn('rc_open_items', c.open_items))}</b> (${esc(t('dback_ns'))})` : ''}${c.pickup_note ? ` · <b data-dbpickup>${esc(t('pu_title'))}:</b> <span${langAttr(stdTx(c.pickup_note))}>${esc(clipTxt(stdTx(c.pickup_note), 120))}</span>` : ''}</span></a>`).join('')}</div>`;
 }
 // Backlog 459 (Blickwinkel „Lkw hat nächste Woche einen Werkstatttermin – darf die Disposition ihn bis dahin einplanen?“): ein erteilter
 // Werkstattauftrag mit Termin nach heute, noch nicht begonnen, ohne Sperre, ohne eingetragenen Standort/Abschleppung und nicht „nicht
@@ -2367,7 +2367,7 @@ function handoverInfo(c) {
 // Abholvermerk nach der Reparatur (Backlog 425, Migration 0088): wo Fahrzeug/Schlüssel/Fahrzeugschein zur Abholung liegen – laut Werkstatt/Leitung
 function pickupInfo(c) {
   if (!c.pickup_note) return '';
-  return `<dt>${esc(t('pu_title'))}</dt><dd id="pickup" style="white-space:pre-wrap"${langAttr(c.pickup_note)}>${esc(c.pickup_note)}</dd>`;
+  return `<dt>${esc(t('pu_title'))}</dt><dd id="pickup" style="white-space:pre-wrap"${langAttr(stdTx(c.pickup_note))}>${esc(stdTx(c.pickup_note))}</dd>`;
 }
 // Backlog 867 (Blickwinkel „Werkstatt-Tablet: Mechaniker wird mitten in der Reparatur zu einem Notfall gerufen“): Arbeitsstand für die Übergabe
 // mit Zeitpunkt und Person (Name aus dem Verlauf bzw. der Liste) – nur in Reparatur/„wartet auf Teile“, sonst vom Server entfernt
@@ -6647,7 +6647,7 @@ function drvInspRows(v) {
 // wer über den QR-Aufkleber kommt, sieht die Startseite „Mein Fahrzeug“ nie (abgelaufene Hinweise nicht, auch offline aus dem Zwischenspeicher)
 function drvNotes(notes) {
   const list = (notes || []).filter((n) => !n.valid_until || n.valid_until >= bDate());
-  return list.length ? `<div class="vnotes-drv" role="note">${list.map((n) => `<p><b>ⓘ ${n.plate ? esc(n.plate) + ': ' : ''}${esc(n.text)}</b> <span class="small muted">${fmtD(n.created_at)}${n.valid_until ? ' · ' + esc(t('vnote_until').replace('{d}', fmtD(n.valid_until))) : ''}</span></p>`).join('')}</div>` : '';
+  return list.length ? `<div class="vnotes-drv" role="note">${list.map((n) => `<p><b>ⓘ ${n.plate ? esc(n.plate) + ': ' : ''}${esc(stdTx(n.text))}</b> <span class="small muted">${fmtD(n.created_at)}${n.valid_until ? ' · ' + esc(t('vnote_until').replace('{d}', fmtD(n.valid_until))) : ''}</span></p>`).join('')}</div>` : '';
 }
 // Backlog 482 (gleicher Blickwinkel): bekannte Mängel/Restarbeiten des gekoppelten Anhängers bzw. der Zugmaschine in Abfahrtskontrolle und Meldeformular,
 // wenn das eigene Fahrzeug gewählt ist – sonst wird ein bekannter Anhängermangel (Prüfpunkt „Kupplung/Anhänger“) erneut gemeldet. Ohne Prüftermine (die stehen auf der Startseite).
@@ -7149,6 +7149,12 @@ const freeLang = (s) => {
   return l === S.lang ? null : l;
 };
 const langAttr = (s) => { const l = freeLang(s); return l === null ? '' : ` lang="${l}"`; };
+// Backlog 1589 (Blickwinkel „Ukrainischer Fahrer liest den deutschen Radmuttern-Hinweis“): Standardsätze, die die App selbst in Abholvermerk bzw.
+// „Hinweis zum Fahrzeug“ einsetzt (Backlog 1587/1588), stehen in der Sprache der Person, die gespeichert hat. Beim Anzeigen wird ein solcher Satz
+// (nur wörtlich, Reihenfolge de/uk/en) in die Sprache der lesenden Person übertragen; übriger Freitext bleibt unverändert. Gespeichert bleibt das Original.
+// Texte = `wheel_rt_text` in public/i18n.js (Test „Backlog 1589“ prüft Gleichheit).
+const STD_SENT = [['Räder wurden gewechselt: Radmuttern nach Herstellervorgabe nachziehen lassen.', 'Колеса замінено: підтягнути колісні гайки згідно з вимогами виробника.', 'Wheels were changed: have the wheel nuts re-torqued as specified by the manufacturer.']];
+const stdTx = (s) => { let x = String(s ?? ''); const i = ['de', 'uk', 'en'].indexOf(S.lang); if (i < 0) return x; for (const row of STD_SENT) for (const from of row) if (from !== row[i] && x.includes(from)) x = x.split(from).join(row[i]); return x; };
 // Freitext escapen und – nur wenn er nicht in der Oberflächensprache steht – in <span lang> einschließen
 const ltxt = (s) => { const a = langAttr(s); return a ? `<span${a}>${esc(s)}</span>` : esc(s); };
 
@@ -7511,8 +7517,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   // (vorher bot das Feld alle Tage ab dem alten Datum an, der Server wies sie mit „liegt in der Vergangenheit“ ab, 21.10.2026)
   if ($('#pu_drv')) $('#pu_drv').onchange = () => { $('#pu_until_box').hidden = !$('#pu_drv').checked; };
   // Backlog 1587: Satz zum Nachziehen der Radmuttern an den Abholvermerk anhängen (300 Zeichen, nicht doppelt)
-  if ($('#wheelrt_add') && $('#pu_note')) { const ta = $('#pu_note'), b = $('#wheelrt_add'), txt = t('wheel_rt_text'); const sync = () => { b.disabled = ta.value.includes(txt) || (ta.value.trim() ? ta.value.trim().length + 1 : 0) + txt.length > 300; }; sync(); ta.addEventListener('input', sync);
-    b.onclick = () => { const v = ta.value.trim(); if (v.includes(txt)) return; ta.value = (v ? v + (/[.!?]$/.test(v) ? ' ' : '. ') : '') + txt; if (ta.value.length > 300) { ta.value = v; return; } sync(); ta.focus(); }; }
+  if ($('#wheelrt_add') && $('#pu_note')) { const ta = $('#pu_note'), b = $('#wheelrt_add'), txt = t('wheel_rt_text'); const sync = () => { b.disabled = stdTx(ta.value).includes(txt) || (ta.value.trim() ? ta.value.trim().length + 1 : 0) + txt.length > 300; }; sync(); ta.addEventListener('input', sync);
+    b.onclick = () => { const v = ta.value.trim(); if (stdTx(v).includes(txt)) return; ta.value = (v ? v + (/[.!?]$/.test(v) ? ' ' : '. ') : '') + txt; if (ta.value.length > 300) { ta.value = v; return; } sync(); ta.focus(); }; }
   if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   if (action === 'correct_vehicle') api('GET', '/api/vehicles').then((r) => {
@@ -8446,7 +8452,7 @@ async function loadVehicleNotes(vid, showArchive = false) {
   if (!box.isConnected) return; // Ansicht inzwischen gewechselt (z. B. Link angeklickt, während das Archiv lud)
   const nMax = r.max_active || VNOTES_MAX; // Höchstzahl aktiver Hinweise (Server NOTES_MAX_ACTIVE): voll → Hinweis statt Formular
   box.innerHTML = `<h3 style="margin-top:0">${esc(t('vnotes'))}${r.notes.length ? ` <span class="chip mittel">${r.notes.length}</span>` : ''}</h3>
-    ${r.notes.length ? `<ul class="vnotes">${r.notes.map((n) => `<li><b>${esc(n.text)}</b>${n.for_driver ? ` <span class="chip">${esc(t('vnote_driver_chip'))}</span>` : ''}${n.valid_until ? ` <span class="chip">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}<div class="small muted">${esc(pnm(n.created_by_name, n.created_by_name_hidden))}${n.created_by_active === false && !n.created_by_name_hidden ? ` <span class="chip" data-noteinactive>${esc(t('vnote_author_inactive'))}</span>` : ''} · ${fmtDT(n.created_at)}</div>${r.can_write ? `<button type="button" class="linkbtn noprint" data-arch="${esc(n.id)}">${esc(t('vnote_archive'))}</button>` : ''}</li>`).join('')}</ul>` : `<p class="small muted">${esc(t('vnotes_none'))}</p>`}
+    ${r.notes.length ? `<ul class="vnotes">${r.notes.map((n) => `<li><b>${esc(stdTx(n.text))}</b>${n.for_driver ? ` <span class="chip">${esc(t('vnote_driver_chip'))}</span>` : ''}${n.valid_until ? ` <span class="chip">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}<div class="small muted">${esc(pnm(n.created_by_name, n.created_by_name_hidden))}${n.created_by_active === false && !n.created_by_name_hidden ? ` <span class="chip" data-noteinactive>${esc(t('vnote_author_inactive'))}</span>` : ''} · ${fmtDT(n.created_at)}</div>${r.can_write ? `<button type="button" class="linkbtn noprint" data-arch="${esc(n.id)}">${esc(t('vnote_archive'))}</button>` : ''}</li>`).join('')}</ul>` : `<p class="small muted">${esc(t('vnotes_none'))}</p>`}
     ${r.can_write && r.notes.length >= nMax ? `<p class="small muted noprint" id="vnfull">${esc(t('vnotes_full').replace('{max}', nMax))}</p>` : ''}${r.can_write && r.notes.length < nMax ? `<details class="noprint"><summary>${esc(t('vnote_add'))}${r.notes.length >= nMax / 2 ? ` <span class="small muted" id="vnfree">(${esc(t('vnotes_free').replace('{n}', nMax - r.notes.length).replace('{max}', nMax))})</span>` : ''}</summary><form id="vnf"><label for="vnt">${esc(t('vnote_text'))}</label><textarea id="vnt" name="text" maxlength="500" required></textarea>
       <label class="check"><input type="checkbox" name="for_driver"> ${esc(t('vnote_for_driver'))}</label><label for="vnv">${esc(t('vnote_valid'))}<span class="hint">${esc(t('vnote_valid_hint'))}</span></label><input type="date" id="vnv" name="valid_until" style="max-width:220px"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
     <p class="noprint"><button type="button" class="linkbtn" id="vnar">${esc(showArchive ? t('vnote_hide_archive') : t('vnote_show_archive'))}</button></p>
@@ -9063,7 +9069,7 @@ async function renderTires(id, el, keep = null) {
     const f = $('#vnf'); if (!f) { toast(t('wheel_vn_none'), true); return; }
     const det = f.closest('details'); if (det) det.open = true;
     const ta = f.elements.namedItem('text'); const cur = ta.value.trim();
-    if (!cur.includes(txt)) ta.value = cur ? `${cur} ${txt}`.slice(0, 500) : txt;
+    if (!stdTx(cur).includes(txt)) ta.value = cur ? `${cur} ${txt}`.slice(0, 500) : txt;
     const fd = f.elements.namedItem('for_driver'); if (fd) fd.checked = true;
     f.scrollIntoView({ block: 'start' }); const vv = f.elements.namedItem('valid_until'); (vv || ta).focus({ preventScroll: true });
   };
@@ -10583,7 +10589,7 @@ function vehInfo(vi, c, A = []) {
   const svc = ls.filter((l) => l.kind === 'wartung'), lsl = ls.filter((l) => l.kind !== 'wartung');
   if (svc.length) parts.unshift(`<dt>${esc(t('vi_service'))}</dt><dd data-viservice>${svc.map((l) => `${esc(l.partner)}${l.contract_no ? ' · ' + noTr(l.contract_no) : ''}${l.end_date ? ` <span class="small muted">${esc(t('vi_lease_until').replace('{d}', fmtD(l.end_date)))}</span>` : ''}`).join('<br>')}<div class="small muted">${esc(t('vi_service_hint'))}</div></dd>`);
   if (lsl.length) parts.unshift(`<dt>${esc(t('vi_lease'))}</dt><dd data-vilease>${lsl.map((l) => `${esc(t('ck_' + l.kind))} · ${esc(l.partner)}${l.contract_no ? ' · ' + noTr(l.contract_no) : ''}${l.end_date ? ` <span class="small muted">${esc(t('vi_lease_until').replace('{d}', fmtD(l.end_date)))}</span>` : ''}`).join('<br>')}<div class="small muted">${esc(t('vi_lease_hint'))}</div></dd>`);
-  if (vn.length) parts.unshift(`<dt>${esc(t('vnotes'))}</dt><dd>${vn.map((n) => `<b>ⓘ ${esc(n.text)}</b>${n.valid_until ? ` <span class="small muted">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}`).join('<br>')}</dd>`);
+  if (vn.length) parts.unshift(`<dt>${esc(t('vnotes'))}</dt><dd>${vn.map((n) => `<b>ⓘ ${esc(stdTx(n.text))}</b>${n.valid_until ? ` <span class="small muted">${esc(t('vnote_until').replace('{d}', fmtD(n.valid_until)))}</span>` : ''}`).join('<br>')}</dd>`);
   if (vi.last_km) parts.push(`<dt>${esc(t('km'))}</dt><dd>${fmtKm(vi.last_km.km)} <span class="small muted">(${fmtD(vi.last_km.measured_at)})</span></dd>`);
   return `<details class="small vinfo" style="margin-top:8px"${ri.length || cpl.some((g) => g.open_cases.length) || vi.other_open_total || prev.length || rc.length || vn.length || wr.length || ls.length || vi.inspections_due.some((m) => m.recall_ref || (m.next_due_date && m.next_due_date < today)) ? ' open' : ''}><summary><b>${esc(t('vi_title'))}</b></summary><dl class="kv">${parts.join('')}</dl></details>`;
 }

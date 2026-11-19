@@ -24560,8 +24560,8 @@ await test('Backlog 458 (Blickwinkel „Disposition fragt am Nachmittag: welcher
   const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
   const bDate = (n = 0) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
   const { federalHoliday } = await import('../public/holidays.js');
-  const run = (lang) => new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', 'federalHoliday', 'fmtD', src + '\nreturn dispoBack;')(
-    async (m, path) => { const r = await D.get(path); return r.data; }, bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '', federalHoliday, (v) => v);
+  const run = (lang) => new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', 'federalHoliday', 'fmtD', 'stdTx', src + '\nreturn dispoBack;')(
+    async (m, path) => { const r = await D.get(path); return r.data; }, bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS[lang][k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '', federalHoliday, (v) => v, (v) => String(v ?? '')); // Backlog 1589: stdTx
   for (const lang of ['de', 'uk', 'en']) {
     const html = await run(lang)(open, '');
     ok((html.includes(STRINGS[lang].dispo_back) || html.includes(STRINGS[lang].dispo_back_since.split('{d}')[0])) && html.includes(STRINGS[lang].pu_title) && html.includes('Schlüssel beim Pförtner'), lang + ': Abschnitt mit Abholvermerk');
@@ -25132,8 +25132,8 @@ await test('Backlog 481/482 (Blickwinkel „Springer holt den Lkw eines kranken 
   const fn = (name) => { const i = app.indexOf(`function ${name}(`); return app.slice(i, app.indexOf('\n}\n', i) + 2); };
   const src = ['drvNotes', 'coupledDefects', 'departureLockBox', 'coupledKnown'].map(fn).join('\n');
   const T = { trailer: 'Anhänger', truck: 'Lkw', vnote_until: 'bis {d}', scan_locked: 'GESPERRT' };
-  const lib = new Function('esc', 't', 'fmtD', 'bDate', 'knownDefects', 'relItems', 'outboxVehAlert', 'coupledAlert', 'dcInspBox', src + '\nreturn { drvNotes, coupledDefects, departureLockBox, coupledKnown };')(
-    (v) => String(v), (k) => T[k] || k, (v) => v, () => '2026-10-28', (l) => (l || []).map((k) => `<kd>${k.description}</kd>`).join(''), (l) => (l || []).map((o) => `<ri>${o.description}</ri>`).join(''), () => '', () => '', () => ''); // Backlog 1079: Prüffristen eigener Test
+  const lib = new Function('esc', 't', 'fmtD', 'bDate', 'knownDefects', 'relItems', 'outboxVehAlert', 'coupledAlert', 'dcInspBox', 'stdTx', src + '\nreturn { drvNotes, coupledDefects, departureLockBox, coupledKnown };')(
+    (v) => String(v), (k) => T[k] || k, (v) => v, () => '2026-10-28', (l) => (l || []).map((k) => `<kd>${k.description}</kd>`).join(''), (l) => (l || []).map((o) => `<ri>${o.description}</ri>`).join(''), () => '', () => '', () => '', (v) => String(v ?? '')); // Backlog 1589: stdTx // Backlog 1079: Prüffristen eigener Test
   const h = lib.departureLockBox({ id: VZ }, mv);
   ok(h.includes('class="vnotes-drv"') && h.includes('Autohof A2') && h.includes('SP-H 481: Hecktür klemmt'), 'Abfahrtskontrolle: Hinweise für Fahrer');
   ok(h.includes('data-coupled') && h.includes('Anhänger SP-H 481') && h.includes('<kd>Rückleuchte Auflieger rechts gesprungen</kd>'), 'Abfahrtskontrolle: Mangel des gekoppelten Anhängers');
@@ -45259,6 +45259,31 @@ await test('Backlog 1588 (Blickwinkel „Reifenwechsel ohne Auftrag – Radmutte
   ok(h.includes("toast(t('wheel_vn_exists'))") && h.includes("ul.vnotes:not(.muted)"), 'kein zweiter gleicher aktiver Hinweis');
   ok(!/valid_until[^;]*\.value\s*=/.test(h), 'keine vorgegebene Frist');
   for (const l of ['de', 'uk', 'en']) for (const k of ['wheel_vn_hint', 'wheel_vn_add', 'wheel_vn_exists', 'wheel_vn_none']) { ok(STRINGS[l][k], `${l}.${k}`); ok(!/\d/.test(STRINGS[l][k]), `${l}.${k}: keine erfundene Zahl`); }
+});
+
+await test('Backlog 1589 (Blickwinkel „Ukrainischer Fahrer liest den deutschen Radmuttern-Hinweis“): Standardsatz aus Abholvermerk/Hinweis zum Fahrzeug erscheint in der Sprache der lesenden Person, Freitext bleibt unverändert, gespeichert bleibt das Original', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  const fs = fs0(); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const l1 = app.match(/^const STD_SENT = .*;$/m), l2 = app.match(/^const stdTx = .*;$/m); ok(l1 && l2, 'STD_SENT/stdTx in app.js');
+  const S = { lang: 'de' }; const stdTx = new Function('S', `${l1[0]}\n${l2[0]}\nreturn stdTx;`)(S);
+  const sent = new Function(`${l1[0]}\nreturn STD_SENT;`)();
+  eq(JSON.stringify(sent[0]), JSON.stringify(['de', 'uk', 'en'].map((l) => STRINGS[l].wheel_rt_text)), 'Satz = wheel_rt_text DE/UK/EN');
+  const de = STRINGS.de.wheel_rt_text, uk = STRINGS.uk.wheel_rt_text, en = STRINGS.en.wheel_rt_text;
+  S.lang = 'uk'; eq(stdTx(`Schlüssel im Kasten. ${de}`), `Schlüssel im Kasten. ${uk}`, 'deutscher Satz → ukrainisch, Freitext bleibt');
+  S.lang = 'en'; eq(stdTx(uk), en); eq(stdTx(`${de} ${de}`), `${en} ${en}`);
+  S.lang = 'de'; eq(stdTx(en), de); eq(stdTx(de), de); eq(stdTx('Räder wurden gewechselt'), 'Räder wurden gewechselt', 'nur der ganze Satz wörtlich'); eq(stdTx(null), ''); eq(stdTx(undefined), '');
+  S.lang = 'xx'; eq(stdTx(de), de, 'unbekannte Sprache: unverändert');
+  // Anzeigestellen: Fahrer-Hinweise (Abfahrtskontrolle/Meldeformular), Mein Fahrzeug, Fahrzeugakte, Abholvermerk (Akte, Vorgang, Disposition)
+  for (const x of ["${n.plate ? esc(n.plate) + ': ' : ''}${esc(stdTx(n.text))}</b>", "<dd>${vn.map((n) => `<b>ⓘ ${esc(stdTx(n.text))}</b>", "<ul class=\"vnotes\">${r.notes.map((n) => `<li><b>${esc(stdTx(n.text))}</b>",
+    "<span${langAttr(stdTx(c.pickup_note))}>${esc(stdTx(c.pickup_note))}</span>", "<dd id=\"pickup\" style=\"white-space:pre-wrap\"${langAttr(stdTx(c.pickup_note))}>${esc(stdTx(c.pickup_note))}</dd>",
+    "<span${langAttr(stdTx(c.pickup_note))}>${esc(clipTxt(stdTx(c.pickup_note), 120))}</span>"]) ok(app.includes(x), x);
+  ok(!/esc\(c\.pickup_note\)|esc\(clipTxt\(c\.pickup_note/.test(app), 'kein Abholvermerk ohne Übertragung angezeigt');
+  // kein doppelter Satz, wenn der Vermerk schon in anderer Sprache vorliegt
+  ok(app.includes('b.disabled = stdTx(ta.value).includes(txt)') && app.includes('if (stdTx(v).includes(txt)) return;') && app.includes('if (!stdTx(cur).includes(txt))'), 'Knöpfe erkennen den Satz in jeder Sprache');
+  // Server speichert unverändert (Original bleibt maßgeblich)
+  const { U, V1 } = await freshWorld();
+  const n = await U.fleet.post(`/api/vehicles/${V1}/notes`, { text: de, for_driver: true, valid_until: null, request_key: 'rk1589' }); eq(n.status, 201, JSON.stringify(n.data));
+  ok((await U.fleet.get(`/api/vehicles/${V1}/notes`)).data.notes.some((x) => x.text === de), 'Original gespeichert');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

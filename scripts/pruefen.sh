@@ -713,6 +713,7 @@ UI-Leitung deaktiviert nennt Vermerke „fährt bis zur Teilelieferung“ (DE/UK
 UI-Leitung deaktiviert nennt ihre Sicherheitssperren (DE/UK/EN; Backlog 1585)|ui-leitung-sperre.py|/tmp/cfp-leitung-sperre.log
 UI-Räder gewechselt: Hinweis Radmuttern nachziehen + Übernahme in den Abholvermerk (DE/UK/EN; Backlog 1587)|ui-radmuttern.py|/tmp/cfp-radmuttern.log
 UI-Reifenwechsel ohne Auftrag: Hinweis für Fahrer zum Nachziehen der Radmuttern vorbereiten (DE/UK/EN; Backlog 1588)|ui-radmuttern-akte.py|/tmp/cfp-radmuttern-akte.log
+UI-Standardsatz Radmuttern im Hinweis/Abholvermerk in der Sprache der lesenden Person (DE/UK/EN; Backlog 1589)|ui-standardsatz-sprache.py|/tmp/cfp-standardsatz-sprache.log
 UI-Import: Dateifehler am Dateifeld/an „Quelle“ (DE/UK/EN; Backlog 1580)|ui-import-dateifehler.py|/tmp/cfp-import-dateifehler.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
 UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
