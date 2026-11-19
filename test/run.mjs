@@ -24431,7 +24431,7 @@ await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am T
   ok(app.includes('let html = wsFlow() + (shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
-  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || c.appraisal_wait_on || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || c.appraisal_wait_on || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) || c.vehicle_inactive || (c.open_items > 0 && c.status === 'fahrzeug_freigegeben') ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
   // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
   const { U, toRepair } = await freshWorld();
   const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
@@ -34777,7 +34777,7 @@ await test('Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kos
   ok(all.rows.some((r) => r['Kostenfreigabe ausstehend'] === '') && all.rows.filter((r) => r['Kostenfreigabe ausstehend']).length === 2, 'CSV ohne Filter: leer ohne Markierung');
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("f !== 'followup' && f !== 'cost_approval' ? '&sort=' + S.caseSort") && app.includes('id="casort"'), 'Liste: keine Sortierauswahl, Hinweis auf feste Sortierung');
+  ok(app.includes("f !== 'followup' && f !== 'cost_approval' && f !== 'open_items' ? '&sort=' + S.caseSort") && app.includes('id="casort"'), 'Liste: keine Sortierauswahl, Hinweis auf feste Sortierung');
   ok(app.includes("k === 'todo_cost_approval' && list.length <= 8 ? `<p class=\"small\"><a href=\"${hj(TODO_LIST[k])}\" id=\"todocalist\""), 'Heute zu tun: Link auch bei bis zu 8 Einträgen (Standort wie Zähler über hj)');
   ok(app.includes("href=\"${hj('#/cases?f=cost_approval')}\" id=\"kpicalist\""), 'Bericht: Link zur Liste');
   ok(app.includes("${esc(t('cost_approval_pending'))} ${esc(t('since'))} ${fmtD(c.cost_over_limit_at)}"), 'Listenchip mit „seit“');
@@ -45756,6 +45756,52 @@ await test('Backlog 1608/1609 (Blickwinkel „Disposition sucht morgens ein Ersa
   ok(!(await dispoBack([{ vehicle_id: 'v2', case_no: 'V-6', status: 'gemeldet' }], '')).includes('data-dbnew'), 'anderes Fahrzeug: kein Zusatz');
   // Aufruf in dispoHome übergibt Fahrzeuge in Betrieb und ruhende
   ok(/dispoBack\(dcs, hq, [^\n]*dvs\.length \? new Set\(dvs\.map\(\(v\) => v\.id\)\) : null, new Set\(dvs\.filter\(\(v\) => v\.eval_excluded\)/.test(app), 'Aufruf');
+});
+
+await test('Backlog 1610–1613 (Blickwinkel „Leitung prüft am Monatsende offene Restarbeiten freigegebener Fahrzeuge“): Fahrzeugakte zählt offene Restarbeiten je Vorgang; Filter „Restarbeiten offen“ nach Freigabedatum (älteste zuerst, auch CSV), Freigabedatum in der Zeile; außer Betrieb genommenes Fahrzeug gekennzeichnet; Werkstatt-Startseite mit „+“ bei Kappung', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld();
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  const release = async () => {
+    const id = await toRepair();
+    eq((await cmd(U.ws, id, 'add_open_item', { description: 'Verkleidung provisorisch' })).status, 200);
+    eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Leuchte' })).status, 200);
+    eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+    eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+    const tr = await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(tr.status, 200, JSON.stringify(tr.data));
+    return id;
+  };
+  const a = await release(); const b = await release();
+  // a früher freigegeben, b aber früher zuletzt geändert → Standard „zuletzt geändert/Dringlichkeit“ hätte b vorn bzw. a hinten
+  e.DB.db.prepare('UPDATE cases SET closed_at=?, updated_at=? WHERE id=?').run('2026-10-01T08:00:00.000Z', '2026-11-18T08:00:00.000Z', a);
+  e.DB.db.prepare('UPDATE cases SET closed_at=?, updated_at=? WHERE id=?').run('2026-11-02T08:00:00.000Z', '2026-11-03T08:00:00.000Z', b);
+  const q = '/api/cases?status=fahrzeug_freigegeben&open_items=1';
+  eq((await U.fleet.get(q)).data.cases.map((c) => c.id).join(), [a, b].join(), '1611: älteste Freigabe zuerst');
+  eq((await U.ws.get(q)).data.cases.map((c) => c.id).join(), [a, b].join(), '1611: auch Werkstatt');
+  ok((await U.ws.get(q + '&limit=1')).data.truncated === true, 'API meldet Kappung');
+  eq((await U.fleet.get(q + '&sort=updated')).data.cases.map((c) => c.id).join(), [a, b].join(), 'gewählte Sortierung gilt weiter');
+  eq((await U.fleet.get('/api/cases?status=fahrzeug_freigegeben&sort=updated')).data.cases.map((c) => c.id).slice(0, 2).join(), [a, b].join(), 'ohne Filter unverändert');
+  const csv = await U.fleet.get('/api/cases?format=csv&' + q.split('?')[1]); eq(csv.status, 200);
+  const body = typeof csv.data === 'string' ? csv.data : new TextDecoder('utf-8').decode(csv.data);
+  { const na = (await U.fleet.get(`/api/cases/${a}`)).data.case.case_no; const nb = (await U.fleet.get(`/api/cases/${b}`)).data.case.case_no; ok(body.indexOf(na) > 0 && body.indexOf(na) < body.indexOf(nb), 'CSV in derselben Reihenfolge'); }
+  // 1610: Fahrzeugakte nennt die Anzahl
+  const akte = async () => (await U.fleet.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.cases;
+  eq((await akte()).find((c) => c.id === a).open_items, 1, '1610: Akte');
+  const oi = (await U.ws.get(`/api/cases/${b}`)).data.open_items.find((o) => o.status === 'offen');
+  eq((await cmd(U.ws, b, 'resolve_open_item', { open_item_id: oi.id }, 'erledigt')).status, 200);
+  eq((await akte()).find((c) => c.id === b).open_items, 0, '1610: nach Erledigung 0');
+  eq((await U.ws.get(`/api/vehicles/${encodeURIComponent(V1)}`)).data.cases.find((c) => c.id === a).open_items, 1, '1610: Werkstatt sieht es ebenso');
+  // 1612: außer Betrieb genommen → gekennzeichnet
+  ok(!(await U.fleet.get(q)).data.cases[0].vehicle_inactive, 'in Betrieb: keine Marke');
+  const d = await U.fleet.post(`/api/vehicles/${encodeURIComponent(V1)}/active`, { active: false, reason: 'Verkauf' }); eq(d.status, 200, JSON.stringify(d.data));
+  eq((await U.fleet.get(q)).data.cases[0].vehicle_inactive, 1, '1612: außer Betrieb');
+  // Oberfläche
+  ok(app.includes("f !== 'cost_approval' && f !== 'open_items' ? '&sort=' + S.caseSort"), 'keine Sortierung senden');
+  ok(app.includes("f === 'open_items' ? 'oi_sort_rel'") && app.includes('<span data-oirel>') && app.includes('<b data-vinact>'), 'Zeile, Sortierhinweis, Marke');
+  for (const L of ['de', 'uk', 'en']) ok(STRINGS[L].oi_sort_rel && STRINGS[L].mb_sk_inactive, L);
+  ok(app.includes("const riR = await pRi; const ri = riR.cases;") && app.includes("data-oin>${ri.length}${riR.truncated ? '+' : ''}"), '1613: Werkstatt-Startseite Zahl mit „+“ bei Kappung');
+  ok(!/oi_open_deact[^\n]*other: '[^']*залишається відкритою – /.test(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'UK-Form vollständig');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

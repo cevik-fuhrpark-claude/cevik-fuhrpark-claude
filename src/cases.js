@@ -106,6 +106,9 @@ const CASE_SORTS = {
 // Backlog 1042 (Blickwinkel „Inhaber prüft am Monatsende offene Kostenfreigaben“): Filter „Kostenfreigabe ausstehend“ ohne gewählte
 // Sortierung = am längsten wartende zuerst (wie „Heute zu tun“), auch in CSV und Druck
 const COST_WAIT_SORT = 'c.cost_over_limit_at ASC, c.id';
+// Backlog 1611 (Blickwinkel „Leitung prüft am Monatsende offene Restarbeiten freigegebener Fahrzeuge“): Filter „Restarbeiten offen“ ohne gewählte
+// Sortierung = am längsten freigegebene zuerst (updated_at änderte sich bei jedem Kommentar/jeder erledigten Restarbeit; die ältesten standen unten)
+const OI_REL_SORT = 'c.closed_at IS NULL, c.closed_at ASC, c.created_at ASC, c.id';
 // meta (optional): erhält site/site_options für den Filter „Fahrzeug-Standort“ (vsite) – nicht für Fahrer
 export async function listCases(env, user, envName, query, meta = null) {
   // query.__counts: nur Begrenzung melden (meta.truncated), ohne Standort-/Nachfass-Angaben (spart zwei Abfragen, z. B. Startseite)
@@ -276,10 +279,12 @@ export async function listCases(env, user, envName, query, meta = null) {
       CASE WHEN c.work_state_by IS NOT NULL THEN (SELECT wu.display_name FROM users wu WHERE wu.id=c.work_state_by) END AS work_state_by_name,
       -- Backlog 1026 (Blickwinkel „Schichtübergabe in der Werkstatt“): wer den Auftrag übernommen hat (steht auch im Verlauf; Fahrer erhält es nicht)
       CASE WHEN c.workshop_ack_by IS NOT NULL THEN (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) END AS workshop_ack_by_name,
-      ${APPR_WAIT_SQL(berlinDate())}
+      ${APPR_WAIT_SQL(berlinDate())},
+      -- Backlog 1612: Fahrzeug außer Betrieb genommen (Agent wertet es nicht mehr aus) – in der Liste kennzeichnen
+      CASE WHEN v.active=0 THEN 1 END AS vehicle_inactive
     FROM cases c JOIN vehicles v ON v.id=c.vehicle_id JOIN users u ON u.id=c.reporter_id
     WHERE ${where.join(' AND ')}
-    ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : on(query.cost_approval) && user.role !== 'driver' ? COST_WAIT_SORT : CASE_SORTS.priority}
+    ORDER BY ${Object.hasOwn(CASE_SORTS, query.sort) ? CASE_SORTS[query.sort] : on(query.cost_approval) && user.role !== 'driver' ? COST_WAIT_SORT : on(query.open_items) && user.role !== 'driver' ? OI_REL_SORT : CASE_SORTS.priority}
     LIMIT ?`).bind(...args, limit + 1).all()).results;
   // eine Zeile mehr gelesen: zeigt an, dass die Liste begrenzt ist (Oberfläche: „weitere laden“ bzw. Suche/CSV)
   if (rows.length > limit) { rows.length = limit; if (meta) meta.truncated = true; }
