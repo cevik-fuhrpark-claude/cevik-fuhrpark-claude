@@ -45321,6 +45321,48 @@ await test('Backlog 1590 (Blickwinkel „Ukrainischer Fahrer liest, warum seine 
   eq((await rej(dup2, `Дублікат ${oc.case_no}`)).status, 200); eq((await U.fleet.get(`/api/cases/${dup2}`)).data.events.at(-1).note, `Дублікат ${oc.case_no}`, 'ukrainischer Grund unverändert gespeichert');
 });
 
+await test('Backlog 1591 (Blickwinkel „Fahrer sieht seine Meldung als ‚Abgelehnt‘, obwohl der Mangel nur schon gemeldet war“): eigene, als Dublette geschlossene Meldung heißt für die meldende Person „Bereits gemeldet“, Ablehnungskasten nennt die Meldung mit dem Mangel; Inhaber/Leitung und andere Ablehnungen unverändert', async () => {
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['st_dup_rep', 'rej_dup_t', 'rej_dup_s']) ok(STRINGS[l][k], `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) eq(STRINGS[l].rej_dup_s.split('{n}').length, 2, `${l}.rej_dup_s mit genau einem {n}`);
+  const fs = fs0(); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const line = (re) => { const m = app.match(re); ok(m, String(re)); return m[0]; };
+  const fnSrc = app.slice(app.indexOf('function rejBox(c, d) {'), app.indexOf('\n}\n', app.indexOf('function rejBox(c, d) {')) + 2);
+  const S = { lang: 'de', me: { id: 'u1', role: 'driver' } }; let mgr = false;
+  const mk = (lang) => { S.lang = lang; return (k) => STRINGS[lang][k] ?? k; };
+  let t = mk('de');
+  const build = () => new Function('S', 't', 'isMgr', 'esc', 'noTr', 'langAttr', 'stdTx', `${line(/^const isWithdrawn = .*;$/m)}\n${line(/^const isDupOwn = .*;$/m)}\n${line(/^const stTxt = .*;$/m)}\n${fnSrc}\nreturn { stTxt, rejBox };`)(
+    S, (k) => t(k), () => mgr, (x) => String(x), (x) => `<span translate="no">${x}</span>`, () => '', (x) => x);
+  let f = build();
+  const dup = { status: 'abgelehnt', duplicate_of: 'o1', reporter_id: 'u1', workshop_site: null };
+  const det = { duplicate_of: { case_no: 'V-2026-0007' }, events: [{ action: 'reject', note: 'Dublette von V-2026-0007' }] };
+  eq(f.stTxt(dup), 'Bereits gemeldet', 'eigene Dublette: „Bereits gemeldet“');
+  eq(f.stTxt({ ...dup, duplicate_of: null }), STRINGS.de.st_abgelehnt, 'andere Ablehnung bleibt „Abgelehnt“');
+  eq(f.stTxt({ ...dup, reporter_id: 'u2' }), STRINGS.de.st_abgelehnt, 'fremde Meldung: Status wie bisher');
+  eq(f.stTxt({ ...dup, status: 'gemeldet' }), STRINGS.de.st_gemeldet, 'nur Status abgelehnt');
+  let box = f.rejBox(dup, det);
+  ok(box.includes('data-rejdup') && box.includes(STRINGS.de.rej_dup_t), 'Kasten: Überschrift „bereits gemeldet“');
+  ok(box.includes('<span translate="no">V-2026-0007</span>') && !box.includes('{n}'), 'Kasten nennt die Meldung, die den Mangel erfasst');
+  ok(box.includes('Dublette von V-2026-0007'), 'gespeicherter Grund bleibt sichtbar');
+  box = f.rejBox({ ...dup, duplicate_of: null }, { events: [{ action: 'reject', note: 'kein Mangel' }] });
+  ok(box.includes(STRINGS.de.rej_box_t) && !box.includes('data-rejdup'), 'andere Ablehnung: bisheriger Kasten');
+  ok(f.rejBox({ ...dup }, { events: [] }).includes(STRINGS.de.rej_box_t), 'ohne Angabe der Ursprungsmeldung: bisheriger Kasten');
+  t = mk('uk'); f = build(); eq(f.stTxt(dup), STRINGS.uk.st_dup_rep); ok(f.rejBox(dup, det).includes(STRINGS.uk.rej_dup_t), 'UK');
+  t = mk('en'); f = build(); eq(f.stTxt(dup), 'Already reported');
+  mgr = true; t = mk('de'); f = build(); S.me.role = 'fleet';
+  eq(f.stTxt(dup), STRINGS.de.st_abgelehnt, 'Leitung (auch als Melder) sieht den Status „Abgelehnt“'); eq(f.rejBox(dup, det), '', 'Leitung: kein Kasten');
+  // Server: Melder bekommt duplicate_of (Kennung in der Liste, Nummer in der Vorgangsansicht) – sonst greift die Anzeige nicht
+  const { U, newCase } = await freshWorld();
+  const orig = await newCase(); const d1 = await newCase();
+  const c1 = (await U.fleet.get(`/api/cases/${d1}`)).data.case;
+  eq((await U.fleet.post(`/api/cases/${d1}/commands`, { action: 'reject', command_id: rk(), expected_version: c1.version, note: null, payload: { duplicate_of: orig } })).status, 200);
+  const on = (await U.fleet.get(`/api/cases/${orig}`)).data.case.case_no;
+  const dv = (await U.driver.get(`/api/cases/${d1}`)).data;
+  eq(dv.case.status, 'abgelehnt'); eq(dv.case.duplicate_of, orig, 'Vorgangsansicht des Melders: duplicate_of'); eq(dv.duplicate_of.case_no, on, 'Nummer der Ursprungsmeldung');
+  const li = (await U.driver.get('/api/cases?status=all')).data; const row = (li.cases || li).find((x) => x.id === d1);
+  ok(row && row.duplicate_of === orig && row.duplicate_of_no === on, 'Liste des Melders: duplicate_of + Nummer');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

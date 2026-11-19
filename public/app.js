@@ -2426,7 +2426,9 @@ function qChip(c) { return c.q_state ? ` · <span class="chip ${c.q_state === 'o
 function rejBox(c, d) {
   if (c.status !== 'abgelehnt' || isWithdrawn(c) || c.reporter_id !== S.me.id || isMgr()) return '';
   const rj = (d.events || []).filter((e) => e.action === 'reject'); const ev = rj[rj.length - 1];
-  return `<div class="panel" id="rejbox"><b>${esc(t('rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(stdTx(ev.note))}>${esc(stdTx(ev.note))}</p>` : ''}<p class="small muted" style="margin:0">${esc(t('rej_box_s'))}</p></div>`;
+  // Backlog 1591: als Dublette geschlossen → „bereits gemeldet“ statt „abgelehnt“, mit Nummer der Meldung, die den Mangel erfasst
+  const dn = c.duplicate_of && d.duplicate_of && d.duplicate_of.case_no;
+  return `<div class="panel" id="rejbox"${dn ? ' data-rejdup' : ''}><b>${esc(t(dn ? 'rej_dup_t' : 'rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(stdTx(ev.note))}>${esc(stdTx(ev.note))}</p>` : ''}<p class="small muted" style="margin:0">${dn ? esc(t('rej_dup_s')).replace('{n}', () => noTr(dn)) : esc(t('rej_box_s'))}</p></div>`;
 }
 function qBanner(c) {
   if (!c.q_state) return '';
@@ -2436,7 +2438,10 @@ function qBanner(c) {
 // Backlog 468: Werkstattauftrag „Ohne Reparatur beendet“ (Status abgelehnt mit Werkstatt, keine Dublette – wie Kennzahl `withdrawn`) nicht als „Abgelehnt“
 // anzeigen – der Fahrer las „abgelehnt“ und meldete eine wiederkehrende Störung nicht erneut (Blickwinkel „Sporadische Störung“)
 const isWithdrawn = (c) => c.status === 'abgelehnt' && !!c.workshop_site && !c.duplicate_of;
-const stTxt = (c) => (isWithdrawn(c) ? t('vi_kind_withdrawn') : t('st_' + c.status));
+// Backlog 1591 (Blickwinkel „Fahrer sieht seine Meldung als ‚Abgelehnt‘, obwohl der Mangel nur schon gemeldet war“): eigene, als Dublette
+// geschlossene Meldung heißt für die meldende Person (nicht Inhaber/Leitung) „Bereits gemeldet“ – Status, Filter und Kennzahlen bleiben „abgelehnt“
+const isDupOwn = (c) => c.status === 'abgelehnt' && !!c.duplicate_of && !!S.me && c.reporter_id === S.me.id && !isMgr();
+const stTxt = (c) => (isWithdrawn(c) ? t('vi_kind_withdrawn') : isDupOwn(c) ? t('st_dup_rep') : t('st_' + c.status));
 // Backlog 888: Kostenstand vor der technischen Freigabe (nur wer Teile/Fremdleistungen sieht) – '' = nichts zu melden.
 // Fremdleistung „ersetzt eigene Arbeit/Teile“ → Teile zählen nicht (wie computeCosts im Server).
 function relCostOpen(d) {

@@ -1397,6 +1397,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1532: Fahrzeug direkt aus der Fahrerakte zuordnen / Zuordnung beenden
 // Backlog 1587: Räder/Reifen am Auftrag gewechselt – Radmuttern nachziehen (Hinweis im Abschluss-/Freigabeformular, Satz für den Abholvermerk)
 // Backlog 1588: Reifenwechsel ohne Auftrag in der Fahrzeugakte → Hinweis zum Fahrzeug für die Fahrer vorbereiten
+// Backlog 1591: eigene, als Dublette geschlossene Meldung („bereits gemeldet“ statt „abgelehnt“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

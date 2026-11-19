@@ -2092,7 +2092,9 @@ function qChip(c) { return c.q_state ? ` · <span class="chip ${c.q_state === 'o
 function rejBox(c, d) {
   if (c.status !== 'abgelehnt' || isWithdrawn(c) || c.reporter_id !== S.me.id || isMgr()) return '';
   const rj = (d.events || []).filter((e) => e.action === 'reject'); const ev = rj[rj.length - 1];
-  return `<div class="panel" id="rejbox"><b>${esc(t('rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(stdTx(ev.note))}>${esc(stdTx(ev.note))}</p>` : ''}<p class="small muted" style="margin:0">${esc(t('rej_box_s'))}</p></div>`;
+
+  const dn = c.duplicate_of && d.duplicate_of && d.duplicate_of.case_no;
+  return `<div class="panel" id="rejbox"${dn ? ' data-rejdup' : ''}><b>${esc(t(dn ? 'rej_dup_t' : 'rej_box_t'))}</b>${ev && ev.note ? `<p style="white-space:pre-wrap;margin:6px 0"${langAttr(stdTx(ev.note))}>${esc(stdTx(ev.note))}</p>` : ''}<p class="small muted" style="margin:0">${dn ? esc(t('rej_dup_s')).replace('{n}', () => noTr(dn)) : esc(t('rej_box_s'))}</p></div>`;
 }
 function qBanner(c) {
   if (!c.q_state) return '';
@@ -2102,7 +2104,10 @@ function qBanner(c) {
 
 
 const isWithdrawn = (c) => c.status === 'abgelehnt' && !!c.workshop_site && !c.duplicate_of;
-const stTxt = (c) => (isWithdrawn(c) ? t('vi_kind_withdrawn') : t('st_' + c.status));
+
+
+const isDupOwn = (c) => c.status === 'abgelehnt' && !!c.duplicate_of && !!S.me && c.reporter_id === S.me.id && !isMgr();
+const stTxt = (c) => (isWithdrawn(c) ? t('vi_kind_withdrawn') : isDupOwn(c) ? t('st_dup_rep') : t('st_' + c.status));
 
 
 function relCostOpen(d) {

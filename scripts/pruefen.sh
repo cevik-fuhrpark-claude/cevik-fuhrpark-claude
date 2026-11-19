@@ -715,6 +715,7 @@ UI-Räder gewechselt: Hinweis Radmuttern nachziehen + Übernahme in den Abholver
 UI-Reifenwechsel ohne Auftrag: Hinweis für Fahrer zum Nachziehen der Radmuttern vorbereiten (DE/UK/EN; Backlog 1588)|ui-radmuttern-akte.py|/tmp/cfp-radmuttern-akte.log
 UI-Standardsatz Radmuttern im Hinweis/Abholvermerk in der Sprache der lesenden Person (DE/UK/EN; Backlog 1589)|ui-standardsatz-sprache.py|/tmp/cfp-standardsatz-sprache.log
 UI-Ablehnungsgrund „Dublette von …“ in der Sprache des Fahrers (DE/UK/EN; Backlog 1590)|ui-dublette-grund-sprache.py|/tmp/cfp-dublette-grund-sprache.log
+UI-Eigene Dublette „Bereits gemeldet“ statt „Abgelehnt“ (DE/UK/EN; Backlog 1591)|ui-dublette-bereits-gemeldet.py|/tmp/cfp-dublette-bereits-gemeldet.log
 UI-Import: Dateifehler am Dateifeld/an „Quelle“ (DE/UK/EN; Backlog 1580)|ui-import-dateifehler.py|/tmp/cfp-import-dateifehler.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
 UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
