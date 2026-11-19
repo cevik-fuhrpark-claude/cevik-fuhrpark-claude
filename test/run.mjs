@@ -45665,6 +45665,40 @@ await test('Backlog 1604 (Folge aus 1603): Werkstattauftrag mit Reifenbezug biet
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].tf_case_link, 'tf_case_link ' + l); ok(STRINGS[l].tf_case_for && STRINGS[l].tf_case_for.includes('{no}'), 'tf_case_for ' + l); }
 });
 
+await test('Backlog 1605 (Folge aus 1603/1604): Vorgang nennt die mit Auftragsbezug erfassten Reifenwechsel (Position, Größe, DOT; Leitung/ausführende Werkstatt, auch nach Freigabe, nicht Fahrer/Betrachter/Disposition); Reifenakte nennt den Auftrag (Link nur bei Zugriff)', async () => {
+  const { U, cmd, toRepair, V1 } = await freshWorld();
+  const id = await toRepair(); const no = (await U.fleet.get(`/api/cases/${id}`)).data.case.case_no;
+  ok(!('tire_changes' in (await U.fleet.get(`/api/cases/${id}`)).data), 'ohne Wechsel kein Feld');
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 9, case_id: id, request_key: rk() })).status, 201);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'HA-L-aussen', size: '315/70 R22.5', dot: '2324', case_id: id, request_key: rk() })).status, 201);
+  eq((await U.ws.post(`/api/vehicles/${V1}/tires/events`, { event_type: 'wechsel', position: 'VA-R', size: '385/65 R22.5', request_key: rk() })).status, 201, 'ohne Auftrag');
+  const tc = (await U.fleet.get(`/api/cases/${id}`)).data.tire_changes;
+  eq(tc.length, 1, 'nur Wechsel mit Auftragsbezug'); eq(tc[0].position, 'HA-L-aussen'); eq(tc[0].size, '315/70 R22.5'); eq(tc[0].dot, '2324');
+  eq((await U.ws.get(`/api/cases/${id}`)).data.tire_changes.length, 1, 'ausführende Werkstatt');
+  const dr = await U.driver.get(`/api/cases/${id}`); if (dr.status === 200) ok(!('tire_changes' in dr.data), 'Fahrer nicht');
+  ok(!('tire_changes' in (await U.viewer.get(`/api/cases/${id}`)).data), 'Betrachter nicht');
+  ok(!('tire_changes' in (await U.wsMuc.get(`/api/cases/${id}`)).data), 'andere Werkstatt nicht');
+  // nach Freigabe weiter sichtbar
+  const items = (await U.ws.get('/api/meta')).data.checklist.map((i) => ({ key: i.key, result: 'ok' }));
+  eq((await cmd(U.ws, id, 'record_work', { hours: 1, description: 'Reifen gewechselt' })).status, 200);
+  eq((await U.ws.post('/api/inspections', { kind: 'nach_reparatur', case_id: id, request_key: rk(), items })).status, 201);
+  eq((await cmd(U.ws, id, 'request_quality_check', {}, 'fertig')).status, 200);
+  { const r = await cmd(U.fleet, id, 'technical_release', { confirm: true }, 'Kontrolle ok'); eq(r.status, 200, JSON.stringify(r.data)); }
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.tire_changes.length, 1, 'nach Freigabe');
+  // Reifenakte: Auftrag am Ereignis, Link nur bei Zugriff
+  const h = (c) => c.get(`/api/vehicles/${V1}/tires`).then((r) => r.data.history);
+  const hf = (await h(U.fleet)).find((x) => x.position === 'HA-L-aussen' && x.event_type === 'wechsel');
+  eq(JSON.stringify(hf.case), JSON.stringify({ id, case_no: no }), 'Leitung: Nummer mit Link');
+  ok(!('case_no_' in hf) && !('case_status_' in hf), 'keine Hilfsspalten');
+  const hm = (await h(U.wsMuc)).find((x) => x.position === 'HA-L-aussen' && x.event_type === 'wechsel');
+  eq(JSON.stringify(hm.case), JSON.stringify({ case_no: no }), 'andere Werkstatt: nur Nummer');
+  ok(!(await h(U.fleet)).find((x) => x.position === 'VA-R').case, 'ohne Auftrag kein Bezug');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="ctirech"') && app.includes('data-tecase'), 'Anzeige in Vorgang und Reifenakte');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].tc_title, 'tc_title ' + l); ok(STRINGS[l].tc_order.includes('{no}'), 'tc_order ' + l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

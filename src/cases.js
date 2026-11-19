@@ -455,7 +455,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
       'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1),
       'wheel', EXISTS(SELECT 1 FROM tire_events te WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel')) AS qc_state` : '';
   // Backlog 1026: Name der übernehmenden Werkstattperson in derselben Abfrage (Abfragebudget Vorgangsdetail)
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name,
+      (SELECT json_group_array(json_object('position', x.position, 'size', x.size, 'dot', x.dot, 'winter_mark', x.winter_mark, 'created_at', x.created_at)) FROM (SELECT te.position, te.size, te.dot, te.winter_mark, te.created_at FROM tire_events te
+        WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel' ORDER BY te.created_at, te.position LIMIT 40) x) AS tire_changes FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
   const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null, workshop_ack_by_name: vq && c0.workshop_ack_by ? vq.ack_by_name || null : null };
   const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
@@ -555,6 +557,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
     maintenance_event: mevent || null,
     tire_winter: tireWinter,
     ...(wheelChanged ? { wheel_changed: true } : {}),
+    // Backlog 1605 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag“): mit Auftragsbezug erfasste Reifenwechsel (Position, Größe,
+    // DOT) – Leitung sieht bei Abschlusskontrolle/Freigabe und danach, was montiert wurde; gleiche Rollen wie Arbeiten/Teile (in derselben Abfrage)
+    ...(seesWork && vq && vq.tire_changes && JSON.parse(vq.tire_changes).length ? { tire_changes: JSON.parse(vq.tire_changes) } : {}),
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl

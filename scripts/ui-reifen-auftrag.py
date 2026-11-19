@@ -1,7 +1,7 @@
 # [CLAUDE] UI-Test Backlog 1604 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag und erfasst ihn in der Reifenakte“): Werkstatt
 # öffnet ihren Auftrag → Link „Reifenwechsel zu diesem Auftrag erfassen ›“ → Fahrzeugakte, Reifenformular offen mit Hinweis „Erfassung zum
 # Auftrag …“; Wechsel speichern → Auftrag zeigt den Radmuttern-Hinweis-Bezug (wheel_changed), Bezug bleibt für die nächste Position.
-# DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler.
+# Backlog 1605: danach nennt die Reifenakte den Auftrag und der Vorgang den Wechsel. DE/UK/EN bei 390/820/1366 px, ohne Querscrollen/Skriptfehler.
 import os
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -51,6 +51,13 @@ with sync_playwright() as p:
         check(True,f'{lang}/{w}: Wechsel am Auftrag (wheel_changed)')
         q.wait_for_selector('[data-tfcase]',state='visible',timeout=15000)
         check(q.evaluate("()=>document.querySelector('#tires form input[name=case_id]').value")==cid,f'{lang}/{w}: Bezug bleibt für die nächste Position')
+        # Backlog 1605: Reifenakte nennt den Auftrag, Vorgang nennt den Wechsel
+        q.evaluate("()=>{ const d = document.querySelector('#tirehistd'); if (d) d.open = true; }")
+        check(q.locator('[data-tecase] a').count()>=1 and cno in q.locator('[data-tecase]').first.inner_text(),f'{lang}/{w}: Reifenakte nennt Auftrag {cno}')
+        q.goto(B+'/#/cases/'+cid); q.wait_for_selector('#ctirech',timeout=20000)
+        check('315/70 R22.5' in q.inner_text('#ctirech'),f'{lang}/{w}: Vorgang nennt den Reifenwechsel')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=innerWidth+1'),f'{lang}/{w}: Vorgang ohne Querscrollen')
+        if SHOTS: q.locator('#ctirech').scroll_into_view_if_needed(); q.screenshot(path=f'{SHOTS}/ra_wechsel_{lang}_{w}.png')
         check(not errs,f'{lang}/{w}: keine Skriptfehler {errs[:2]}')
         ctx.close()
     br.close()

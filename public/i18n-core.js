@@ -1404,6 +1404,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1598/1600: Auftrag ohne Reparatur beenden – Termin entfällt, Lagerteile bleiben gebucht
 // Backlog 1601/1602: offene Rückrufe und gespeicherte Termine beim Außer-Betrieb-Nehmen bzw. bei der Rückkehr
 // Backlog 1604: Reifenwechsel aus dem Werkstattauftrag erfassen
+// Backlog 1605: Reifenwechsel am Auftrag / Auftrag in der Reifenakte
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

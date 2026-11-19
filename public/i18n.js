@@ -4225,3 +4225,7 @@ Object.assign(PLURALS.en, { recalls_open_deact: { one: '{n} open recall (manufac
 Object.assign(STRINGS.de, { tf_case_link: 'Reifenwechsel zu diesem Auftrag erfassen', tf_case_for: 'Erfassung zum Auftrag {no} – Position, Größe und DOT je Reifen angeben.' });
 Object.assign(STRINGS.uk, { tf_case_link: 'Внести заміну шин до цього замовлення', tf_case_for: 'Внесення до замовлення {no} – вкажіть позицію, розмір і DOT кожної шини.' });
 Object.assign(STRINGS.en, { tf_case_link: 'Record tyre change for this order', tf_case_for: 'Recording for order {no} – enter position, size and DOT of each tyre.' });
+// Backlog 1605: Reifenwechsel am Auftrag / Auftrag in der Reifenakte
+Object.assign(STRINGS.de, { tc_title: 'Reifenwechsel zu diesem Auftrag', tc_order: 'Auftrag {no}' });
+Object.assign(STRINGS.uk, { tc_title: 'Заміна шин до цього замовлення', tc_order: 'Замовлення {no}' });
+Object.assign(STRINGS.en, { tc_title: 'Tyre changes for this order', tc_order: 'Order {no}' });
