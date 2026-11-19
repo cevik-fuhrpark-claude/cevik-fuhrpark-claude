@@ -452,7 +452,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const qcSql = OPEN_STATUSES.includes(c0.status) ? `, json_object('work', (SELECT COUNT(*) FROM work_entries WHERE case_id=c.id) + (SELECT COUNT(*) FROM external_costs WHERE case_id=c.id),
       'latest', (SELECT MAX(created_at) FROM inspections WHERE case_id=c.id AND kind='nach_reparatur'),
       'rework', (SELECT MAX(created_at) FROM case_events WHERE case_id=c.id AND action='return_for_rework'),
-      'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1)) AS qc_state` : '';
+      'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1),
+      'wheel', EXISTS(SELECT 1 FROM tire_events te WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel')) AS qc_state` : '';
   // Backlog 1026: Name der übernehmenden Werkstattperson in derselben Abfrage (Abfragebudget Vorgangsdetail)
   const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
     .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
@@ -526,6 +527,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   const mrule = c.maintenance_rule_id ? await env.DB.prepare('SELECT id, kind, last_done_date FROM maintenance_rules WHERE id=?').bind(c.maintenance_rule_id).first() : null;
   // Auftrag „Winterreifen“: aktuelle Winterlage laut Reifenerfassung (erledigt erst mit Erfassung inkl. Winterkennzeichnung)
   const tireWinter = c.tire_order === 'winter' ? await caseWinter(env, c, vehicle?.kind) : null;
+  // Backlog 1587 (Blickwinkel „Räder gewechselt – Radmuttern nachziehen“): Reifenwechsel, die mit Bezug auf diesen Auftrag erfasst wurden
+  // (Reifenerfassung mit `case_id`, z. B. Winterreifen-Auftrag; gelesen in `qc_state`, Abfragebudget) – nur für Rollen, die Abschlusskontrolle/Freigabe auslösen; Fahrer/Betrachter nicht
+  const wheelChanged = user.role !== 'driver' && user.role !== 'viewer' && ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(c.status) && !!(vq && vq.qc_state && JSON.parse(vq.qc_state).wheel);
   // Verlauf: Beträge/Stunden nur für Rollen, die sie auch in der Akte sehen (Kosten: Leitung; Arbeiten/Teile: Leitung + ausführende Werkstatt)
   const seesWork = user.role !== 'driver' && user.role !== 'viewer' && user.role !== 'dispatch' && (user.role !== 'workshop' || access === 'full');
   // Vermerke zu Kosten-Aktionen enthalten oft Beträge („Freigabe bis 1.450 €“) – ohne Kostenrecht ausgeblendet (17.10.2026)
@@ -550,6 +554,7 @@ export async function getCaseDetail(env, user, envName, caseId) {
     files, open_items: openItems, inspections, followups, parent, duplicates, duplicate_of: duplicateOf, maintenance_rule: mrule ? { ...mrule, done_since_order: !!(mrule.last_done_date && mrule.last_done_date >= berlinDate(c.created_at)) } : null,
     maintenance_event: mevent || null,
     tire_winter: tireWinter,
+    ...(wheelChanged ? { wheel_changed: true } : {}),
     allowed_actions: allowedActions(user, c, access),
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl

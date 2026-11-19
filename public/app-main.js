@@ -2470,6 +2470,10 @@ const glassPanel = (check = false) => { const st = t('glass_hint_steps').split('
 
 const TACHO_WORK = /getriebe|tachogeber|impulsgeber|kitas|fahrtenschreiber|tachograph|gearbox|transmission|коробк\S*\s+передач|кпп|тахограф|тахогенератор|датчик\s+швидкост|датчик\s+скорост|bo[iî]te\s+de\s+vitesses?|(?:chrono)?tachygraphe|capteur\s+de\s+vitesse/i;
 
+const WHEEL_WORK = /\b(?:rad|räder|reifen)(?:wechsel|montage|tausch)|\bumbereifung|\b(?:ersatz|reserve|winter|sommer|ganzjahres)?(?:rad|räder|reifen)\b(?:[^.,;|\n]|[.,](?=\d)){0,30}(?:gewechselt|getauscht|montiert|aufgezogen|ersetzt|erneuert|umgesteckt)|\b(?:gewechselt|getauscht|montiert|aufgezogen|ersetzt|erneuert)\b(?:[^.,;|\n]|[.,](?=\d)){0,15}\b(?:rad|räder|reifen)\b|\b(?:wheels?|tyres?|tires?)\s*(?:change|fitting|swap)|\b(?:wheels?|tyres?|tires?)\b(?:[^.,;|\n]|[.,](?=\d)){0,30}\b(?:changed|replaced|fitted|mounted|swapped)|\b(?:changed?|replaced?|fit(?:ted)?|mounted|swapped)\b(?:[^.,;|\n]|[.,](?=\d)){0,20}\b(?:wheels?|tyres?|tires?)\b|шиномонтаж|переобу|(?:замін|замен|змін|монтаж|установ|встанов|постав)\S*\s+(?:\S+\s+){0,2}(?:колес|шин|резин|скат)|(?:колес|шин|резин|скат)\S*\s+(?:\S+\s+){0,2}(?:замін|замен|змін|поміня|поменя|установ|встанов|постав)/i;
+const WHEEL_NOT = /steering\s+wheels?|рул\S*\s+колес\S*|кермов\S*\s+колес\S*/gi;
+const wheelWork = (x) => WHEEL_WORK.test(String(x).replace(WHEEL_NOT, ' '));
+
 
 
 
@@ -4875,6 +4879,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
 
     const cw = (isQc || isRel) && d && d.vehicle_info && Array.isArray(d.vehicle_info.coupled) ? d.vehicle_info.coupled.flatMap((g) => (g.open_cases || []).filter((o) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(o.status)).map((o) => ({ ...o, plate: g.plate, kind: g.kind }))) : [];
     if (cw.length) f.push(`<p class="panel warn small" id="relcoupled" role="note"><b>${esc(t('rel_cpl_ws'))}</b> ${cw.map((o) => `<span>🔗 ${esc(t('vk_' + o.kind))} ${esc(o.plate)}: <a href="#/cases/${esc(o.id)}" translate="no">${esc(o.case_no)}</a> · ${esc(t('st_' + o.status))}</span>`).join(', ')}<br>${esc(t('rel_cpl_ws_hint'))}</p>`); }
+
+
+  const wheelHint = (isQc || isRel) && d && (d.wheel_changed || wheelWork([c.description, ...(d.parts || []).map((x) => x.name), ...(d.work || []).map((x) => x.description), ...(d.external_costs || []).map((x) => `${x.supplier || ''} ${x.note || ''}`)].join(' | ')));
+  if (wheelHint) f.push(`<p class="panel small" id="wheelrt" role="note">${esc(t('wheel_rt_hint'))}<br><button type="button" class="btn secondary small" id="wheelrt_add" style="margin-top:.4rem">${esc(t('wheel_rt_add'))}</button></p>`);
   if (isQc || isRel) {
 
     const puPre = !c.pickup_note && qrel && c.vehicle_location ? c.vehicle_location.slice(0, 300) : '';
@@ -4926,6 +4934,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
 
 
   if ($('#pu_drv')) $('#pu_drv').onchange = () => { $('#pu_until_box').hidden = !$('#pu_drv').checked; };
+
+  if ($('#wheelrt_add') && $('#pu_note')) { const ta = $('#pu_note'), b = $('#wheelrt_add'), txt = t('wheel_rt_text'); const sync = () => { b.disabled = ta.value.includes(txt) || (ta.value.trim() ? ta.value.trim().length + 1 : 0) + txt.length > 300; }; sync(); ta.addEventListener('input', sync);
+    b.onclick = () => { const v = ta.value.trim(); if (v.includes(txt)) return; ta.value = (v ? v + (/[.!?]$/.test(v) ? ' ' : '. ') : '') + txt; if (ta.value.length > 300) { ta.value = v; return; } sync(); ta.focus(); }; }
   if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   if (action === 'correct_vehicle') api('GET', '/api/vehicles').then((r) => {

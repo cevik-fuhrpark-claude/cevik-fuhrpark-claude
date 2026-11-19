@@ -2889,6 +2889,10 @@ const glassPanel = (check = false) => { const st = t('glass_hint_steps').split('
 // Dieselben Wörter wie die Datenqualität „Unfall ohne Versicherungsfall“ (`src/quality.js` ACC_CYR): ukr. nur Formen des Substantivs „аварія“
 // (+ russ. „авария“) – „аварійна сигналізація“/„аварийка“ (Warnblinkanlage) ist kein Unfall (Backlog 228, 24.10.2026; vorher /авар/)
 const TACHO_WORK = /getriebe|tachogeber|impulsgeber|kitas|fahrtenschreiber|tachograph|gearbox|transmission|коробк\S*\s+передач|кпп|тахограф|тахогенератор|датчик\s+швидкост|датчик\s+скорост|bo[iî]te\s+de\s+vitesses?|(?:chrono)?tachygraphe|capteur\s+de\s+vitesse/i; // Backlog 628: französische Rechnungstexte (Panne in Frankreich)
+// Backlog 1587 (Blickwinkel „Räder gewechselt – Radmuttern nachziehen“): Rad/Reifen ab-/angebaut laut Auftragstexten (Meldung, Teile, Arbeiten, Fremdleistungen)
+const WHEEL_WORK = /\b(?:rad|räder|reifen)(?:wechsel|montage|tausch)|\bumbereifung|\b(?:ersatz|reserve|winter|sommer|ganzjahres)?(?:rad|räder|reifen)\b(?:[^.,;|\n]|[.,](?=\d)){0,30}(?:gewechselt|getauscht|montiert|aufgezogen|ersetzt|erneuert|umgesteckt)|\b(?:gewechselt|getauscht|montiert|aufgezogen|ersetzt|erneuert)\b(?:[^.,;|\n]|[.,](?=\d)){0,15}\b(?:rad|räder|reifen)\b|\b(?:wheels?|tyres?|tires?)\s*(?:change|fitting|swap)|\b(?:wheels?|tyres?|tires?)\b(?:[^.,;|\n]|[.,](?=\d)){0,30}\b(?:changed|replaced|fitted|mounted|swapped)|\b(?:changed?|replaced?|fit(?:ted)?|mounted|swapped)\b(?:[^.,;|\n]|[.,](?=\d)){0,20}\b(?:wheels?|tyres?|tires?)\b|шиномонтаж|переобу|(?:замін|замен|змін|монтаж|установ|встанов|постав)\S*\s+(?:\S+\s+){0,2}(?:колес|шин|резин|скат)|(?:колес|шин|резин|скат)\S*\s+(?:\S+\s+){0,2}(?:замін|замен|змін|поміня|поменя|установ|встанов|постав)/i;
+const WHEEL_NOT = /steering\s+wheels?|рул\S*\s+колес\S*|кермов\S*\s+колес\S*/gi; // Lenkrad ist kein Rad (deutsch „Lenkrad“ schließt \b aus)
+const wheelWork = (x) => WHEEL_WORK.test(String(x).replace(WHEEL_NOT, ' '));
 // Backlog 677 (30.10.2026, Blickwinkel „Radfahrer beim Rechtsabbiegen übersehen“): Zusammenstoß mit Radfahrer/Fußgänger/Motorrad/E-Scooter ohne das Wort
 // „Unfall“ (übersehen, erfasst, gestreift, umgefahren …; EN hit/knocked down a cyclist; UK/RU збив/зачепив пішохода) → allgemeine Unfall-Hinweise
 // Backlog 681 (30.10.2026, Blickwinkel „Glätte – Lkw von der Straße abgekommen“): „von der Straße/Autobahn abgekommen“, „kam von der Fahrbahn ab“, „Böschung hinunter“,
@@ -7451,6 +7455,10 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     // (Detail liefert `coupled[].open_cases`; Werkstatt sieht dort wie bisher nur den eigenen Standort) – Gespann noch nicht komplett
     const cw = (isQc || isRel) && d && d.vehicle_info && Array.isArray(d.vehicle_info.coupled) ? d.vehicle_info.coupled.flatMap((g) => (g.open_cases || []).filter((o) => ['werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle'].includes(o.status)).map((o) => ({ ...o, plate: g.plate, kind: g.kind }))) : [];
     if (cw.length) f.push(`<p class="panel warn small" id="relcoupled" role="note"><b>${esc(t('rel_cpl_ws'))}</b> ${cw.map((o) => `<span>🔗 ${esc(t('vk_' + o.kind))} ${esc(o.plate)}: <a href="#/cases/${esc(o.id)}" translate="no">${esc(o.case_no)}</a> · ${esc(t('st_' + o.status))}</span>`).join(', ')}<br>${esc(t('rel_cpl_ws_hint'))}</p>`); }
+  // Backlog 1587: Räder/Reifen am Auftrag ab-/angebaut (Reifenerfassung mit Auftragsbezug oder Auftragstexte) – Nachziehen der Radmuttern als Abholvermerk vorschlagen
+  // (nur Hinweis, keine eigene km-Zahl: maßgeblich ist die Herstellervorgabe)
+  const wheelHint = (isQc || isRel) && d && (d.wheel_changed || wheelWork([c.description, ...(d.parts || []).map((x) => x.name), ...(d.work || []).map((x) => x.description), ...(d.external_costs || []).map((x) => `${x.supplier || ''} ${x.note || ''}`)].join(' | ')));
+  if (wheelHint) f.push(`<p class="panel small" id="wheelrt" role="note">${esc(t('wheel_rt_hint'))}<br><button type="button" class="btn secondary small" id="wheelrt_add" style="margin-top:.4rem">${esc(t('wheel_rt_add'))}</button></p>`);
   if (isQc || isRel) {
     // Backlog 629: ohne Abholvermerk mit dem eingetragenen Standort vorbelegen (externe Werkstatt – Fahrzeug steht dort)
     const puPre = !c.pickup_note && qrel && c.vehicle_location ? c.vehicle_location.slice(0, 300) : '';
@@ -7502,6 +7510,9 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   // Wiedervorlage: ein inzwischen vergangenes Datum bleibt nur unverändert zulässig – nach einer Änderung gilt „ab heute“ wie am Server
   // (vorher bot das Feld alle Tage ab dem alten Datum an, der Server wies sie mit „liegt in der Vergangenheit“ ab, 21.10.2026)
   if ($('#pu_drv')) $('#pu_drv').onchange = () => { $('#pu_until_box').hidden = !$('#pu_drv').checked; };
+  // Backlog 1587: Satz zum Nachziehen der Radmuttern an den Abholvermerk anhängen (300 Zeichen, nicht doppelt)
+  if ($('#wheelrt_add') && $('#pu_note')) { const ta = $('#pu_note'), b = $('#wheelrt_add'), txt = t('wheel_rt_text'); const sync = () => { b.disabled = ta.value.includes(txt) || (ta.value.trim() ? ta.value.trim().length + 1 : 0) + txt.length > 300; }; sync(); ta.addEventListener('input', sync);
+    b.onclick = () => { const v = ta.value.trim(); if (v.includes(txt)) return; ta.value = (v ? v + (/[.!?]$/.test(v) ? ' ' : '. ') : '') + txt; if (ta.value.length > 300) { ta.value = v; return; } sync(); ta.focus(); }; }
   if (action === 'set_followup') { const fi = $('#af input[name=followup_on]'); if (fi) fi.onchange = () => { fi.min = fi.value === (c.followup_on || '') ? fi.min : bDate(); }; }
   if (action === 'reject' && $('#dupmore')) loadDupOptions(c);
   if (action === 'correct_vehicle') api('GET', '/api/vehicles').then((r) => {

@@ -45214,6 +45214,32 @@ await test('Backlog 1586 (Backlog 1501 Stufe 22, WCAG 3.3.1): Ja/Nein-Felder (fl
   void e;
 });
 
+await test('Backlog 1587 (Blickwinkel „Räder gewechselt – Radmuttern nachziehen“): Hinweis im Abschluss-/Freigabeformular aus Reifenwechsel mit Auftragsbezug oder Auftragstexten, Satz für den Abholvermerk, keine km-Zahl; Texte DE/UK/EN', async () => {
+  const { U, toRepair } = await freshWorld();
+  const id = await toRepair();
+  let d = (await U.ws.get(`/api/cases/${id}`)).data; ok(!d.wheel_changed, 'ohne Reifenwechsel kein Kennzeichen');
+  const vid = d.case.vehicle_id;
+  // Messung mit Auftragsbezug ist kein Wechsel
+  eq((await U.ws.post(`/api/vehicles/${vid}/tires/events`, { event_type: 'messung', position: 'VA-L', tread_mm: 9, case_id: id, request_key: 'rk1587a' })).status, 201);
+  d = (await U.ws.get(`/api/cases/${id}`)).data; ok(!d.wheel_changed, 'Messung zählt nicht');
+  const ev = await U.ws.post(`/api/vehicles/${vid}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '385/65 R22.5', case_id: id, request_key: 'rk1587b' }); eq(ev.status, 201, JSON.stringify(ev.data));
+  d = (await U.ws.get(`/api/cases/${id}`)).data; eq(d.wheel_changed, true, 'Werkstatt sieht den Reifenwechsel am Auftrag');
+  eq((await U.fleet.get(`/api/cases/${id}`)).data.wheel_changed, true, 'Leitung ebenso');
+  // Fahrer erhält das Kennzeichen nie (kein Formular)
+  const dr = await U.driver.get(`/api/cases/${id}`); if (dr.status === 200) ok(!('wheel_changed' in dr.data), 'Fahrer ohne Kennzeichen');
+  // Oberfläche: Muster für Auftragstexte
+  const fs = fs0(); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const re0 = new RegExp(app.match(/\nconst WHEEL_WORK = \/(.+)\/i;/)[1], 'i'); const not = new RegExp(app.match(/\nconst WHEEL_NOT = \/(.+)\/gi;/)[1], 'gi');
+  const re = { test: (x) => re0.test(x.replace(not, ' ')) };
+  for (const x of ['Reifenwechsel VA', 'Räder gewechselt', 'Winterreifen montiert', 'neue Reifen aufgezogen HA links', 'Reifen 315/80 R22.5 ersetzt', 'Reifen 315/80 R22,5 montiert', 'Radwechsel nach Panne', 'Ersatzrad montiert', 'Umbereifung auf Winter', 'gewechselt: beide Reifen VA', 'tyre change front axle', 'wheels changed', 'replaced front tyre', 'Шиномонтаж', 'заміна колеса', 'замена шин', 'колесо замінено', 'переобування на зимові']) ok(re.test(x), 'Hinweis: ' + x);
+  for (const x of ['Lenkrad getauscht', 'Reifendruck geprüft', 'Bremsbeläge vorne ersetzt', 'Radlauf lackiert', 'Rückleuchte links', 'tyre pressure checked', 'steering wheel replaced', 'тиск у шинах перевірено', 'Spiegel montiert, Reifen geprüft', 'Reifen geprüft, Spiegel montiert', 'рульове колесо замінено']) ok(!re.test(x), 'kein Hinweis: ' + x);
+  ok(app.includes('(d.wheel_changed || wheelWork(') && app.includes('id="wheelrt"') && app.includes("t('wheel_rt_text')"), 'Formularhinweis + Übernahme');
+  ok(/const wheelHint = \(isQc \|\| isRel\) && d &&/.test(app), 'nur Abschlusskontrolle/Freigabe');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['wheel_rt_hint', 'wheel_rt_add', 'wheel_rt_text']) { ok(STRINGS[l][k], `${l}.${k}`); ok(!/\d/.test(STRINGS[l][k]), `${l}.${k}: keine erfundene Zahl`); }
+  ok(STRINGS.de.wheel_rt_text.length < 120, 'passt in den Abholvermerk (300)');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
