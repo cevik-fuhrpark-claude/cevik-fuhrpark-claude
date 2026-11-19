@@ -24132,7 +24132,7 @@ await test('Backlog 440 (Blickwinkel „Lkw kommt von der Fremdfirma zurück –
   eq((await cmd(U.ws, id, 'set_vehicle_location', { vehicle_location: '' })).status, 200);
   eq((await U.fleet.get(`/api/cases/${id}`)).data.case.vehicle_location_at, null);
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  eq((app.match(/\$\{vlAt\((c|i)\)\}/g) || []).length, 4, 'Vorgang, Akte, Disposition, Werkstattplan');
+  eq((app.match(/\$\{vlAt\((c|i)\)\}/g) || []).length, 6, 'Vorgang, Akte, Disposition, Werkstattplan, Vorgangszeile (Backlog 1614), „Reparatur beginnen“ (1615)');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].vl_as_of && STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_title) && STRINGS[l].help_dispo_s.includes(STRINGS[l].vl_as_of), l);
 });
@@ -24392,7 +24392,7 @@ await test('Backlog 451 (Blickwinkel „Mechaniker bucht Arbeitszeit auf den fal
   ok(d.case.case_no && d.vehicle.plate, 'Auftragsnummer/Kennzeichen im Vorgang');
   ok(!d.allowed_actions.some((x) => /storno|cancel_|edit_work|edit_part/.test(x)), 'keine Änderungsaktion – Hinweis bleibt wahr');
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  ok(app.includes("const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action)") && app.includes('<h3>${esc(t(\'act_\' + action))}</h3>${apwF}${bkFor}'), 'Formular'); // Backlog 903: Gutachter-Hinweis davor
+  ok(app.includes("const bkFor = ['record_work', 'add_part', 'add_external_cost'].includes(action)") && app.includes('<h3>${esc(t(\'act_\' + action))}</h3>${apwF}${srLoc}${bkFor}'), 'Formular'); // Backlog 903 (1615: Standort-Hinweis „Reparatur beginnen“ davor): Gutachter-Hinweis davor
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].bk_for && STRINGS[l].bk_check, l); ok(STRINGS[l].help_ws_s.includes(STRINGS[l].bk_for), l + ': Hilfe'); }
 });
@@ -24431,7 +24431,7 @@ await test('Backlog 453 (Blickwinkel „Neue Werkstatt-Aushilfe, erster Tag am T
   ok(app.includes('let html = wsFlow() + (shown.map('), 'Kurzablauf oben auf der Werkstatt-Startseite');
   ok(app.includes("render(html, 'home');\n  bindWsFlow();"), 'Ausblenden gebunden');
   ok(app.includes("b.onclick = () => { try { localStorage.setItem(wsFlowKey(), '1'); } catch {}"), 'Ausblenden als Eigenschaft, Speicher abgesichert');
-  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || c.appraisal_wait_on || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) || c.vehicle_inactive || (c.open_items > 0 && c.status === 'fahrzeug_freigegeben') ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
+  ok(app.includes("c.status === 'wartet_teile' || c.access === 'preview' || c.appraisal_wait_on || xh || rdyOf(c) || (c.work_state_note && WST_ST.includes(c.status)) || c.vehicle_inactive || (c.open_items > 0 && c.status === 'fahrzeug_freigegeben') || (c.vehicle_location && OPEN_CASE_ST.includes(c.status)) ? ' wrap' : ''"), 'Vorab-Info bricht um'); // Backlog 867/871: auch mit Arbeitsstand bzw. „voraussichtlich fertig“
   // die genannten Knöpfe gibt es wirklich (Server-Aktionen der Werkstatt)
   const { U, toRepair } = await freshWorld();
   const a = await toRepair(); const acts = (await U.ws.get(`/api/cases/${a}`)).data.allowed_actions;
