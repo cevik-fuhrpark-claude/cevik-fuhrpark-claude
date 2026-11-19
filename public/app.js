@@ -190,6 +190,8 @@ const dueOffHint = (iso) => (federalHoliday(iso) ? t('due_holiday_hint') : isWee
 // gespeichert wird trotzdem (Termin laut Werkstatt, die App schätzt nichts)
 function etaPlanWatch(el, f) { if (!el || el.dataset.etaW) return; el.dataset.etaW = '1'; const h = document.createElement('p'); h.className = 'panel warn small'; h.style.margin = '4px 0 0'; h.dataset.etaplan = ''; h.setAttribute('role', 'status'); h.hidden = true; el.after(h); const upd = () => { const x = f(el.value); h.hidden = !x; h.textContent = x || ''; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); }
 const planEtaMsg = (c) => (v) => (c.status === 'wartet_teile' && c.parts_expected_date && v && v < c.parts_expected_date ? '⚠️ ' + t('plan_eta_later').replace('{d}', () => fmtD(c.parts_expected_date)) : '');
+// Backlog 1592: neuer Termin nach „voraussichtlich fertig“ (noch nicht begonnen) – Server lehnt ab, Hinweis schon beim Eintippen
+const planRdyMsg = (c) => (v) => planEtaMsg(c)(v) || (c.status === 'werkstatt_freigegeben' && c.ready_expected_on && v && v > c.ready_expected_on ? '⚠️ ' + t('plan_after_rdy').replace('{d}', () => fmtD(c.ready_expected_on)) : '');
 const etaPlanMsg = (c) => (v) => (c.planned_date && c.planned_date >= bDate() && v && v > c.planned_date ? '⚠️ ' + t('eta_after_plan').replace('{d}', () => fmtD(c.planned_date)) : '');
 // Backlog 1440 (Blickwinkel „Werkstatt trägt nachträglich einen Termin in der Vergangenheit ein – gemeint war die Durchführung oder das Jahr ist
 // vertippt“): ein geänderter Termin vor heute gilt sofort als verstrichen (Werkstattplan, Dispo-Tafel, Agent) – Hinweis direkt am Feld. Ein schon
@@ -2155,7 +2157,10 @@ async function dispoBack(open, hq = '', cpl = new Map()) {
   // Backlog 556 (Blickwinkel „Disposition plant am Freitag den Montag“): seit dem letzten Werktag vor heute (Sa/So und bundesweite Feiertage
   // übersprungen) – vorher „gestern“: am Sonntag/Montag fehlten die Freitags-Freigaben samt Abholvermerk
   const from = lastWorkdayBefore(bDate());
-  const blocked = new Set(open.filter((c) => c.safety_lock || DISPO_BLOCK_ST.includes(c.status)).map((c) => c.vehicle_id));
+  // Backlog 1593 (Blickwinkel „Disposition sucht am Morgen den gestern freigegebenen Lkw samt Abholvermerk – er hat nächste Woche schon einen
+  // HU-Werkstatttermin“): dieselbe Regel wie „Nicht einplanen“ (`dispoCases`) – ein Auftrag mit späterem Termin (Backlog 459) bzw. „fährt bis zur
+  // Teilelieferung“ (Backlog 880) blockiert nicht; vorher fehlte das Fahrzeug samt Abholvermerk/Restarbeiten in „Wieder einsatzbereit“
+  const today0 = bDate(); const blocked = new Set(open.filter((c) => dispoBlocks(c, today0)).map((c) => c.vehicle_id));
   const byV = new Map();
   for (const c of rows) {
     if (!c.closed_at || BERLIN_FMT.format(new Date(c.closed_at)) < from || blocked.has(c.vehicle_id)) continue;
@@ -2171,6 +2176,7 @@ async function dispoBack(open, hq = '', cpl = new Map()) {
 // Werkstattauftrag mit Termin nach heute, noch nicht begonnen, ohne Sperre, ohne eingetragenen Standort/Abschleppung und nicht „nicht
 // fahrbereit“ gemeldet, blockiert das Fahrzeug bis zum Vortag nicht. Vorher stand es ab der Freigabe in „Nicht einplanen“ (Disposition
 // suchte unnötig Ersatz). Fahrzeugleiste/`availability` bleiben unverändert („In Werkstatt“, offene Frage an den Auftraggeber).
+const dispoBlocks = (c, today) => !!c.safety_lock || (DISPO_BLOCK_ST.includes(c.status) && !dispoUpcoming(c, today) && !(c.status === 'wartet_teile' && c.parts_drive_at));
 function dispoUpcoming(c, today) {
   return c.status === 'werkstatt_freigegeben' && !c.safety_lock && !!c.planned_date && c.planned_date > today && !c.vehicle_location && !c.tow_service && c.reported_driveability !== 'nicht_fahrbereit';
 }
@@ -7549,7 +7555,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   pastWatch($$('#af input[name=planned_date]'), 'plan_past_case'); // Backlog 1440
   // Backlog 890 (Blickwinkel „Werkstatt-Betriebsruhe zwischen den Jahren“): Fertig-/Teile-Liefertermin am Wochenende/Feiertag – nur Hinweis
   offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');
-  etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c)); // Backlog 1425
+  etaPlanWatch($('#af input[name=planned_date]'), planRdyMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c)); // Backlog 1425
   etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c)); // Backlog 1426: „voraussichtlich fertig“ vor dem Teile-Liefertermin
   if (action === 'record_work') { workDayWatch(c); hoursWatch(); }
   if (action === 'add_part') partQtyWatch();

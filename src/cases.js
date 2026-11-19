@@ -1569,7 +1569,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   let noWorkshopUser = false; let externalWs = false; // Backlog 386: Werkstatt „EXTERN“ ohne Konto – Hinweis statt Warnung // Reparatur an eine Werkstatt ohne aktives Konto freigegeben (Antwort-Hinweis, 23.10.2026)
   let stockGuardItem = null; // Lagerentnahme mit Bestandsprüfung im Stapel (Fehlerbild unterscheiden)
   const extra = []; // zusätzliche Statements in derselben Transaktion
-  let notifyKind = null;
+  let notifyKind = null; let ackPlanNear = false; // Backlog 1594
 
   const requireNote = (msg) => { if (!note || note.length < 3) throw bad('note_required', msg); };
   // Backlog 1033: Lieferschein (Foto/PDF) zu „Teillieferung eingegangen“ bzw. „Reparatur fortsetzen“ – optional eine Datei dieses Vorgangs derselben Umgebung
@@ -1655,6 +1655,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (pn && !d && p.planned_note !== undefined) throw bad('validation', 'Hinweis zum Termin nur zusammen mit einem Termin angeben.', { field_key: 'planned_date' });
       const newNote = d ? pn : null;
       if (d === (c.planned_date || null) && newNote === oldNote) throw bad('validation', 'Termin ist unverändert.', { field_key: 'planned_date' });
+      // Backlog 1592 (Blickwinkel „Werkstatt hat ‚fertig ca. 21.‘ eingetragen und verschiebt den noch nicht begonnenen Termin auf den 25.“): Gegenstück
+      // zur Prüfung bei „voraussichtlich fertig“ – sonst zeigte die Tafel „fertig ca. 21.“ vor „Termin 25.“ und die Disposition plante den Lkw ab dem 21. ein
+      if (d && c.status === 'werkstatt_freigegeben' && c.ready_expected_on && d > c.ready_expected_on) throw bad('validation', 'Neuer Werkstatttermin liegt nach der voraussichtlichen Fertigstellung – bitte zuerst „Voraussichtlich fertig“ anpassen oder entfernen.', { field_key: 'planned_date' });
       set.planned_date = d; set.planned_note = newNote; payload = { from: c.planned_date || null, to: d, ...(newNote !== oldNote ? { note_from: oldNote, note_to: newNote } : {}) };
       // Auftrag aus Prüftermin verschoben: der vom Auftrag übernommene Prüftermin (gleicher Tag) zieht mit – sonst stand das Fahrzeug im Plan an
       // zwei Tagen (23.10.2026). Nur im Betrieb: Prüftermine gelten für beide Umgebungen, ein Testauftrag ändert keine Betriebsplanung.
@@ -1949,6 +1952,11 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       if (p.planned_date) { set.planned_date = planDate(p.planned_date); if (set.planned_date !== (c.planned_date || null)) payload = { planned_from: c.planned_date || null, planned_to: set.planned_date }; }
       // Backlog 263: Termin bei Übernahme verschoben → übernommener Prüftermin (gleicher Tag) zieht mit (wie set_planned_date, nur im Betrieb)
       if (set.planned_date && c.planned_date && set.planned_date !== c.planned_date && c.maintenance_rule_id && envName === 'production') extra.push(env.DB.prepare('UPDATE maintenance_rules SET planned_date=?, planned_note=NULL, updated_at=? WHERE id=? AND planned_date=?').bind(set.planned_date, now, c.maintenance_rule_id, c.planned_date));
+      // Backlog 1594 (Blickwinkel „Leitung gibt mit Termin Freitag frei, die Werkstatt übernimmt und trägt dabei ‚morgen‘ ein“): gleiche Regel wie
+      // „Termin setzen/verschieben“ (Backlog 460) – lag der alte oder liegt der neue Termin heute bis +7 Tage, erfahren Disposition, Melder und
+      // zugeordnete Fahrer es als „Werkstatttermin geändert“ (vorher nur „übernommen“ an die Leitung)
+      { const near = (x) => !!x && x >= berlinDate() && x <= addDaysIso(berlinDate(), 7);
+        if (payload && payload.planned_to !== undefined && (near(payload.planned_to) || near(payload.planned_from))) ackPlanNear = true; }
       notifyKind = 'acknowledged';
       break;
     case 'start_repair':
@@ -2330,7 +2338,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
   const still_locked = ['released', 'safety_lock_lifted'].includes(notifyKind) ? await otherLockCaseNo(env, updated) : null;
   // Backlog 1073: Freigabe, während am selben Fahrzeug ein weiterer Werkstattauftrag läuft – Zusatz „Auftrag … noch in Werkstatt“
   const in_workshop = notifyKind === 'released' && !still_locked ? await otherWorkshopCaseNo(env, updated) : null;
-  const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked, in_workshop }) : null;
+  const sent = notifyKind ? await notifyCaseEvent(env, ctx, updated, notifyKind, { actor: user, note, payload, previous: c, vehicle: { plate: vPlate }, still_locked, in_workshop, ack_plan_near: ackPlanNear }) : null;
   // Fahrzeug korrigiert (Backlog 254): Fahrer/Disposition des falschen Fahrzeugs erfahren, dass die Sperre dort nicht mehr gilt
   // (außer ein anderer offener Vorgang sperrt es weiter – dann „bleibt gesperrt“)
   if (action === 'correct_vehicle' && (c.safety_lock || payload.lock_case_id)) {

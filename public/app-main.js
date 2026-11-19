@@ -221,6 +221,8 @@ const fmtDue = (iso) => { if (!iso || iso.length !== 10) return fmtD(iso); const
 
 function etaPlanWatch(el, f) { if (!el || el.dataset.etaW) return; el.dataset.etaW = '1'; const h = document.createElement('p'); h.className = 'panel warn small'; h.style.margin = '4px 0 0'; h.dataset.etaplan = ''; h.setAttribute('role', 'status'); h.hidden = true; el.after(h); const upd = () => { const x = f(el.value); h.hidden = !x; h.textContent = x || ''; }; el.addEventListener('input', upd); el.addEventListener('change', upd); upd(); }
 const planEtaMsg = (c) => (v) => (c.status === 'wartet_teile' && c.parts_expected_date && v && v < c.parts_expected_date ? '⚠️ ' + t('plan_eta_later').replace('{d}', () => fmtD(c.parts_expected_date)) : '');
+
+const planRdyMsg = (c) => (v) => planEtaMsg(c)(v) || (c.status === 'werkstatt_freigegeben' && c.ready_expected_on && v && v > c.ready_expected_on ? '⚠️ ' + t('plan_after_rdy').replace('{d}', () => fmtD(c.ready_expected_on)) : '');
 const etaPlanMsg = (c) => (v) => (c.planned_date && c.planned_date >= bDate() && v && v > c.planned_date ? '⚠️ ' + t('eta_after_plan').replace('{d}', () => fmtD(c.planned_date)) : '');
 
 
@@ -1980,6 +1982,7 @@ function nextWorkdayAfter(iso) {
   for (let i = 0; i < 10; i++) { d = new Date(d.getTime() + 86400000); const wd = d.getUTCDay(); if (wd !== 0 && wd !== 6 && !federalHoliday(ymd(d))) return ymd(d); }
   return ymd(new Date(Date.parse(iso + 'T12:00:00Z') + 86400000));
 }
+
 
 
 
@@ -4973,7 +4976,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   pastWatch($$('#af input[name=planned_date]'), 'plan_past_case');
 
   offDayWatch($$('#af input[name=ready_expected_on], #af input[name=parts_expected_date]'), 'date_offday_hint');
-  etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));
+  etaPlanWatch($('#af input[name=planned_date]'), planRdyMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));
   etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c));
   if (action === 'record_work') { workDayWatch(c); hoursWatch(); }
   if (action === 'add_part') partQtyWatch();

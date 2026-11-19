@@ -1085,9 +1085,10 @@ export async function workshopPlan(env, user, envName, query = {}) {
   // Wie oft wurde der Termin schon verschoben (Verlauf set_planned_date mit altem und neuem Termin)? Eine Abfrage für alle Aufträge mit Termin
   // (Blickwinkel „Termin verpasst“, 24.10.2026 – im Plan sah man ein mehrfach verschobenes Fahrzeug nicht)
   const withDate = cs.results.filter((c) => c.planned_date).map((c) => c.id);
-  // nur echte Verschiebungen: eine reine Änderung des Hinweises zum Termin (Migration 0093) hat from = to
-  const moves = new Map(withDate.length ? (await env.DB.prepare(`SELECT case_id, COUNT(*) AS n FROM case_events WHERE action='set_planned_date' AND case_id IN (SELECT value FROM json_each(?))
-      AND json_extract(payload,'$.from') IS NOT NULL AND json_extract(payload,'$.to') IS NOT NULL AND json_extract(payload,'$.from') <> json_extract(payload,'$.to') GROUP BY case_id`).bind(JSON.stringify(withDate)).all()).results.map((x) => [x.case_id, x.n]) : []);
+  // nur echte Verschiebungen: eine reine Änderung des Hinweises zum Termin (Migration 0093) hat from = to; Backlog 1594: auch Verschiebung beim Übernehmen
+  const moves = new Map(withDate.length ? (await env.DB.prepare(`SELECT case_id, COUNT(*) AS n FROM case_events WHERE action IN ('set_planned_date','acknowledge') AND case_id IN (SELECT value FROM json_each(?))
+      AND ((action='set_planned_date' AND json_extract(payload,'$.from') IS NOT NULL AND json_extract(payload,'$.to') IS NOT NULL AND json_extract(payload,'$.from') <> json_extract(payload,'$.to'))
+        OR (action='acknowledge' AND json_extract(payload,'$.planned_from') IS NOT NULL AND json_extract(payload,'$.planned_to') IS NOT NULL AND json_extract(payload,'$.planned_from') <> json_extract(payload,'$.planned_to'))) GROUP BY case_id`).bind(JSON.stringify(withDate)).all()).results.map((x) => [x.case_id, x.n]) : []);
   for (const c of cs.results) {
     // can_plan: Termin direkt aus dem Plan setzbar – gleiche Regel wie Vorgangsbefehl set_planned_date (nach Übernahme)
     const item = { type: 'case', ...c, eval_excluded: !!c.eval_excluded, coupled: coupled(c.vehicle_id), safety_lock: !!c.safety_lock, can_plan: canPlan && (c.status !== 'werkstatt_freigegeben' || !!c.workshop_ack_at), parts_drive: c.status === 'wartet_teile' && !!c.parts_drive_at && !c.safety_lock, ...(moves.get(c.id) ? { reschedules: moves.get(c.id) } : {}) };

@@ -261,6 +261,8 @@ export async function recipientsFor(env, c, kind, ctxData = {}) {
       if (kind === 'waiting_parts') add(usersByRole(['dispatch']));
       // Backlog 1032: Fuhr das Fahrzeug bis zur Teilelieferung, endet das mit „Reparatur fortgesetzt“ – die Disposition hatte den Lkw ggf. eingeplant
       if (kind === 'resumed' && ctxData.previous && ctxData.previous.parts_drive_at) add(usersByRole(['dispatch']));
+      // Backlog 1594: Termin bei der Übernahme verschoben (nah) → Empfänger wie „Werkstatttermin geändert“ (Leitung behält „übernommen“)
+      if (kind === 'acknowledged' && ctxData.ack_plan_near) { const pc = (rows) => rows.map((u) => ({ ...u, kind: 'plan_changed' })); add(pc(usersByRole(['dispatch']))); add(pc(reporter)); add(pc(assignedDrivers())); }
       break;
     case 'handover_missing':
       // Backlog 423: Werkstatt vermisst Schlüssel/Fahrzeugschein – Leitung klärt, Melder hat den Schlüssel oft noch; trägt die Leitung es
@@ -380,9 +382,9 @@ export async function notifyCaseEvent(env, ctx, c, kind, ctxData = {}) {
     // Backlog 1032: „Reparatur fortgesetzt“ nach „fährt bis zur Teilelieferung“ – fester Satz (Fahrzeug muss in die Werkstatt)
     const pde = k === 'resumed' && ctxData.previous && ctxData.previous.parts_drive_at ? ' · ' + T[lang].pdr_ended : '';
     const body = `${c.case_no} · ${vehicle?.plate || ''} · ${PRIO[lang][c.priority] || c.priority}${k === 'created' ? urgentWhy(c, urgent, lang) : ''}${plan}${pnc}${rdy}${eta}${rest}${iw}${pk}${lb}${pde}${c.environment === 'test' ? ' · TEST' : ''}`;
-    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent ? 1 : 0, title, body, created_at: now, lang });
+    rows.push({ id: uuid(), environment: c.environment, user_id: u.id, case_id: u.assigned || u.away ? null : c.id, event_key: eventKey, kind: k, urgent: urgent && k !== 'plan_changed' ? 1 : 0, /* Backlog 1594: Terminhinweis nie dringend */ title, body, created_at: now, lang });
   }
-  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
+  const created = (await insertNotifications(env, rows)).map((r) => ({ id: r.id, user_id: r.user_id, title: r.title, body: r.body, urgent: !!r.urgent, case_id: r.case_id, kind: r.kind, lang: r.lang, created_at: r.created_at, environment: r.environment }));
   const job = deliverPush(env, created);
   if (ctx && ctx.waitUntil) ctx.waitUntil(job); else await job;
   return created.length;

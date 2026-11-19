@@ -133,7 +133,10 @@ async function dispoBack(open, hq = '', cpl = new Map()) {
 
 
   const from = lastWorkdayBefore(bDate());
-  const blocked = new Set(open.filter((c) => c.safety_lock || DISPO_BLOCK_ST.includes(c.status)).map((c) => c.vehicle_id));
+
+
+
+  const today0 = bDate(); const blocked = new Set(open.filter((c) => dispoBlocks(c, today0)).map((c) => c.vehicle_id));
   const byV = new Map();
   for (const c of rows) {
     if (!c.closed_at || BERLIN_FMT.format(new Date(c.closed_at)) < from || blocked.has(c.vehicle_id)) continue;
@@ -149,6 +152,7 @@ async function dispoBack(open, hq = '', cpl = new Map()) {
 
 
 
+const dispoBlocks = (c, today) => !!c.safety_lock || (DISPO_BLOCK_ST.includes(c.status) && !dispoUpcoming(c, today) && !(c.status === 'wartet_teile' && c.parts_drive_at));
 function dispoUpcoming(c, today) {
   return c.status === 'werkstatt_freigegeben' && !c.safety_lock && !!c.planned_date && c.planned_date > today && !c.vehicle_location && !c.tow_service && c.reported_driveability !== 'nicht_fahrbereit';
 }

@@ -40665,7 +40665,7 @@ await test('Backlog 1418 (Blickwinkel „Inhaber verlängert die Flottenversiche
 await test('Backlog 1425 (Blickwinkel „Werkstatt plant die Woche nach Teile-Lieferterminen“): Werkstatttermin vor dem Teile-Liefertermin – Hinweis schon bei der Eingabe (Vorgang, Werkstattplan, Liefertermin ändern), Chip in der Vorgangsansicht, im Plan nur für kommende Termine; Texte DE/UK/EN', async () => {
   const { readFileSync } = await import('node:fs'); const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/function etaPlanWatch\(el, f\) \{ if \(!el \|\| el\.dataset\.etaW\) return;/.test(app), 'Hilfsfunktion');
-  ok(app.includes("etaPlanWatch($('#af input[name=planned_date]'), planEtaMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));"), 'Vorgangsformulare');
+  ok(app.includes("etaPlanWatch($('#af input[name=planned_date]'), planRdyMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c));") && /const planRdyMsg = \(c\) => \(v\) => planEtaMsg\(c\)\(v\) \|\|/.test(app), 'Vorgangsformulare (Backlog 1592: planRdyMsg schließt planEtaMsg ein)');
   ok(app.includes("for (const i of all) etaPlanWatch($('#pd-' + CSS.escape(i.id)), planEtaMsg(i));"), 'Werkstattplan');
   ok(app.includes("etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c));"), 'Backlog 1426: voraussichtlich fertig');
   ok(app.includes("i.planned_date >= r.today && i.planned_date < i.parts_expected_date && `<span class=\"chip mittel\" data-planeta>"), 'Plan-Chip nur für kommende Termine');
@@ -45361,6 +45361,119 @@ await test('Backlog 1591 (Blickwinkel „Fahrer sieht seine Meldung als ‚Abgel
   eq(dv.case.status, 'abgelehnt'); eq(dv.case.duplicate_of, orig, 'Vorgangsansicht des Melders: duplicate_of'); eq(dv.duplicate_of.case_no, on, 'Nummer der Ursprungsmeldung');
   const li = (await U.driver.get('/api/cases?status=all')).data; const row = (li.cases || li).find((x) => x.id === d1);
   ok(row && row.duplicate_of === orig && row.duplicate_of_no === on, 'Liste des Melders: duplicate_of + Nummer');
+});
+
+await test('Backlog 1592 (Blickwinkel „Werkstatt hat ‚fertig ca. 21.‘ eingetragen und verschiebt den noch nicht begonnenen Termin auf den 25.“): Termin nach „voraussichtlich fertig“ → 400 am Feld planned_date (DE/UK/EN), gleich/früher/entfernen erlaubt; in Reparatur unverändert; Hinweis beim Eintippen', async () => {
+  const { U, cmd, toRepair, newCase } = await freshWorld();
+  const { berlinDate } = await import('../src/util.js');
+  const day = (n) => new Date(Date.parse(berlinDate() + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const id = await newCase(); eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge', { planned_date: day(2) })).status, 200);
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(3) })).status, 200);
+  { const r = await cmd(U.ws, id, 'set_planned_date', { planned_date: day(5) }); eq(r.status, 400); ok(/nach der voraussichtlichen Fertigstellung/.test(r.data.message), r.data.message); eq(r.data.field_key, 'planned_date'); }
+  { const r = await cmd(U.fleet, id, 'set_planned_date', { planned_date: day(4) }); eq(r.status, 400, 'auch Leitung'); }
+  let c = (await U.fleet.get(`/api/cases/${id}`)).data.case; eq(c.planned_date, day(2), 'Termin unverändert'); eq(c.ready_expected_on, day(3));
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(3) })).status, 200, 'Termin am Fertig-Tag erlaubt');
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(1) })).status, 200, 'früher erlaubt');
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: '' })).status, 200, 'entfernen erlaubt');
+  // Reihenfolge laut Hinweis: erst „voraussichtlich fertig“ ändern, dann Termin
+  eq((await cmd(U.ws, id, 'set_ready_date', { ready_expected_on: day(8) })).status, 200);
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: day(6) })).status, 200);
+  c = (await U.fleet.get(`/api/cases/${id}`)).data.case; eq(`${c.planned_date}/${c.ready_expected_on}`, `${day(6)}/${day(8)}`);
+  // ohne Angabe „voraussichtlich fertig“ wie bisher
+  const id2 = await newCase(); eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, id2, 'acknowledge', { planned_date: day(2) })).status, 200);
+  eq((await cmd(U.ws, id2, 'set_planned_date', { planned_date: day(30) })).status, 200, 'ohne Fertig-Angabe frei');
+  // in Reparatur: Termin ist Vergangenheit der Arbeit – keine neue Sperre
+  const r3 = await toRepair(); eq((await cmd(U.ws, r3, 'set_ready_date', { ready_expected_on: day(2) })).status, 200);
+  const al = (await U.ws.get(`/api/cases/${r3}`)).data.allowed_actions;
+  if (al.includes('set_planned_date')) eq((await cmd(U.ws, r3, 'set_planned_date', { planned_date: day(5) })).status, 200, 'in Reparatur unverändert');
+  // Übersetzung der Server-Meldung und Hinweis am Feld
+  const { translateValidation, STRINGS } = await import('../public/i18n.js');
+  const m = 'Neuer Werkstatttermin liegt nach der voraussichtlichen Fertigstellung – bitte zuerst „Voraussichtlich fertig“ anpassen oder entfernen.';
+  for (const l of ['uk', 'en']) ok(translateValidation(l, m) !== m, l + ': Server-Meldung übersetzt');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].plan_after_rdy && STRINGS[l].plan_after_rdy.includes('{d}'), l + ': plan_after_rdy'); ok(STRINGS[l].plan_after_rdy.includes(STRINGS[l].act_set_ready_date), l + ': nennt den Knopf „Voraussichtlich fertig“'); ok((l === 'de' ? m : translateValidation(l, m)).includes(STRINGS[l].act_set_ready_date), l + ': Server-Meldung nennt den Knopf'); }
+  const { readFileSync } = await import('node:fs'); const src = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const fn = src.match(/const planEtaMsg = [^\n]*\n/)[0] + src.match(/const planRdyMsg = [^\n]*\n/)[0];
+  const f = new Function('t', 'fmtD', fn + 'return planRdyMsg;')((k) => STRINGS.de[k], (d) => d.split('-').reverse().join('.'));
+  const cw = { status: 'werkstatt_freigegeben', ready_expected_on: '2026-12-03', planned_date: '2026-12-01' };
+  ok(f(cw)('2026-12-05').includes('03.12.2026'), 'Hinweis bei späterem Termin'); eq(f(cw)('2026-12-03'), '', 'gleicher Tag ohne Hinweis'); eq(f(cw)(''), '', 'leer ohne Hinweis');
+  eq(f({ ...cw, status: 'in_reparatur' })('2026-12-05'), '', 'in Reparatur ohne Hinweis'); eq(f({ ...cw, ready_expected_on: null })('2026-12-05'), '', 'ohne Fertig-Angabe');
+  ok(/etaPlanWatch\(\$\('#af input\[name=planned_date\]'\), planRdyMsg\(c\)\)/.test(src), 'Terminfeld nutzt den Hinweis');
+});
+
+await test('Backlog 1593 (Blickwinkel „Disposition sucht am Morgen den gestern freigegebenen Lkw samt Abholvermerk – er hat nächste Woche schon einen HU-Werkstatttermin“): „Wieder einsatzbereit“ blockiert nur wie „Nicht einplanen“ (späterer Termin/„fährt bis zur Teilelieferung“ nicht)', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const i0 = app.indexOf('const DISPO_BLOCK_ST'); const src = app.slice(i0, app.indexOf('\nfunction dispoCases(', i0));
+  const { STRINGS } = await import('../public/i18n.js'); const { federalHoliday } = await import('../public/holidays.js');
+  const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
+  const T0 = '2026-11-18'; const bDate = (n = 0) => new Date(Date.parse(T0 + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const rel = { id: 'c1', case_no: 'V-1', vehicle_id: 'v1', plate: 'SZ-YC 5513', status: 'fahrzeug_freigegeben', closed_at: bDate(-1) + 'T09:00:00Z', updated_at: bDate(-1) + 'T09:00:00Z', pickup_note: 'Schlüssel im Kasten', open_items: 0 };
+  const mk = () => new Function('api', 'bDate', 'BERLIN_FMT', 'esc', 't', 'plate', 'ltxt', 'clipTxt', 'cDesc', 'fmtDT', 'wsName', 'langAttr', 'federalHoliday', 'fmtD', 'stdTx', 'tn', src + '\nreturn { dispoBack, dispoBlocks };')(
+    async () => ({ cases: [rel] }), bDate, BERLIN_FMT, (v) => String(v), (k) => STRINGS.de[k] || k, (p) => `[${p}]`, (v) => v, (v) => v, (v) => v, (v) => v, (v) => v, () => '', federalHoliday, (v) => v, (v) => String(v ?? ''), (k, n) => String(n));
+  const { dispoBack, dispoBlocks } = mk();
+  const shown = async (o) => (await dispoBack(o ? [{ vehicle_id: 'v1', ...o }] : [], '')).includes('data-dback');
+  ok(await shown(null), 'ohne weiteren Auftrag: wieder einsatzbereit');
+  ok(await shown({ status: 'werkstatt_freigegeben', planned_date: bDate(5) }), 'HU-Termin nächste Woche: bleibt in „Wieder einsatzbereit“');
+  ok((await dispoBack([{ vehicle_id: 'v1', status: 'werkstatt_freigegeben', planned_date: bDate(5) }], '')).includes('Schlüssel im Kasten'), 'mit Abholvermerk');
+  ok(await shown({ status: 'wartet_teile', parts_drive_at: bDate(-2) + 'T08:00:00Z' }), 'fährt bis zur Teilelieferung: bleibt');
+  ok(!(await shown({ status: 'werkstatt_freigegeben', planned_date: bDate(0) })), 'Termin heute: blockiert');
+  ok(!(await shown({ status: 'werkstatt_freigegeben', planned_date: null })), 'ohne Termin: blockiert');
+  ok(!(await shown({ status: 'werkstatt_freigegeben', planned_date: bDate(5), reported_driveability: 'nicht_fahrbereit' })), 'nicht fahrbereit gemeldet: blockiert');
+  ok(!(await shown({ status: 'werkstatt_freigegeben', planned_date: bDate(5), vehicle_location: 'Werkstatt' })), 'Standort eingetragen: blockiert');
+  ok(!(await shown({ status: 'werkstatt_freigegeben', planned_date: bDate(5), safety_lock: 1 })), 'gesperrt: blockiert');
+  ok(!(await shown({ status: 'wartet_teile' })), 'wartet auf Teile (steht): blockiert');
+  ok(!(await shown({ status: 'in_reparatur' })) && !(await shown({ status: 'abschlusskontrolle' })), 'in Reparatur/Kontrolle: blockiert');
+  ok(!(await shown({ status: 'gemeldet', safety_lock: 1 })), 'neue Meldung mit Sperre: blockiert');
+  ok(await shown({ status: 'gemeldet' }), 'neue Meldung ohne Sperre: wie bisher');
+  // gleiche Regel wie der Rang in „Nicht einplanen“ (dispoCases): blockiert ⇔ Rang > 0
+  const rk = app.match(/const rank = \(c\) => \(([^\n]*?)\);\n/); ok(rk, 'Rangregel gefunden');
+  const rank = new Function('c', 'dispoUpcoming', 'today0', 'return (' + rk[1] + ');');
+  const up = new Function(src + '\nreturn dispoUpcoming;')();
+  for (const st of ['gemeldet', 'werkstatt_freigegeben', 'in_reparatur', 'wartet_teile', 'abschlusskontrolle']) for (const pd of [null, bDate(0), bDate(3)]) for (const lock of [0, 1]) for (const drive of [null, 'x']) {
+    const c = { status: st, planned_date: pd, safety_lock: lock, parts_drive_at: drive };
+    eq(dispoBlocks(c, bDate()), rank(c, up, bDate()) > 0, `gleiche Regel: ${JSON.stringify(c)}`);
+  }
+});
+
+await test('Backlog 1594 (Blickwinkel „Leitung gibt mit Termin Freitag frei, die Werkstatt übernimmt und trägt dabei ‚morgen‘ ein“): Terminänderung bei der Übernahme (heute bis 7 Tage) → „Werkstatttermin geändert“ an Disposition/Melder/zugeordnete Fahrer, nie dringend; Leitung „übernommen“; weit weg/unverändert ohne; Werkstattplan zählt die Verschiebung', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const x = await U.own.post('/api/users', { username: 'q.dispo', display_name: 'Dispo', role: 'dispatch', environment: 'test', language: 'en' });
+  const D = new Client(worker, e, 'q.dispo'); await D.post('/api/invite/accept', { token: x.data.invite_token, password: 'Sicheres-Passwort-2026' });
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const kinds = async (c, id) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.case_id === id).map((n) => n.kind);
+  const pcOf = async (c, id) => (await c.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed' && n.case_id === id);
+  // 1) kritisch (dringend) gemeldet, Freigabe mit Termin +4, Werkstatt übernimmt mit +1
+  const id = await newCase({ priority: 'kritisch' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(4) }, 'Termin')).status, 200);
+  const before = (await pcOf(D, id)).length;
+  eq((await cmd(U.ws, id, 'acknowledge', { planned_date: day(1) })).status, 200);
+  const d = await pcOf(D, id); eq(d.length - before, 1, 'Disposition: „Werkstatttermin geändert“');
+  ok(d[0].title === 'Workshop date changed' && d[0].body.includes(new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(day(1) + 'T12:00:00Z'))) && !d[0].urgent, 'EN, neuer Termin, nicht dringend: ' + JSON.stringify(d[0]));
+  const fk = await kinds(U.fleet, id); ok(fk.includes('acknowledged') && !fk.includes('plan_changed'), 'Leitung: „übernommen“ (kein doppelter Hinweis): ' + fk);
+  eq((await kinds(U.ws, id)).filter((k) => k === 'plan_changed').length, 0, 'Werkstatt selbst nicht');
+  const rep = (await U.driver.get('/api/notifications')).data.notifications.filter((n) => n.kind === 'plan_changed' && n.case_id === id);
+  eq(rep.length, 1, 'Melder (Fahrer) informiert'); ok(!rep[0].urgent, 'Melder nicht dringend');
+  ok((await U.fleet.get('/api/notifications')).data.notifications.some((n) => n.case_id === id && n.kind === 'acknowledged' && n.urgent), 'übernommen bleibt bei kritisch dringend');
+  // Werkstattplan zählt die Verschiebung bei der Übernahme
+  const plan = async (cid) => { const p = (await U.fleet.get('/api/workshop/plan?days=30')).data; return [...p.days.flatMap((x) => x.items), ...(p.overdue || []), ...(p.unplanned || [])].find((i) => i.type === 'case' && i.id === cid); };
+  eq((await plan(id)).reschedules, 1, 'Werkstattplan: einmal verschoben');
+  // 2) unverändert übernommen → kein Hinweis, keine Verschiebung
+  const id2 = await newCase(); eq((await cmd(U.fleet, id2, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(3) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id2, 'acknowledge', { planned_date: day(3) })).status, 200);
+  eq((await pcOf(D, id2)).filter((n) => n.case_id === id2).length, 0, 'gleicher Termin: kein Hinweis'); eq((await plan(id2)).reschedules, undefined, 'keine Verschiebung');
+  // 3) beide Termine weit weg → kein Hinweis
+  const id3 = await newCase(); eq((await cmd(U.fleet, id3, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(20) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id3, 'acknowledge', { planned_date: day(25) })).status, 200);
+  eq((await pcOf(D, id3)).filter((n) => n.case_id === id3).length, 0, 'weit weg: kein Hinweis');
+  // 4) ohne Termin freigegeben, bei Übernahme morgen eingetragen → Hinweis (erster Termin in 7 Tagen); ohne Termin übernommen → nichts
+  const id4 = await newCase(); eq((await cmd(U.fleet, id4, 'approve_repair', { workshop_site: 'DORTMUND' }, 'frei')).status, 200);
+  eq((await cmd(U.ws, id4, 'acknowledge', { planned_date: day(1) })).status, 200);
+  eq((await pcOf(D, id4)).filter((n) => n.case_id === id4).length, 1, 'erster naher Termin bei Übernahme: Hinweis');
+  eq((await plan(id4)).reschedules, undefined, 'erster Termin ist keine Verschiebung');
+  const id5 = await newCase(); eq((await cmd(U.fleet, id5, 'approve_repair', { workshop_site: 'DORTMUND', planned_date: day(2) }, 'Termin')).status, 200);
+  eq((await cmd(U.ws, id5, 'acknowledge')).status, 200);
+  eq((await pcOf(D, id5)).filter((n) => n.case_id === id5).length, 0, 'ohne Terminangabe: kein Hinweis');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
