@@ -4242,3 +4242,7 @@ Object.assign(STRINGS.en, { oi_sort_rel: 'release date, oldest first' });
 Object.assign(STRINGS.de, { sr_loc_hint: 'Erst beginnen, wenn das Fahrzeug in der Werkstatt ist. Danach den Standort unter „Standort / Abschleppung“ leeren oder anpassen.' });
 Object.assign(STRINGS.uk, { sr_loc_hint: 'Починайте лише тоді, коли транспорт уже в майстерні. Після цього очистьте або змініть місцезнаходження в розділі «Місцезнаходження / евакуація».' });
 Object.assign(STRINGS.en, { sr_loc_hint: 'Only start once the vehicle is in the workshop. Then clear or update the location under “Location / towing”.' });
+// Backlog 1617/1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“)
+Object.assign(STRINGS.de, { bk_done: 'Gebucht auf {no} · {p}', bk_same_other: 'Dasselbe Teil wurde heute um {t} schon auf {no} · {p} gebucht (eigene Buchung). Richtiger Auftrag?' });
+Object.assign(STRINGS.uk, { bk_done: 'Записано на {no} · {p}', bk_same_other: 'Цю запчастину ви сьогодні о {t} вже записали на {no} · {p}. Чи це правильне замовлення?' });
+Object.assign(STRINGS.en, { bk_done: 'Booked to {no} · {p}', bk_same_other: 'The same part was already booked today at {t} to {no} · {p} (your booking). Is this the right job?' });

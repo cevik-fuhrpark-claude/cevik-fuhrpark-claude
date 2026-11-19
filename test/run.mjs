@@ -45834,6 +45834,34 @@ await test('Backlog 1614–1616 (Blickwinkel „Werkstatt erhält einen Auftrag 
   await U.fleet.post('/api/agent/run');
   st = await find(); ok(st && !/Werkstatttermin am/.test(st.message) && /^Stand bei der Werkstatt erfragen/.test(st.next_action || ''), JSON.stringify(st));
 });
+await test('Backlog 1617–1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“): Bestätigung nennt Auftrag/Kennzeichen, Teileliste nennt das Lager, Hinweis bei demselben Teil heute auf einem anderen Auftrag', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld();
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const st = await U.ws.post('/api/stock', { name: 'Bremsbelag VA', part_number: 'BB-17', unit_price_net: '50', initial_qty: 4 }); eq(st.status, 201);
+  const a = await toRepair(); const b = await toRepair({ vehicle_id: 'VIN:WDB9630051L917317', description: 'Bremse vorne quietscht stark' });
+  eq((await cmd(U.ws, a, 'add_part', { stock_item_id: st.data.id, quantity: 1 })).status, 200);
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Glühlampe H7', part_number: 'H7-55', quantity: 2 })).status, 200);
+  // 1619: Auftrag b sieht die eigenen Buchungen von heute auf Auftrag a (mit Nummer/Kennzeichen), Auftrag a nicht sich selbst
+  const db = (await U.ws.get(`/api/cases/${b}`)).data; const ca = (await U.ws.get(`/api/cases/${a}`)).data;
+  ok(Array.isArray(db.my_parts_today) && db.my_parts_today.length === 2 && db.my_parts_today.every((p) => p.case_id === a && p.case_no === ca.case.case_no && p.plate === 'SZ-YC 5513'), JSON.stringify(db.my_parts_today));
+  ok(db.my_parts_today.some((p) => p.stock_item_id === st.data.id) && db.my_parts_today.some((p) => p.part_number === 'H7-55'), 'Lagerartikel und freies Teil');
+  eq((ca.my_parts_today || []).length, 0, 'eigener Auftrag zählt nicht');
+  // nur eigene Buchungen: andere Person (Leitung) sieht sie nicht als ihre
+  eq(((await U.fleet.get(`/api/cases/${b}`)).data.my_parts_today || []).length, 0, 'Leitung hat nichts gebucht');
+  // gestern gebucht → kein Hinweis mehr
+  e.DB.db.prepare('UPDATE parts SET created_at=? WHERE case_id=?').run(new Date(Date.now() - 2 * 86400000).toISOString(), a);
+  eq(((await U.ws.get(`/api/cases/${b}`)).data.my_parts_today || []).length, 0, 'nur heute');
+  // außerhalb der Arbeitsstatus keine Abfrage
+  eq((await U.ws.get(`/api/cases/${b}`)).data.case.status, 'in_reparatur');
+  // 1618: Teileliste nennt das Lager (parts.supplier „Lager DORTMUND“ beim Lagerteil)
+  const pa = ca.parts.find((p) => p.stock_item_id === st.data.id); eq(pa && pa.supplier, 'Lager DORTMUND');
+  ok(app.includes('${p.stock_item_id && p.supplier ? ` <span class="small muted" data-pstk>· ${esc(supplierLabel(p.supplier))}</span>` : \'\'}'), '1618: Teileliste');
+  // 1617/1619: Oberfläche
+  ok(app.includes("['record_work', 'add_part', 'add_external_cost'].includes(action) ? '✓ ' + t('bk_done')"), '1617: Toast');
+  ok(app.includes('<p class="panel warn small" id="bksame" role="status" hidden></p><div id="stocksel">') && app.includes('partQtyWatch(); partSameWatch(d);'), '1619: Hinweisfeld');
+  for (const l of ['de', 'uk', 'en']) ok(['{no}', '{p}'].every((k) => STRINGS[l].bk_done.includes(k)) && ['{t}', '{no}', '{p}'].every((k) => STRINGS[l].bk_same_other.includes(k)), `${l}: bk_done/bk_same_other`);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
