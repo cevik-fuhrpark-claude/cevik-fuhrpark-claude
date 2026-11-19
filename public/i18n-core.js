@@ -1409,6 +1409,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1606/1607: Restarbeit der Leitung an die Werkstatt; Freigabevermerk für die Werkstatt unsichtbar
 // Backlog 1611/1612: Filter „Restarbeiten offen“ nach Freigabedatum; außer Betrieb genommenes Fahrzeug gekennzeichnet
 // Backlog 1614: „Arbeit beginnen“ nennt Standort bzw. künftigen Werkstatttermin
+// Backlog 1617/1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

@@ -723,6 +723,7 @@ UI-Reifenwechsel aus dem Werkstattauftrag erfassen (DE/UK/EN; Backlog 1604)|ui-r
 UI-Kostenfreigabe: Vermerk für die Werkstatt unsichtbar, Restarbeit der Leitung erreicht die Werkstatt (DE/UK/EN; Backlog 1606/1607)|ui-kostenfreigabe-vermerk.py|/tmp/cfp-kostenfreigabe-vermerk.log
 UI-Restarbeiten am Monatsende: Freigabedatum, feste Sortierung, „außer Betrieb“, Zahl in der Akte (DE/UK/EN; Backlog 1610–1612)|ui-restarbeiten-monatsende.py|/tmp/cfp-restarbeiten-monatsende.log
 UI-Werkstattauftrag, Fahrzeug unterwegs im Ausland: Standort in der Zeile, Hinweis bei „Arbeit beginnen“ (DE/UK/EN; Backlog 1614/1615)|ui-werkstatt-ausland.py|/tmp/cfp-werkstatt-ausland.log
+UI-Teil auf falschen Auftrag: Hinweis bei demselben Teil heute auf anderem Auftrag, Lager in der Teileliste, Bestätigung mit Auftrag (DE/UK/EN; Backlog 1617–1619)|ui-teil-falscher-auftrag.py|/tmp/cfp-teil-falscher-auftrag.log
 UI-Disposition „Wieder einsatzbereit“: außer Betrieb fehlt, ruhend gekennzeichnet, neue Meldung ohne Sperre genannt (DE/UK/EN; Backlog 1608/1609)|ui-dispo-ersatz.py|/tmp/cfp-dispo-ersatz.log
 UI-Import: Dateifehler am Dateifeld/an „Quelle“ (DE/UK/EN; Backlog 1580)|ui-import-dateifehler.py|/tmp/cfp-import-dateifehler.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
