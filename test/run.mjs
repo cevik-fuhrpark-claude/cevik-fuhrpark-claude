@@ -45240,6 +45240,27 @@ await test('Backlog 1587 (Blickwinkel „Räder gewechselt – Radmuttern nachzi
   ok(STRINGS.de.wheel_rt_text.length < 120, 'passt in den Abholvermerk (300)');
 });
 
+await test('Backlog 1588 (Blickwinkel „Reifenwechsel ohne Auftrag – Radmuttern nachziehen“): Reifenwechsel in der Fahrzeugakte bietet an, einen Hinweis zum Fahrzeug für die Fahrer vorzubereiten (Person speichert, „Gültig bis“ selbst, keine km-Zahl); Werkstatt darf ihn anlegen, Fahrer sieht ihn; Texte DE/UK/EN', async () => {
+  const { U, V1 } = await freshWorld(); const VID = V1;
+  { const as = await U.fleet.post(`/api/vehicles/${VID}/drivers`, { user_id: U.driver.id }); ok(as.status < 300, JSON.stringify(as.data)); }
+  const ev = await U.ws.post(`/api/vehicles/${VID}/tires/events`, { event_type: 'wechsel', position: 'VA-L', size: '385/65 R22.5', request_key: 'rk1588a' }); eq(ev.status, 201, JSON.stringify(ev.data));
+  const { STRINGS } = await import('../public/i18n.js');
+  // Werkstatt legt den vorbereiteten Hinweis an (für Fahrer, ohne „Gültig bis“ erlaubt) – Fahrer sieht ihn unter „Mein Fahrzeug“
+  const n = await U.ws.post(`/api/vehicles/${VID}/notes`, { text: STRINGS.de.wheel_rt_text, for_driver: true, valid_until: null, request_key: 'rk1588n' }); eq(n.status, 201, JSON.stringify(n.data));
+  ok((await U.driver.get('/api/me/vehicles')).data.vehicles.find((v) => v.id === VID).notes.some((x) => x.text === STRINGS.de.wheel_rt_text), 'Fahrer sieht den Hinweis');
+  // Oberfläche
+  const fs = fs0(); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("if (b.event_type === 'wechsel' && !b.case_id) el.dataset.wheel = '1';"), 'nur Wechsel ohne Auftragsbezug (mit Auftrag: Abholvermerk, Backlog 1587)');
+  ok(app.includes("if (!(keep && keep.saved)) delete el.dataset.wheel; const wheelSeries = el.dataset.wheel === '1';"), 'Hinweis bleibt nur für die Erfassungsreihe');
+  ok(app.includes('${canWrite && wheelSeries ? `<p class="panel small" id="tfwheel" role="note">'), 'Hinweis nur für Schreibberechtigte nach dem Speichern');
+  const h = app.slice(app.indexOf("const twg = $('#tfwheelgo', el);"), app.indexOf("const twp = $('#twopre', el);"));
+  ok(h.includes("t('wheel_rt_text')") && h.includes("namedItem('for_driver')") && h.includes("namedItem('valid_until')"), 'füllt Text + „für Fahrer“ vor, Fokus auf „Gültig bis“');
+  ok(!/api\(/.test(h), 'speichert nicht selbst – die Person entscheidet und speichert');
+  ok(h.includes("toast(t('wheel_vn_exists'))") && h.includes("ul.vnotes:not(.muted)"), 'kein zweiter gleicher aktiver Hinweis');
+  ok(!/valid_until[^;]*\.value\s*=/.test(h), 'keine vorgegebene Frist');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['wheel_vn_hint', 'wheel_vn_add', 'wheel_vn_exists', 'wheel_vn_none']) { ok(STRINGS[l][k], `${l}.${k}`); ok(!/\d/.test(STRINGS[l][k]), `${l}.${k}: keine erfundene Zahl`); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
