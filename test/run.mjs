@@ -18032,7 +18032,7 @@ await test('Reifenwechsel-Saison / Jahresabschluss Kosten (Teilagenten 23.10.): 
   eq(new Set(['de', 'uk', 'en'].map((l) => STRINGS[l].help_costs_s.split('|').length)).size, 1, 'Hilfe Kosten: gleiche Absatzzahl');
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("\\?sec=tires$/, (vid) => viewVehicle(vid, null, 'tires')]") && (app.match(/encodeURIComponent\(x\.vehicle_id\)\}\?sec=tires/g) || []).length >= 4, 'Reifen-/Winterlisten springen zum Abschnitt');
-  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode })") && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
+  ok(app.includes("renderTires(id, el, { saved: true, event_type: b.event_type, odometer_km: b.odometer_km || '', position: nx || b.position, wo: woMode, ...(csMode ? { cs: csMode } : {}) })") /* Backlog 1604: Auftragsbezug bleibt */ && app.includes("tf.closest('details').open = true"), 'Erfassung bleibt offen');
   ok(app.includes("part=items`)") && app.includes('data-cinact'), 'Kosten: Knopf Einzelpositionen, Status-Chip');
 });
 
