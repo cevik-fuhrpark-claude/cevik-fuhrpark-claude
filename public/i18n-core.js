@@ -696,6 +696,7 @@ export function translateImportReason(lang, reason) {
 const NEXT_ACTIONS = [
   ['Fuhrparkleitung als Benutzer anlegen und Einladung annehmen lassen.', 'Створіть керівника автопарку як користувача і попросіть прийняти запрошення.', 'Create fleet management as a user and have them accept the invitation.'],
   ['Vorgang prüfen; neue Wiedervorlage setzen oder entfernen.', 'Перевірте заявку; встановіть нове нагадування або видаліть його.', 'Review the case; set a new follow-up or remove it.'],
+  ['Werkstatttermin steht – vor dem Termin prüfen, ob das Fahrzeug rechtzeitig zurück ist; Termin bei Bedarf anpassen.', 'Термін у майстерні призначено – перед ним перевірте, чи транспорт вчасно повернеться; за потреби змініть термін.', 'Workshop date is set – before it, check that the vehicle will be back in time; adjust the date if needed.'],
   ['Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.', 'Передайте заявку в майстерню або обґрунтовано відхиліть.', 'Forward the case to a workshop or reject it with a reason.'],
   ['Versicherungsschutz bzw. Folgevertrag klären; Vertrag beenden oder Folgevertrag mit Nachweis erfassen.', 'З’ясуйте страховий захист або наступний договір; завершіть договір або внесіть наступний із підтвердженням.', 'Clarify insurance cover or the follow-up contract; end the contract or record the follow-up contract with evidence.'],
   ['Stand bei der externen Werkstatt erfragen; Fortschritt oder Termin im Vorgang eintragen.', 'Дізнайтеся стан у зовнішній майстерні; внесіть у заявку прогрес або дату.', 'Ask the external workshop for the status; record progress or the date in the case.'],
@@ -1407,6 +1408,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1605: Reifenwechsel am Auftrag / Auftrag in der Reifenakte
 // Backlog 1606/1607: Restarbeit der Leitung an die Werkstatt; Freigabevermerk für die Werkstatt unsichtbar
 // Backlog 1611/1612: Filter „Restarbeiten offen“ nach Freigabedatum; außer Betrieb genommenes Fahrzeug gekennzeichnet
+// Backlog 1614: „Arbeit beginnen“ nennt Standort bzw. künftigen Werkstatttermin
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

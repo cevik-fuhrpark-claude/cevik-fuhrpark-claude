@@ -2000,6 +2000,7 @@ Object.assign(STRINGS.en, { inactive_since: 'Out of service since', inactive_rea
 const NEXT_ACTIONS = [
   ['Fuhrparkleitung als Benutzer anlegen und Einladung annehmen lassen.', 'Створіть керівника автопарку як користувача і попросіть прийняти запрошення.', 'Create fleet management as a user and have them accept the invitation.'],
   ['Vorgang prüfen; neue Wiedervorlage setzen oder entfernen.', 'Перевірте заявку; встановіть нове нагадування або видаліть його.', 'Review the case; set a new follow-up or remove it.'],
+  ['Werkstatttermin steht – vor dem Termin prüfen, ob das Fahrzeug rechtzeitig zurück ist; Termin bei Bedarf anpassen.', 'Термін у майстерні призначено – перед ним перевірте, чи транспорт вчасно повернеться; за потреби змініть термін.', 'Workshop date is set – before it, check that the vehicle will be back in time; adjust the date if needed.'],
   ['Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.', 'Передайте заявку в майстерню або обґрунтовано відхиліть.', 'Forward the case to a workshop or reject it with a reason.'],
   ['Versicherungsschutz bzw. Folgevertrag klären; Vertrag beenden oder Folgevertrag mit Nachweis erfassen.', 'З’ясуйте страховий захист або наступний договір; завершіть договір або внесіть наступний із підтвердженням.', 'Clarify insurance cover or the follow-up contract; end the contract or record the follow-up contract with evidence.'],
   ['Stand bei der externen Werkstatt erfragen; Fortschritt oder Termin im Vorgang eintragen.', 'Дізнайтеся стан у зовнішній майстерні; внесіть у заявку прогрес або дату.', 'Ask the external workshop for the status; record progress or the date in the case.'],
@@ -4237,3 +4238,7 @@ Object.assign(STRINGS.en, { pk_open_item_mgr: 'New open item from fleet manageme
 Object.assign(STRINGS.de, { oi_sort_rel: 'Freigabe, älteste zuerst' });
 Object.assign(STRINGS.uk, { oi_sort_rel: 'допуск, найстаріші спочатку' });
 Object.assign(STRINGS.en, { oi_sort_rel: 'release date, oldest first' });
+// Backlog 1614: „Arbeit beginnen“ nennt Standort bzw. künftigen Werkstatttermin
+Object.assign(STRINGS.de, { sr_loc_hint: 'Erst beginnen, wenn das Fahrzeug in der Werkstatt ist. Danach den Standort unter „Standort / Abschleppung“ leeren oder anpassen.' });
+Object.assign(STRINGS.uk, { sr_loc_hint: 'Починайте лише тоді, коли транспорт уже в майстерні. Після цього очистьте або змініть місцезнаходження в розділі «Місцезнаходження / евакуація».' });
+Object.assign(STRINGS.en, { sr_loc_hint: 'Only start once the vehicle is in the workshop. Then clear or update the location under “Location / towing”.' });

@@ -274,9 +274,13 @@ export async function runFleetAgent(env, ctx, environment, trigger = 'cron') {
           // Backlog 386/387 (Blickwinkel „Lkw drei Wochen in der Herstellerwerkstatt“): externe Werkstatt ohne Konto → an die Leitung (niemand
           // in der Rolle Werkstatt kann dort nachfassen); eingetragene künftige Wiedervorlage im Text nennen (Befund bleibt – Unterdrücken ist eine Frage)
           const ext = isExternal(c); const fu = c.followup_on && c.followup_on > fuToday ? c.followup_on.split('-').reverse().join('.') : null;
+          // Backlog 1616 (Blickwinkel „Werkstatt erhält einen Auftrag für ein Fahrzeug, das gerade auf Tour im Ausland ist“): eingetragener künftiger
+          // Werkstatttermin (übernommen bzw. Fahrzeug fährt bis zur Teilelieferung) im Text nennen – Befund bleibt, keine neue Frist
+          const pd = !fu && ['werkstatt_freigegeben', 'wartet_teile'].includes(c.status) && c.planned_date && String(c.planned_date).slice(0, 10) > fuToday
+            ? String(c.planned_date).slice(0, 10).split('-').reverse().join('.') : null;
           add({ code: 'CASE_STALE', subject: c.id, case_id: c.id, vehicle_id: c.vehicle_id, severity: 'hinweis', owner_role: c.status === 'gemeldet' || ext ? 'fleet' : 'workshop',
-            ...fm(fu ? 'CASE_STALE_FOLLOWUP' : 'CASE_STALE', { label, state: c.status, date: last.split('-').reverse().join('.'), days: staleDays, ...(fu ? { fdate: fu } : {}) }),
-            next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : ext ? 'Stand bei der externen Werkstatt erfragen; Fortschritt oder Termin im Vorgang eintragen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });
+            ...fm(fu ? 'CASE_STALE_FOLLOWUP' : pd ? 'CASE_STALE_PLANNED' : 'CASE_STALE', { label, state: c.status, date: last.split('-').reverse().join('.'), days: staleDays, ...(fu ? { fdate: fu } : {}), ...(pd ? { pdate: pd } : {}) }),
+            next_action: c.status === 'gemeldet' ? 'Vorgang an eine Werkstatt weiterleiten oder begründet ablehnen.' : pd ? 'Werkstatttermin steht – vor dem Termin prüfen, ob das Fahrzeug rechtzeitig zurück ist; Termin bei Bedarf anpassen.' : ext ? 'Stand bei der externen Werkstatt erfragen; Fortschritt oder Termin im Vorgang eintragen.' : 'Stand bei der Werkstatt erfragen; Fortschritt, Teilebedarf oder Termin im Vorgang eintragen.' });
         }
       }
       if (c.status === 'gemeldet' && (!c.fleet_received_at || c.recv_gone)) {

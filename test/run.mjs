@@ -45804,6 +45804,36 @@ await test('Backlog 1610–1613 (Blickwinkel „Leitung prüft am Monatsende off
   ok(!/oi_open_deact[^\n]*other: '[^']*залишається відкритою – /.test(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8')), 'UK-Form vollständig');
 });
 
+await test('Backlog 1614–1616 (Blickwinkel „Werkstatt erhält einen Auftrag für ein Fahrzeug, das gerade auf Tour im Ausland ist“): Vorgangszeile nennt den eingetragenen Standort, „Arbeit beginnen“ nennt Standort/künftigen Termin, „ohne Bewegung“ nennt den künftigen Werkstatttermin', async () => {
+  const { e, U, cmd, newCase } = await freshWorld();
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const id = await newCase({ description: 'Rücklicht links ohne Funktion', driveability: 'fahrbereit' });
+  eq((await cmd(U.fleet, id, 'approve_repair', { workshop_site: 'DORTMUND' }, 'bei Rückkehr')).status, 200);
+  eq((await cmd(U.ws, id, 'acknowledge')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'unterwegs Polen (Poznań)' })).status, 200);
+  eq((await cmd(U.ws, id, 'set_planned_date', { planned_date: bDayOff(6) })).status, 200);
+  // 1614: Liste liefert den Standort (Werkstatt-Startseite/Leitung nutzen caseList)
+  const row = (await U.ws.get('/api/cases?status=open')).data.cases.find((c) => c.id === id); ok(row && row.vehicle_location === 'unterwegs Polen (Poznań)', JSON.stringify(row));
+  ok(app.includes("${c.vehicle_location && OPEN_CASE_ST.includes(c.status) ? ` · <span data-vloc>📍 ${esc(t('vl_title'))}: ${esc(clipTxt(c.vehicle_location, 60))}${vlAt(c)}</span>` : ''}"), '1614: Zeile zeigt den Standort');
+  ok(app.includes("|| (c.vehicle_location && OPEN_CASE_ST.includes(c.status)) ? ' wrap'"), '1614: Zeile bricht um');
+  // 1615: Formular „Arbeit beginnen“
+  ok(app.includes("const srLoc = action === 'start_repair' && (c.vehicle_location || c.tow_service || srFut)") && app.includes('${apwF}${srLoc}${bkFor}'), '1615: Hinweis im Formular');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].sr_loc_hint && STRINGS[l].planned_ws_short && STRINGS[l].vl_title, `${l}.sr_loc_hint`);
+  // 1616: „ohne Bewegung“ mit künftigem Termin
+  eq((await U.own.put('/api/settings', { case_stale_days: 7 })).status, 200);
+  e.DB.db.prepare('UPDATE cases SET updated_at=? WHERE id=?').run(new Date(Date.now() - 10 * 86400000).toISOString(), id);
+  await U.fleet.post('/api/agent/run');
+  const find = async () => (await U.fleet.get('/api/master')).data.findings.find((x) => x.case_id === id && x.finding_code === 'CASE_STALE' && x.status !== 'erledigt');
+  let st = await find(); const pd = bDayOff(6).split('-').reverse().join('.');
+  ok(st && st.owner_role === 'workshop' && st.message.includes(`Werkstatttermin am ${pd} eingetragen`) && /^Werkstatttermin steht/.test(st.next_action || ''), JSON.stringify(st));
+  const fm = fs.readFileSync(new URL('../public/finding-messages.js', import.meta.url), 'utf8'); eq((fm.match(/\bCASE_STALE_PLANNED:/g) || []).length, 3, 'DE/UK/EN');
+  ok(STRINGS.de && fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Werkstatttermin steht – vor dem Termin prüfen"), 'Handlung übersetzt');
+  // Gegenprobe: Termin heute/vergangen → Standardtext
+  e.DB.db.prepare('UPDATE cases SET planned_date=?, updated_at=? WHERE id=?').run(bDayOff(0), new Date(Date.now() - 10 * 86400000).toISOString(), id);
+  await U.fleet.post('/api/agent/run');
+  st = await find(); ok(st && !/Werkstatttermin am/.test(st.message) && /^Stand bei der Werkstatt erfragen/.test(st.next_action || ''), JSON.stringify(st));
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
