@@ -309,6 +309,11 @@ export async function myWorkDay(env, user, envName, q = {}) {
   const date = str(q.date, { max: 10 }) || berlinDate();
   if (!isCalendarDate(date)) throw bad('validation', 'Datum ungültig.');
   if (q.week === '1') return myWorkWeek(env, user, envName, date);
+  // Backlog 1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“): eigene Teilebuchungen von heute (Berlin) mit Auftrag/Kennzeichen –
+  // das Formular „Teil erfassen“ lädt sie erst beim Öffnen (Vorgangsdetail bleibt im Abfragebudget) und weist auf dasselbe Teil an einem anderen Auftrag hin
+  if (q.parts === '1') return { date: berlinDate(), parts: (await env.DB.prepare(`SELECT p.case_id, c.case_no, v.plate, p.name, p.part_number, p.stock_item_id, p.created_at
+    FROM parts p JOIN cases c ON c.id=p.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE p.user_id=? AND p.created_at>=? AND c.environment=?
+    ORDER BY p.created_at DESC LIMIT 100`).bind(user.id, berlinDayStartIso(berlinDate()), envName).all()).results }; // immer heute
   const rows = (await env.DB.prepare(`SELECT w.case_id, c.case_no, v.plate, c.environment AS e, SUM(w.hours) AS h, COUNT(*) AS n FROM work_entries w
     JOIN cases c ON c.id=w.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE w.user_id=? AND w.work_date=? GROUP BY w.case_id ORDER BY MIN(w.created_at)`)
     .bind(user.id, date).all()).results;
@@ -726,11 +731,6 @@ export async function getCaseDetail(env, user, envName, caseId) {
     detail.work = (await env.DB.prepare(`SELECT w.*, u.display_name AS user_name FROM work_entries w JOIN users u ON u.id=w.user_id WHERE case_id=? ORDER BY work_date, created_at`).bind(c.id).all()).results;
     // Backlog 1026: wer das Teil gebucht hat (steht auch im Verlauf „Teil hinzugefügt“) – Schichtübergabe in der Werkstatt
     detail.parts = (await env.DB.prepare('SELECT p.*, u.display_name AS user_name FROM parts p LEFT JOIN users u ON u.id=p.user_id WHERE p.case_id=? ORDER BY p.created_at').bind(c.id).all()).results;
-    // Backlog 1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“): eigene Teilebuchungen von heute auf ANDEREN Aufträgen
-    // derselben Umgebung – das Formular „Teil hinzufügen“ weist auf dasselbe Teil hin (nur Hinweis, keine Sperre, keine neue Frist)
-    if (WORK_STATUSES.includes(c.status)) detail.my_parts_today = (await env.DB.prepare(`SELECT p.case_id, c.case_no, v.plate, p.name, p.part_number, p.stock_item_id, p.created_at
-      FROM parts p JOIN cases c ON c.id=p.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id WHERE p.user_id=? AND p.created_at>=? AND p.case_id<>? AND c.environment=?
-      ORDER BY p.created_at DESC LIMIT 50`).bind(user.id, berlinDayStartIso(berlinDate()), c.id, c.environment).all()).results;
   }
   if (canSeeCosts(user)) {
     detail.external_costs = (await env.DB.prepare('SELECT x.*, f.filename AS file_name, f.content_type AS file_type FROM external_costs x LEFT JOIN files f ON f.id=x.file_id WHERE x.case_id=? ORDER BY x.created_at').bind(c.id).all()).results;

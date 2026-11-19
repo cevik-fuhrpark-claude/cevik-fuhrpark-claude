@@ -7580,7 +7580,8 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
   etaPlanWatch($('#af input[name=planned_date]'), planRdyMsg(c)); etaPlanWatch($('#af input[name=parts_expected_date]'), etaPlanMsg(c)); // Backlog 1425
   etaPlanWatch($('#af input[name=ready_expected_on]'), planEtaMsg(c)); // Backlog 1426: „voraussichtlich fertig“ vor dem Teile-Liefertermin
   if (action === 'record_work') { workDayWatch(c); hoursWatch(); }
-  if (action === 'add_part') { partQtyWatch(); partSameWatch(d); }
+  if (action === 'add_part') partQtyWatch();
+  if (action === 'add_part') partSameWatch(c); // Backlog 1619
   $('#af').onsubmit = (e) => {
     e.preventDefault();
     if (e.target._scanChk && e.target._scanChk()) return; // Backlog 1234: gescannter Code im Mengenfeld
@@ -7666,8 +7667,9 @@ function hoursWatch() {
 const qtyLabel = (n, unit) => `= ${fmtNum(n)}${unit ? ' ' + unitL(unitCanon(unit) || unit) : ''}`;
 // Backlog 1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“): dasselbe Teil (Lagerartikel, sonst Bezeichnung/Teilenummer)
 // heute schon selbst auf einem ANDEREN Auftrag gebucht → Hinweis mit Uhrzeit, Auftrag und Kennzeichen (keine Sperre, keine neue Frist)
-function partSameWatch(d) {
-  const f = $('#af'), out = $('#bksame'), mine = (d && d.my_parts_today) || []; if (!f || !out || !mine.length) return;
+async function partSameWatch(c) {
+  let mine = []; try { mine = ((await api('GET', '/api/work-day?parts=1')).parts || []).filter((p) => p.case_id !== c.id); } catch { return; }
+  const f = $('#af'), out = $('#bksame'); if (!f || !out || !mine.length || !f.contains(out)) return;
   const nz = (x) => String(x || '').trim().toLowerCase(); const el = (n) => { const x = f.elements.namedItem(n); return x && x.value !== undefined ? x.value : ''; };
   const upd = () => {
     const si = el('stock_item_id'), nm = nz(el('name')), pn = nz(el('part_number'));
