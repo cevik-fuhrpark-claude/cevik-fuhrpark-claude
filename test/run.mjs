@@ -23176,7 +23176,7 @@ await test('Backlog 408 (Blickwinkel „Reifendienst wechselt an einem Tag die R
   const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const fn = app.slice(app.indexOf('const applyWo = () => {'), app.indexOf('let woMode = false;'));
   ok(fn.includes("tf.winter_mark.value = ''; tf.winter_mark.required = true;") && fn.includes("tf.event_type.value = bad0 ? 'wechsel' : 'sichtpruefung';") && fn.includes('tf.case_id.value = w.open_order && w.open_order.id') && !fn.includes('tf.size.value'), 'Vorbereitung ohne Vorgabe von Kennzeichnung/Größe');
-  ok(app.includes("$('#tfspecgo', tf).onclick = () => { tf.size.value = s.size;") && app.includes('?sec=wo" id="cwrec"') && app.includes("(vid) => viewVehicle(vid, null, 'wo')") && app.includes('wo: woMode }'), 'eingebunden');
+  ok(app.includes("$('#tfspecgo', tf).onclick = () => { tf.size.value = s.size;") && app.includes('?sec=wo" id="cwrec"') && app.includes("(vid) => viewVehicle(vid, null, 'wo')") && app.includes('wo: woMode, ...(csMode ? { cs: csMode } : {}) }'), 'eingebunden'); // Backlog 1604
   ok(app.includes("const posAxle = (p) => (/^VA/.test(p) ? 'lenkachse' : /^LA/.test(p) ? 'liftachse' : /^HA/.test(p) ? 'antriebsachse'"), 'Achszuordnung wie tire_specs');
   const { STRINGS } = await import('../public/i18n.js');
   for (const l of ['de', 'uk', 'en']) { for (const x of ['wo_rec', 'wo_rec_for', 'wo_rec_for_noorder', 'wo_rec_done', 'tfspec_hint', 'tfspec_take']) ok(STRINGS[l][x], `${x} ${l}`); ok(STRINGS[l].help_tires_s.includes(STRINGS[l].wo_rec), 'Hilfe ' + l); }
