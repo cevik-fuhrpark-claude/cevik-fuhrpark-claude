@@ -2102,7 +2102,8 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Hinweis nach dem geprüften Wert (17.10.2026: „false“/„0“ wurden als nicht sicherheitsrelevant gespeichert, lösten aber den Sicherheits-Push aus)
       // Backlog 259 (Blickwinkel „Werkstatt findet bei der Reparatur einen zusätzlichen Schaden“): auch ein nicht dringender Zusatzbefund der
       // Werkstatt erreicht die Leitung (abschaltbar) – vorher erfuhr sie davon erst beim Öffnen des Vorgangs
-      notifyKind = payload.safety_relevant ? 'open_item_safety' : user.role === 'workshop' ? 'open_item' : null;
+      // Backlog 1606: auch eine nicht dringende Restarbeit der Leitung erzeugt einen Hinweis (an die Werkstatt, abschaltbar als „open_item_mgr“)
+      notifyKind = payload.safety_relevant ? 'open_item_safety' : 'open_item';
       break;
     }
     case 'resolve_open_item': {

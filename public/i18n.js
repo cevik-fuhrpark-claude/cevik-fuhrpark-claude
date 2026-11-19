@@ -4229,3 +4229,7 @@ Object.assign(STRINGS.en, { tf_case_link: 'Record tyre change for this order', t
 Object.assign(STRINGS.de, { tc_title: 'Reifenwechsel zu diesem Auftrag', tc_order: 'Auftrag {no}' });
 Object.assign(STRINGS.uk, { tc_title: 'Заміна шин до цього замовлення', tc_order: 'Замовлення {no}' });
 Object.assign(STRINGS.en, { tc_title: 'Tyre changes for this order', tc_order: 'Order {no}' });
+// Backlog 1606/1607: Restarbeit der Leitung an die Werkstatt; Freigabevermerk für die Werkstatt unsichtbar
+Object.assign(STRINGS.de, { pk_open_item_mgr: 'Neue Restarbeit der Fuhrparkleitung', cost_approve_ws_hidden: 'Die Werkstatt sieht diesen Vermerk nicht (Beträge). Einschränkungen des Umfangs bitte zusätzlich als Kommentar an die Werkstatt oder als Restarbeit festhalten.' });
+Object.assign(STRINGS.uk, { pk_open_item_mgr: 'Нова незавершена робота від керівництва автопарку', cost_approve_ws_hidden: 'Майстерня не бачить цієї примітки (суми). Обмеження обсягу робіт додатково вкажіть коментарем для майстерні або як незавершену роботу.' });
+Object.assign(STRINGS.en, { pk_open_item_mgr: 'New open item from fleet management', cost_approve_ws_hidden: 'The workshop cannot see this note (amounts). Please also record any scope restriction as a comment to the workshop or as an open item.' });

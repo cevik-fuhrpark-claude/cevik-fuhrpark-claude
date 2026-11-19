@@ -4848,7 +4848,7 @@ function actionForm(action, c, cmd, preset = {}, d = null, { restore = false } =
     }
 
     case 'reopen': f.push(`<p class="small muted" id="reohint">${esc(t('reopen_hint'))}${c.duplicate_of ? ' ' + esc(t('reopen_dup_hint')) : ''}</p>`); break;
-    case 'approve_costs': f.push(`<p class="small muted">${esc(t('cost_approve_hint'))}</p>${extDocList(d)}`); break;
+    case 'approve_costs': f.push(`<p class="small muted">${esc(t('cost_approve_hint'))}</p><p class="small muted" id="caws">${esc(t('cost_approve_ws_hidden'))}</p>${extDocList(d)}`); break;
     case 'acknowledge': f.push(`<label>${esc(t('planned'))}</label><input type="date" name="planned_date">`); break;
     case 'wait_parts': f.push(`<label>${esc(t('parts_eta'))}<span class="hint">${esc(t('parts_eta_hint'))}</span></label><input type="date" name="parts_expected_date" min="${bDate()}" max="${bYearAhead()}">`); break;
     case 'parts_partial': { const cur = c.parts_expected_date || ''; const mn = cur && cur < bDate() ? cur : bDate();

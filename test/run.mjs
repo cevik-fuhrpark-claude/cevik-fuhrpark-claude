@@ -45699,6 +45699,39 @@ await test('Backlog 1605 (Folge aus 1603/1604): Vorgang nennt die mit Auftragsbe
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].tc_title, 'tc_title ' + l); ok(STRINGS[l].tc_order.includes('{no}'), 'tc_order ' + l); }
 });
 
+await test('Backlog 1606/1607 (Blickwinkel „Leitung verlangt einen kleineren Reparaturumfang“): Restarbeit der Leitung → Werkstatt des Auftrags (nicht abschaltbar bei sicherheitsrelevant), nicht an andere Standorte/Leitung; Werkstatt-Restarbeit unverändert; Freigabeformular sagt, dass die Werkstatt den Vermerk nicht sieht', async () => {
+  const { e, U, cmd, toRepair } = await freshWorld(); const db = e.DB.db;
+  const id = await toRepair();
+  const n = (kind, uid) => db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE kind=? AND user_id=? AND case_id=?`).get(kind, uid, id).n;
+  // nicht sicherheitsrelevant: Werkstatt bekommt „Neue Restarbeit (Fuhrparkleitung)“, sonst niemand
+  eq((await cmd(U.fleet, id, 'add_open_item', { description: 'Stoßfänger zurückstellen, nur Halter sichern', safety_relevant: false })).status, 200);
+  eq(n('open_item_mgr', U.ws.id), 1, 'Werkstatt informiert'); eq(n('open_item_mgr', U.wsMuc.id), 0, 'andere Werkstatt nicht');
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM notifications WHERE case_id=? AND kind IN ('open_item','open_item_mgr') AND user_id<>?`).get(id, U.ws.id).n, 0, 'Leitung/Inhaber/Fahrer ohne Hinweis');
+  const wsN = (await U.ws.get('/api/notifications')).data.notifications.find((x) => x.case_id === id && x.kind === 'open_item_mgr');
+  ok(wsN && wsN.title === 'Neue Restarbeit (Fuhrparkleitung)', JSON.stringify(wsN)); ok(!/Stoßfänger/.test(wsN.body), 'keine Beschreibung im Sperrbildschirm');
+  // sicherheitsrelevant: Werkstatt + weitere Leitungskonten (wie bisher)
+  eq((await cmd(U.fleet, id, 'add_open_item', { description: 'Bremsleitung zuerst', safety_relevant: true })).status, 200);
+  ok(n('open_item_safety', U.ws.id) >= 1, 'Werkstatt: sicherheitsrelevante Restarbeit'); eq(n('open_item_safety', U.wsMuc.id), 0);
+  eq(n('open_item_safety', U.fleet.id), 0, 'nicht an sich selbst');
+  // Restarbeit der Werkstatt: wie bisher nur an die Leitung
+  eq((await cmd(U.ws, id, 'add_open_item', { description: 'Halter lose', safety_relevant: false })).status, 200);
+  eq(n('open_item', U.fleet.id), 1, 'Leitung wie bisher'); eq(n('open_item', U.ws.id), 0); eq(n('open_item_mgr', U.ws.id), 1, 'kein weiterer Werkstatt-Hinweis');
+  // abschaltbar nur die nicht sicherheitsrelevante Art, Titel/Schalter DE/UK/EN
+  const { MUTABLE_KINDS, mutableKindsFor, nt } = await import('../src/notify.js');
+  ok(MUTABLE_KINDS.includes('open_item_mgr') && mutableKindsFor('workshop').includes('open_item_mgr') && !mutableKindsFor('driver').includes('open_item_mgr') && !MUTABLE_KINDS.includes('open_item_safety'));
+  ok(nt('uk', 'open_item_mgr') !== nt('de', 'open_item_mgr') && nt('en', 'open_item_mgr') !== nt('de', 'open_item_mgr'), 'Titel DE/UK/EN');
+  eq((await U.ws.req('PUT', '/api/me/notify-prefs', { muted: ['open_item_mgr'] })).status, 200);
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].pk_open_item_mgr && STRINGS[l].cost_approve_ws_hidden, l);
+  // 1607: Freigabeformular nennt, dass die Werkstatt den Vermerk nicht sieht – und das stimmt (Verlauf ohne Vermerk für die Werkstatt)
+  ok(/case 'approve_costs': f\.push\([^\n]*cost_approve_ws_hidden/.test((await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8')), 'Hinweis im Formular');
+  eq((await U.own.put('/api/settings', { repair_cost_limit_net: '100' })).status, 200);
+  eq((await cmd(U.ws, id, 'add_part', { name: 'Turbolader', quantity: 1, unit_price_net: 150 })).status, 200);
+  eq((await cmd(U.fleet, id, 'approve_costs', {}, 'nur Bremse, Stoßfänger nicht')).status, 200);
+  const evW = (await U.ws.get(`/api/cases/${id}`)).data.events.find((x) => x.action === 'approve_costs');
+  ok(evW && !JSON.stringify(evW).includes('Stoßfänger nicht'), 'Werkstatt sieht den Freigabevermerk nicht: ' + JSON.stringify(evW));
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
