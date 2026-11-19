@@ -45599,6 +45599,34 @@ await test('Backlog 1598–1600 (Blickwinkel „Leitung beendet einen Auftrag oh
   for (const l of ['de', 'uk', 'en']) for (const k of ['withdraw_plan', 'withdraw_stock', 'ev_wd_plan']) ok(STRINGS[l][k] && (k === 'withdraw_stock' ? STRINGS[l][k].includes('{n}') : STRINGS[l][k].includes('{d}')), `${l}.${k}`);
 });
 
+await test('Backlog 1601/1602 (Blickwinkel „Leitung nimmt einen Lkw mit offenen Terminen/Rückrufen außer Betrieb“): Außer-Betrieb-Nahme nennt offene Rückrufe (auch ohne Frist) und verstrichene, nicht eingetragene Termine; Rückkehr-Prüfung nennt offene Rückrufe sowie noch eingetragene künftige/verstrichene Termine; nichts wird geändert', async () => {
+  const { U, V1 } = await freshWorld();
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const rr = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'Rückruf', evidence: 'Herstellerschreiben ohne Frist' }); eq(rr.status, 201, JSON.stringify(rr.data));
+  const uvv = await U.fleet.post(`/api/vehicles/${V1}/maintenance`, { kind: 'UVV', interval_months: 12, last_done_date: day(-300), evidence: 'Prüfbuch' }); eq(uvv.status, 201, JSON.stringify(uvv.data));
+  eq((await U.fleet.post(`/api/maintenance/${uvv.data.id}/plan`, { planned_date: day(-2) })).status, 200, 'verstrichener Termin');
+  const off = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'verkauft' }); eq(off.status, 200, JSON.stringify(off.data));
+  eq(off.data.open_recalls, 1, 'offener Rückruf ohne Frist genannt'); eq(off.data.missed_appointments, 1, 'verstrichener Termin genannt'); eq(off.data.planned_appointments, 0, 'kein künftiger Termin');
+  const on = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: true }); eq(on.status, 200);
+  const rc = on.data.return_check; eq(rc.open_recalls, 1, 'Rückkehr: Rückruf'); eq(rc.missed_appointments, 1, 'Rückkehr: verstrichener Termin'); eq(rc.planned_appointments, 0);
+  // künftiger Termin, Rückruf erledigt → Rückkehr nennt den Termin, keinen Rückruf; nichts gelöscht
+  eq((await U.fleet.post(`/api/maintenance/${uvv.data.id}/plan`, { planned_date: day(3) })).status, 200);
+  eq((await U.ws.post(`/api/maintenance/${rr.data.id}/complete`, { done_date: BERLIN_TODAY, evidence: 'Rechnung Rückruf' })).status, 200);
+  const off2 = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'abgemeldet' }); eq(off2.status, 200);
+  eq(off2.data.open_recalls, 0); eq(off2.data.missed_appointments, 0); eq(off2.data.planned_appointments, 1, 'künftiger Termin wie bisher');
+  const rc2 = (await U.fleet.post(`/api/vehicles/${V1}/active`, { active: true })).data.return_check;
+  eq(rc2.open_recalls, 0); eq(rc2.planned_appointments, 1, 'Termin lebt wieder auf – genannt'); eq(rc2.missed_appointments, 0);
+  ok((await U.fleet.get('/api/maintenance')).data.rows.some((x) => x.id === uvv.data.id && x.planned_date === day(3)), 'Termin unverändert gespeichert');
+  // Oberfläche: Bausteine in Toast und Rückkehr-Text, alle Sprachen mit Mehrzahlformen
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("tn('recalls_open_deact', r.open_recalls)") && app.includes("tn('missed_appt_deact', r.missed_appointments)") && app.includes("tn('rc_recalls', rc.open_recalls)") && app.includes("tn('rc_planned', rc.planned_appointments)") && app.includes("tn('rc_missed', rc.missed_appointments)"), 'Oberfläche nutzt die Zähler');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const k of ['recalls_open_deact', 'missed_appt_deact', 'rc_recalls', 'rc_planned', 'rc_missed']) {
+    for (const l of ['de', 'uk', 'en']) ok(STRINGS[l][k] && STRINGS[l][k].includes('{n}'), `${l}.${k}`);
+    ok(PLURALS.de[k].one && PLURALS.de[k].other && PLURALS.en[k].one && PLURALS.en[k].other && PLURALS.uk[k].one && PLURALS.uk[k].few && PLURALS.uk[k].many, 'Mehrzahl ' + k);
+  }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

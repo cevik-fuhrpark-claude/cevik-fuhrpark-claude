@@ -754,6 +754,12 @@ async function returnCheck(env, envName, vehicleId) {
       (SELECT COUNT(*) FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?3 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?2)) AS n,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen') AS oi,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS ois,
+      -- Backlog 1602 (Blickwinkel „Leitung nimmt einen Lkw mit offenen Terminen/Rückrufen außer Betrieb“): beim Abgang gespeicherte Termine leben
+      -- mit der Rückkehr wieder auf (künftige erneut in Werkstattplan/Kalender/„Mein Fahrzeug“, verstrichene als „Termin verstrichen“), offene
+      -- Rückrufe ohne Frist fehlten in o – nur Zähler, nichts wird geändert
+      (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND kind='Rückruf' AND last_done_date IS NULL) AS rr,
+      (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2 AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) AS pf,
+      (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date < ?2 AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) AS pm,
       (SELECT kind FROM vehicles WHERE id=?1) AS vk, (SELECT plate FROM vehicles WHERE id=?1) AS vp, (SELECT trailer_plate FROM vehicles WHERE id=?1) AS vtp`).bind(vehicleId, today, envName).first();
   // Backlog 1524 (Folge aus 1523, Blickwinkel „verkaufte Zugmaschine kommt zurück – der Auflieger wurde inzwischen abgemeldet“): das fest gekoppelte
   // Fahrzeug laut Stammliste ist außer Betrieb und kein anderes Fahrzeug in Betrieb trägt dieses Kennzeichen bzw. Anhängerkennzeichen →
@@ -771,7 +777,7 @@ async function returnCheck(env, envName, vehicleId) {
     const h = huSpFor(x, today, maintenanceWarnDays((await env.DB.prepare(`SELECT value FROM settings WHERE key='maintenance_warn_days'`).first() || {}).value));
     for (const y of [h.hu, h.sp]) { if (!y) continue; if (y.status === 'ueberfaellig') overdue++; else if (y.status === 'ungeklaert') unclear++; }
   }
-  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, active_notes: row.n || 0, open_items: row.oi || 0, open_items_safety: row.ois || 0, last_km_at: row.k || null, ...(coupledInactive.length ? { coupled_inactive: coupledInactive } : {}) };
+  return { overdue_inspections: overdue, unclear_inspections: unclear, locked_cases: row.l || 0, expired_contracts: row.c || 0, insurance_none_running: !!row.ni, active_notes: row.n || 0, open_items: row.oi || 0, open_items_safety: row.ois || 0, last_km_at: row.k || null, open_recalls: row.rr || 0, planned_appointments: row.pf || 0, missed_appointments: row.pm || 0, ...(coupledInactive.length ? { coupled_inactive: coupledInactive } : {}) };
 }
 
 export async function setVehicleEvaluation(env, user, envName, vehicleId, body) {
@@ -835,7 +841,12 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
   // Nur Hinweis: nichts wird geschlossen oder archiviert.
   // Backlog 859 (Blickwinkel „Inhaber prüft vor dem Verkauf eines Lkw die laufenden Gewährleistungen“): laufende Gewährleistungen
   // (Teile/Fremdleistungen mit „Gewährleistung bis“ ab heute, diese Umgebung) zählen – Ansprüche vor der Abgabe prüfen bzw. Unterlagen übergeben.
-  const hint = active ? { r: 0, d: 0, p: 0, o: 0, os: 0, cl: 0, n: 0, f: 0, w: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
+  // Backlog 1601 (Blickwinkel „Leitung nimmt einen Lkw mit offenen Terminen/Rückrufen außer Betrieb“): offene Rückrufe (Herstelleraktion, auch
+  // ohne Frist) und verstrichene, nicht als durchgeführt eingetragene Termine nennen – beides verschwindet danach aus Agent und Werkstattplan
+  // (nur aktive Fahrzeuge); eine kurz vor dem Verkauf gemachte Prüfung fehlte sonst dauerhaft im Nachweis. Nur Hinweis.
+  const hint = active ? { r: 0, d: 0, p: 0, o: 0, os: 0, cl: 0, n: 0, f: 0, w: 0, rr: 0, pm: 0 } : await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM vehicle_contracts WHERE vehicle_id=?1 AND ended_on IS NULL) AS r,
+      (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND kind='Rückruf' AND last_done_date IS NULL) AS rr,
+      (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date < ?2 AND NOT (kind='Rückruf' AND last_done_date IS NOT NULL)) AS pm,
       (SELECT COUNT(*) FROM telematics_latest WHERE vehicle_id=?1) AS d, (SELECT COUNT(*) FROM maintenance_rules WHERE vehicle_id=?1 AND planned_date >= ?2) AS p,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen') AS o,
       (SELECT COUNT(*) FROM open_items oi JOIN cases c ON c.id=oi.case_id WHERE c.vehicle_id=?1 AND c.environment=?3 AND oi.status='offen' AND oi.safety_relevant=1) AS os,
@@ -863,7 +874,7 @@ export async function setVehicleActive(env, user, envName, vehicleId, body) {
     const rows = (await env.DB.prepare(`SELECT id, plate, kind, trailer_plate FROM vehicles WHERE active=1 AND id<>? AND (kind='anhaenger' OR trailer_plate IS NOT NULL)`).bind(vehicleId).all()).results;
     if (!rows.some((y) => y.kind !== 'anhaenger' && normPlate(y.trailer_plate) === k)) trailerLeft = rows.filter((x) => x.kind === 'anhaenger' && normPlate(x.plate) === k).map((x) => ({ id: x.id, plate: x.plate }));
   }
-  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? {} : { open_items: hint.o, open_items_safety: hint.os, open_claims: hint.cl, open_fines: hint.f || 0, active_notes: hint.n, active_warranties: hint.w }), ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
+  return { ok: true, active, ...(endedDrivers.length ? { ended_drivers: endedDrivers.map((d) => ({ id: d.id, display_name: d.display_name })) } : {}), running_contracts: hint.r, telematics_devices: hint.d, planned_appointments: hint.p, ...(active ? {} : { open_items: hint.o, open_items_safety: hint.os, open_claims: hint.cl, open_fines: hint.f || 0, open_recalls: hint.rr || 0, missed_appointments: hint.pm || 0, active_notes: hint.n, active_warranties: hint.w }), ...(active ? { duplicate_plates: duplicates, return_check: await returnCheck(env, envName, vehicleId) } : {}),
     ...(trailerOf.length ? { trailer_of_trucks: trailerOf } : {}), ...(trailerLeft.length ? { coupled_trailer_left: trailerLeft } : {}) };
 }
 

@@ -718,6 +718,7 @@ UI-Ablehnungsgrund „Dublette von …“ in der Sprache des Fahrers (DE/UK/EN; 
 UI-Eigene Dublette „Bereits gemeldet“ statt „Abgelehnt“ (DE/UK/EN; Backlog 1591)|ui-dublette-bereits-gemeldet.py|/tmp/cfp-dublette-bereits-gemeldet.log
 UI-Termin nach „Voraussichtlich fertig“: Hinweis beim Eintippen, Fehler am Terminfeld (DE/UK/EN; Backlog 1592)|ui-termin-nach-fertig.py|/tmp/cfp-termin-nach-fertig.log
 UI-Ohne Reparatur beenden: entfallender Termin und Lagerteile in Dialog und Verlauf (DE/UK/EN; Backlog 1598–1600)|ui-ohne-reparatur-termin.py|/tmp/cfp-ohne-reparatur-termin.log
+UI-Außer Betrieb mit offenem Rückruf/verstrichenem Termin: Hinweis und Rückkehr-Prüfung (DE/UK/EN; Backlog 1601/1602)|ui-verkauf-rueckruf.py|/tmp/cfp-verkauf-rueckruf.log
 UI-Import: Dateifehler am Dateifeld/an „Quelle“ (DE/UK/EN; Backlog 1580)|ui-import-dateifehler.py|/tmp/cfp-import-dateifehler.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
 UI-Teilesuche: Lagerliste, Teil buchen und Wareneingang finden Teilenummern ohne Leerzeichen, Suchfeld über der Artikelauswahl (DE/UK/EN; Backlog 862)|ui-teilesuche.py|/tmp/cfp-teilesuche.log
