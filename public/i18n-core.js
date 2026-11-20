@@ -1418,6 +1418,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1635: Bußgeld – Tatzeit nach der Außerbetriebnahme des zugeordneten Fahrzeugs
 
 // [CLAUDE] Backlog 1637: Schadenzeitpunkt vor der Erstzulassung bzw. nach der Außerbetriebnahme (Vorgangsdetail, nur Leitung)
+// Backlog 1638: Vertrag am falschen Fahrzeug (Erstzulassung/Außerbetriebnahme)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

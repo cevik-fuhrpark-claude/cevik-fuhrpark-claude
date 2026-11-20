@@ -362,7 +362,9 @@ const readingOf = (x) => (x && x.km !== null && x.km !== undefined ? { km: x.km,
 // Verträge eines Fahrzeugs (Fahrzeugakte); latest = letzter km-Stand der Akte
 // Vertragsdokument: Dateiname nur, wenn das Dokument in der angezeigten Umgebung liegt (sonst file_other_env)
 export async function vehicleContracts(env, vehicleId, latest, settings, envName) {
-  const rows = (await env.DB.prepare(`SELECT c.*, ${START_PREV_KM_SQL()} AS start_prev_km, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, (SELECT v.kind FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_kind, u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
+  const rows = (await env.DB.prepare(`SELECT c.*, ${START_PREV_KM_SQL()} AS start_prev_km, (SELECT v.active FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_active, (SELECT v.kind FROM vehicles v WHERE v.id=c.vehicle_id) AS vehicle_kind, (SELECT v.first_registration FROM vehicles v WHERE v.id=c.vehicle_id) AS veh_fr,
+    (SELECT json_object('action', a.action, 'at', a.created_at, 'detail', a.detail) FROM audit_log a WHERE a.target=c.vehicle_id AND a.action IN ('vehicle.deactivate','vehicle.activate') ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1) AS veh_deact,
+    u.display_name AS created_by_name, f.filename AS file_name, f.doc_kind AS file_doc_kind FROM vehicle_contracts c LEFT JOIN users u ON u.id=c.created_by
     LEFT JOIN files f ON f.id=c.file_id AND f.environment=?
     WHERE c.vehicle_id=? ORDER BY c.ended_on IS NOT NULL, c.ended_on DESC, c.end_date IS NULL, c.end_date`).bind(envName || '', vehicleId).all()).results;
   const today = berlinDate(); const w = warnDaysOf(settings); const endKm = await endKmByContract(env, rows);
@@ -370,8 +372,24 @@ export async function vehicleContracts(env, vehicleId, latest, settings, envName
   const ret = rows.some((c) => RETURN_KINDS.includes(c.kind) && !c.ended_on) ? await env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM cases k WHERE k.vehicle_id=?1 AND k.environment=?2 AND k.status IN ${OPEN_CASE_ST}) AS open_cases,
       (SELECT COUNT(*) FROM cases k JOIN open_items i ON i.case_id=k.id AND i.status='offen' WHERE k.vehicle_id=?1 AND k.environment=?2 AND k.status='fahrzeug_freigegeben') AS open_items`).bind(vehicleId, envName || '').first() : null;
-  return rows.map((c) => ({ ...c, file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
+  return rows.map(({ veh_fr, veh_deact, ...c }) => ({ ...c, ...contractVehicleDates(c, veh_fr, veh_deact), file_id: c.file_name ? c.file_id : null, file_other_env: !!(c.file_id && !c.file_name), status: contractStatus(c, latest, today, w, c.km_allowance && endKm.has(c.id) ? endKm.get(c.id) : undefined),
     reading: readingOf(c.ended_on ? endKm.get(c.id) : latest), ...(ret && RETURN_KINDS.includes(c.kind) && !c.ended_on ? { return_check: { open_cases: ret.open_cases || 0, open_items: ret.open_items || 0 } } : {}) }));
+}
+
+// Backlog 1638 (Blickwinkel „Leitung erfasst einen Vertrag am falschen Fahrzeug – Nachfolger mit gleichem Kennzeichen“): ein Vertrag, der vor der
+// Erstzulassung endet, bzw. ein laufender Vertrag, der nach der Außerbetriebnahme (laut Protokoll) eines noch außer Betrieb genommenen Fahrzeugs
+// beginnt, gehört fast immer zu einem anderen Fahrzeug (Wunschkennzeichen vom zurückgegebenen Lkw übernommen) oder hat einen Tippfehler im Jahr –
+// Raten und km-Kontingent liefen sonst still am falschen Fahrzeug. Nur Hinweis in der Fahrzeugakte (Inhaber/Leitung), keine Automatik.
+// Erstzulassung ggf. nur JJJJ-MM: Vergleich dann nach Monat.
+export function contractVehicleDates(c, firstReg, deactJson) {
+  const fr = firstReg ? String(firstReg) : null;
+  if (fr && c.end_date && c.end_date.slice(0, fr.length) < fr) return { vehicle_dates: { end_before_registration: fr } };
+  if (c.ended_on || !c.start_date || c.vehicle_active === undefined || c.vehicle_active === null || Number(c.vehicle_active) !== 0) return {};
+  let ev = null; try { ev = deactJson ? JSON.parse(deactJson) : null; } catch { ev = null; }
+  if (!ev || ev.action !== 'vehicle.deactivate' || !ev.at) return {};
+  if (c.start_date <= berlinDate(ev.at)) return {};
+  let reason = null; try { reason = JSON.parse(ev.detail || '{}').reason || null; } catch { reason = null; }
+  return { vehicle_dates: { start_after_deactivation: ev.at, ...(reason ? { reason: String(reason) } : {}) } };
 }
 
 const ORDER = { handeln: 0, hinweis: 1, ok: 2, beendet: 3 };

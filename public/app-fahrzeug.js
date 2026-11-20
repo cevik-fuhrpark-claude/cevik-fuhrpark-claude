@@ -661,8 +661,16 @@ function ctForm(c = {}, docs = null) {
 }
 const ctDocLine = (c) => (c.file_id ? `<div><a href="${fileUrl(c.file_id)}" target="_blank" rel="noopener">📎 ${esc(t('ct_doc'))}: ${esc(c.file_name)}</a></div>` : c.file_other_env ? `<div class="small muted">📎 ${esc(t('ct_doc_other_env'))}</div>` : c.ended_on ? '' : `<div class="small muted">${esc(t('ct_doc_missing'))}</div>`);
 const ctBody = (fm) => { const b = Object.fromEntries(new FormData(fm)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; return b; };
+
+
+function ctVehDates(c) {
+  const o = c.vehicle_dates; if (!o) return '';
+  const txt = o.end_before_registration ? t('ct_end_before_reg').replace('{e}', fmtD(c.end_date)).replace('{ez}', fmtD(o.end_before_registration))
+    : t('ct_start_after_deact').replace('{b}', fmtD(c.start_date)).replace('{s}', fmtD(o.start_after_deactivation));
+  return `<div class="small" data-ctvehdates role="note" style="margin-top:4px"><b>⚠️ ${esc(txt)}</b>${o.reason ? `<div data-ctdreason>${esc(t('fine_after_deact_reason'))}: ${esc(o.reason)}</div>` : ''}<div>${esc(t('ct_veh_dates_fix').replace('{end}', t('ct_end_btn')).replace('{edit}', t('ct_edit')))}</div></div>`;
+}
 function ctSection(list, docs = null) {
-  return `<h2>${esc(t('ct_title'))}</h2>${list.length ? list.map((c) => `<section class="panel ${c.status.overall === 'handeln' ? 'p-kritisch' : ''}"><p style="margin-top:0"><b>${esc(t('ck_' + c.kind))}</b> · ${esc(c.partner)}${c.contract_no ? ' · ' + noTr(c.contract_no) : ''} ${ctChip(c.status)}</p>${ctLines(c).map((x) => `<div>${x}</div>`).join('')}${ctDocLine(c)}
+  return `<h2>${esc(t('ct_title'))}</h2>${list.length ? list.map((c) => `<section class="panel ${c.status.overall === 'handeln' ? 'p-kritisch' : ''}"><p style="margin-top:0"><b>${esc(t('ck_' + c.kind))}</b> · ${esc(c.partner)}${c.contract_no ? ' · ' + noTr(c.contract_no) : ''} ${ctChip(c.status)}</p>${ctLines(c).map((x) => `<div>${x}</div>`).join('')}${ctDocLine(c)}${ctVehDates(c)}
     ${c.ended_on ? '' : `<details class="noprint"><summary>${esc(t('ct_edit'))}</summary><form data-ctedit="${esc(c.id)}" data-upd="${esc(c.updated_at || '')}">${ctForm(c, docs)}${c.status.km && c.status.km.status === 'zaehler' ? `<label class="check"><input type="checkbox" name="confirm_km_basis" value="1"> ${esc(t('ct_km_basis_ok'))}</label>` : ''}<div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details>
     <details class="noprint"><summary>${esc(t('ct_end_btn'))}</summary><form data-ctend="${esc(c.id)}">${ctRetEnd(c)}<label>${esc(t('ct_ended_on'))}</label><input type="date" name="ended_on" max="${bDate()}" value="${bDate()}"><label>${esc(t('ct_end_reason'))}</label><input name="end_note" required maxlength="300"><p class="small muted">${esc(t('ct_ended_note'))}</p><div class="actions"><button class="btn secondary">${esc(t('ct_end_btn'))}</button></div></form></details>`}</section>`).join('') : `<p class="muted">${esc(t('ct_none'))}</p>`}
     <details class="panel noprint"><summary>${esc(t('ct_add'))}</summary><p class="small muted">${esc(t('ct_hint'))}</p><form id="ctf">${ctForm({}, docs)}<div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>`;

@@ -282,6 +282,7 @@ UI-Bußgeld Tatzeit vor der Erstzulassung (Backlog 1634)|ui-bussgeld-vor-erstzul
 UI-Bußgeld Tatzeit nach der Außerbetriebnahme (Backlog 1635)|ui-bussgeld-nach-ausserbetriebnahme.py|/tmp/cfp-bussgeld-nach-ausserbetriebnahme.log
 UI-Kilometerstand an außer Betrieb genommenem Fahrzeug nur Inhaber/Leitung (Backlog 1636)|ui-km-ausser-betrieb.py|/tmp/cfp-km-ausser-betrieb.log
 UI-Schadenzeitpunkt nach der Außerbetriebnahme im Vorgangsdetail (Backlog 1637)|ui-schadenzeit-ausser-betrieb.py|/tmp/cfp-schadenzeit-ausser-betrieb.log
+UI-Vertrag beginnt nach der Außerbetriebnahme in der Fahrzeugakte (Backlog 1638)|ui-vertrag-ausser-betrieb.py|/tmp/cfp-vertrag-ausser-betrieb.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log

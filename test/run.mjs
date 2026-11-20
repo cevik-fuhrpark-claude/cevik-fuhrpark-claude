@@ -46223,6 +46223,49 @@ await test('Backlog 1637 (Blickwinkel „Leitung trägt einen Schadenzeitpunkt e
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].occ_before_reg.includes('{ez}') && STRINGS[l].occ_before_reg.includes('{d}') && STRINGS[l].occ_before_reg.includes('{p}'), l); for (const k of ['{d}', '{p}', '{s}']) { ok(STRINGS[l].occ_after_deact.includes(k), l + k); ok(STRINGS[l].occ_after_deact_back.includes(k), l + k); } ok(STRINGS[l].occ_after_deact_back.includes('{e}') && STRINGS[l].occ_veh_fix.includes('{b}'), l); }
 });
 
+await test('Backlog 1638 (Blickwinkel „Leitung erfasst einen Vertrag am falschen Fahrzeug – Nachfolger mit gleichem Kennzeichen“): Fahrzeugakte zeigt der Leitung einen Hinweis, wenn das Vertragsende vor der Erstzulassung liegt bzw. ein laufender Vertrag nach der Außerbetriebnahme (laut Protokoll) beginnt; nicht nach Rückkehr, nicht für beendete Verträge, nicht für Werkstatt', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const A = 'VIN:WMA15SZZ2HM722774';
+  const mk = async (body) => { const r = await U.fleet.post(`/api/vehicles/${A}/contracts`, { kind: 'leasing', evidence: 'Vertrag', ...body }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const c1 = await mk({ partner: 'Alt-Leasing', start_date: day(-900), end_date: day(-100) });
+  const c2 = await mk({ partner: 'Neu-Leasing', start_date: day(-10), end_date: day(700) });
+  const akte = async (u = U.fleet) => (await u.get(`/api/vehicles/${A}`)).data;
+  const of = (d, id) => (d.contracts || []).find((c) => c.id === id);
+  let d = await akte();
+  eq(of(d, c1).vehicle_dates, undefined, 'ohne Erstzulassung/Protokoll kein Hinweis'); eq(of(d, c2).vehicle_dates, undefined);
+  ok(!('veh_fr' in of(d, c1)) && !('veh_deact' in of(d, c1)), 'Hilfsspalten nicht in der Antwort');
+  // Erstzulassung nach dem Ende des alten Vertrags → Hinweis nur dort
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run(day(-50), A);
+  d = await akte(); eq(of(d, c1).vehicle_dates?.end_before_registration, day(-50)); eq(of(d, c2).vehicle_dates, undefined);
+  // Erstzulassung nur Monat: Vertragsende im selben Monat → kein Hinweis
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run(day(-100).slice(0, 7), A);
+  eq(of(await akte(), c1).vehicle_dates, undefined, 'Monat der Erstzulassung zählt nicht als „vor“');
+  db.prepare('UPDATE vehicles SET first_registration=NULL WHERE id=?').run(A);
+  // außer Betrieb seit Tag -20 (Grund laut Protokoll), Vertrag ab Tag -10 → Hinweis; alter Vertrag (Beginn davor) nicht
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(A);
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1638-1', NULL, 'vehicle.deactivate', ?, ?, ?)`).run(A, JSON.stringify({ plate: 'SZ-YC 5513', reason: 'Leasingrückgabe' }), day(-20) + 'T08:00:00.000Z');
+  d = await akte(); const h = of(d, c2).vehicle_dates;
+  eq(h && h.start_after_deactivation, day(-20) + 'T08:00:00.000Z', JSON.stringify(h)); eq(h.reason, 'Leasingrückgabe'); eq(of(d, c1).vehicle_dates, undefined);
+  for (const [n, u] of [['Werkstatt', U.ws], ['Fahrer', U.driver]]) { const x = await u.get(`/api/vehicles/${A}`); if (x.status === 200) ok(!(x.data.contracts || []).some((c) => c.vehicle_dates), n); }
+  // Beginn am Tag der Außerbetriebnahme → kein Hinweis
+  const { contractVehicleDates } = await import('../src/contracts.js');
+  const ev = JSON.stringify({ action: 'vehicle.deactivate', at: '2026-04-10T08:00:00.000Z', detail: '{}' });
+  eq(contractVehicleDates({ start_date: '2026-04-10', vehicle_active: 0 }, null, ev).vehicle_dates, undefined, 'Tag der Außerbetriebnahme');
+  eq(contractVehicleDates({ start_date: '2026-04-11', vehicle_active: 0, ended_on: '2026-05-01' }, null, ev).vehicle_dates, undefined, 'beendeter Vertrag');
+  eq(contractVehicleDates({ start_date: '2026-04-11', vehicle_active: 1 }, null, ev).vehicle_dates, undefined, 'wieder in Betrieb');
+  eq(contractVehicleDates({ start_date: '2026-04-11', vehicle_active: 0 }, null, '{kaputt').vehicle_dates, undefined, 'defektes JSON');
+  eq(contractVehicleDates({ start_date: '2026-04-11', vehicle_active: 0 }, null, JSON.stringify({ action: 'vehicle.activate', at: '2026-04-01T08:00:00.000Z' })).vehicle_dates, undefined, 'letzter Wechsel = in Betrieb');
+  eq(contractVehicleDates({ end_date: '2026-03-31' }, '2026-04', null).vehicle_dates?.end_before_registration, '2026-04');
+  // Vertrag beendet → Hinweis „Beginn nach Außerbetriebnahme“ entfällt
+  eq((await U.fleet.post(`/api/contracts/${c2}/end`, { ended_on: BERLIN_TODAY, end_note: 'falsches Fahrzeug' })).status, 200);
+  eq(of(await akte(), c2).vehicle_dates, undefined, 'nach dem Beenden');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${ctDocLine(c)}${ctVehDates(c)}') && app.includes('data-ctvehdates') && app.includes('data-ctdreason'), 'Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ct_end_before_reg.includes('{e}') && STRINGS[l].ct_end_before_reg.includes('{ez}'), l); ok(STRINGS[l].ct_start_after_deact.includes('{b}') && STRINGS[l].ct_start_after_deact.includes('{s}'), l); ok(STRINGS[l].ct_veh_dates_fix.includes('{end}') && STRINGS[l].ct_veh_dates_fix.includes('{edit}'), l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
