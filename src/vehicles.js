@@ -1606,7 +1606,7 @@ export async function dropUnusedHuSpRule(env, user, ruleId, vehicleId, kind) {
 // Prüfrelevante Fahrzeugdaten: zulässige Gesamtmasse (F.2), Erstzulassung (B) – nur mit Nachweis
 export async function setVehicleSpec(env, user, vehicleId, body) {
   if (!isManager(user)) throw forbidden();
-  const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration, emission_class, axles FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, kind, zgm_class, zgm_kg, first_registration, emission_class, axles, build_year FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const source = str(body.spec_source, { key: 'spec_source', required: true, max: 200, field: 'Nachweis (z. B. Fahrzeugschein)' });
   // Backlog 1014: „18.000 kg“/„F.2: 18000“ wie im Fahrzeugschein annehmen (`unit: 'kg'`), Tonnen mit eigener Meldung – nie umgerechnet
@@ -1646,7 +1646,10 @@ export async function setVehicleSpec(env, user, vehicleId, body) {
   }
   await audit(env, user.id, 'vehicle.spec', vehicleId, { plate: v.plate, from: { zgm_class: v.zgm_class, zgm_kg: v.zgm_kg, first_registration: v.first_registration, emission_class: v.emission_class, axles: v.axles }, to: { zgm_class: cls, zgm_kg: kg, first_registration: ez, emission_class: emis, axles }, source });
   const sync = await syncHuSpDues(env, { today: berlinDate(), actorId: user.id, vehicleIds: [vehicleId] });
-  return { ok: true, zgm_class: cls, husp_recalc: sync.changed };
+  // Backlog 1629 (Blickwinkel „Leitung nimmt einen fabrikneuen Lkw in Betrieb“): Erstzulassung vor dem Baujahr laut Stamm – meist ein
+  // vertipptes Jahr (die erste SP rückt dann still um ein Jahr nach vorn). Nur Hinweis, keine Sperre: „Baujahr“ kann ein Modelljahr sein.
+  const ezWarn = ez && v.build_year && Number(ez.slice(0, 4)) < Number(v.build_year) ? { ez_before_build_year: Number(v.build_year) } : {};
+  return { ok: true, zgm_class: cls, husp_recalc: sync.changed, ...ezWarn };
 }
 
 // Prüfergebnisse, bei denen Fuhrparkleitung, Inhaber und Disposition sofort (dringend, nicht abschaltbar) informiert werden

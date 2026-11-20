@@ -1759,7 +1759,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   ok((await owner.get('/api/admin/audit?action=reports.kpi.export')).data.entries.length >= 3, 'protokolliert');
   const { kpiReportCsv } = await import('../src/reports.js');
   const inj = kpiReportCsv({ vehicles: [{ plate: '=X()', vehicle_id: 'VIN:X', kind: 'lkw', site: 'A;B', cases: 2, released: 1, workshop_h: 1.5, parts_wait_h: 0, locked_h: null }] });
-  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;;;\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0');
+  ok(inj.includes("'=X()") && inj.includes('"A;B"') && inj.includes(';2;1;1,5;0;;0;;;;0\r\n'), 'Formelschutz, Dezimalkomma, leer statt 0 (Teilefahrt 0 – Backlog 1628)');
 });
 
 await test('Standortauswahl (siteSelection): Schreibweisen zusammengefasst, „ohne“ zuletzt, Auswahl ohne Groß-/Kleinschreibung', async () => {
@@ -2025,7 +2025,7 @@ await test('Oberfläche: Zähltexte in der Pluralform je Sprache (tn) – statt 
   for (const k of ['ufilter_shown', 'af_shown', 'dec_shown']) for (const l of ['de', 'uk', 'en']) ok(/: \{n\} \S+ \{m\}$/.test(STRINGS[l][k]), `${l}.${k}: neutrale Form – ${STRINGS[l][k]}`);
   // Ratsche: jeder Text mit t('k').replace('{Zahl}', Variable), in dem die Zahl vor einem Wort steht, ist geprüft (feste Höchstzahl,
   // Kürzel/Einheit, Präposition oder Zahl immer > 1). Neue Texte dieser Art → tn() mit Pluralformen oder nach Prüfung hier eintragen.
-  const REVIEWED = new Set('vin_len wh_m wh_hm ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
+  const REVIEWED = new Set('ez_build_hint vin_len wh_m wh_hm ev_km_greater ev_km_smaller ext_km_lower tread_rise dc_km_lower dc_km_digits mf_km_digits imp_km_digits odo_digits kf_km_lower mdone_km_lower tfkm_lower tire_km_lower irv_last_km irv_km_lower irv_km_diff wd_left ct_ret_km dec_shown clock_minutes clock_hours clock_days ct_km_below wplan_sp_prev_open tires_spare_below spare_below_min tm_unmatched_truncated imp_first_n tf_rc_used vfind_crit list_truncated csv_truncated files_free files_full photos_over_max km_not_taken km_not_taken_next tread_below_min km_forecast_hint vnotes_full vnotes_free vnote_arch_truncated warr_more maint_hist_truncated docs_full insp_truncated tire_age_years tire_age_months tire_hist_truncated count_age_n inv_sum hist_truncated em_full em_count em_arch_truncated nf_truncated master_cases_truncated export_truncated kpi_veh_more kpi_veh_all audit_csv_truncated tl_truncated tm_age_d tm_age_h search_more search_more_cases tires_rule err_setting_invalid setting_stored_range ufilter_shown af_shown'.split(' '));
   const NUMPH = ['n', 'm', 'max', 'y', 'q', 's', 'kpd', 'min', 'warn', 'prev', 'km'];
   const unreviewed = new Set();
   for (const m of app.matchAll(/t\('([a-z0-9_]+)'\)((?:\.replace\('\{[a-z]+\}', (?:[^()]|\([^()]*\))*\))+)/g)) {
@@ -46014,6 +46014,27 @@ await test('Backlog 1626/1627/1628 (Folge aus 1625): Ausfallzeit der Kennzahlen,
   for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_pdrive && STRINGS[l].kpi_pdrive.includes('{d}'), `${l}.kpi_pdrive`);
   const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(/v\.parts_drive_h \? ` · \$\{esc\(t\('kpi_pdrive'\)/.test(app), 'Backlog 1627: Fahrzeugzeile der Kennzahlen nennt die nicht gezählte Zeit');
+});
+
+await test('Backlog 1629/1630 (Blickwinkel „Leitung nimmt einen fabrikneuen Lkw in Betrieb“): Erstzulassung vor dem Baujahr wird gespeichert, aber gemeldet; Datumsfeld mit Grenzen', async () => {
+  const { e: env, U, V1 } = await freshWorld();
+  const Y = Number(BERLIN_TODAY.slice(0, 4));
+  await env.DB.prepare('UPDATE vehicles SET build_year=? WHERE id=?').bind(Y, V1).run();
+  // vertipptes Jahr: ein Jahr vor dem Baujahr → gespeichert (keine Sperre), Antwort nennt das Baujahr
+  let r = await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: 18000, first_registration: `${Y - 1}-01-15`, spec_source: 'Fahrzeugschein B' });
+  eq(r.status, 200); eq(r.data.ez_before_build_year, Y, 'Hinweis mit Baujahr');
+  eq((await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(V1).first()).first_registration, `${Y - 1}-01-15`, 'trotzdem gespeichert');
+  // korrigiert (gleiches Jahr) → kein Hinweis; ohne Baujahr → kein Hinweis
+  r = await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: 18000, first_registration: `${Y}-01-15`, spec_source: 'Fahrzeugschein B' });
+  eq(r.status, 200); ok(!('ez_before_build_year' in r.data), 'gleiches Jahr ohne Hinweis');
+  await env.DB.prepare('UPDATE vehicles SET build_year=NULL WHERE id=?').bind(V1).run();
+  r = await U.fleet.post(`/api/vehicles/${V1}/spec`, { zgm_kg: 18000, first_registration: '2001-03-01', spec_source: 'Fahrzeugschein B' });
+  eq(r.status, 200); ok(!('ez_before_build_year' in r.data), 'ohne Baujahr ohne Hinweis');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ez_build_hint && STRINGS[l].ez_build_hint.includes('{y}'), `${l}.ez_build_hint`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`name="first_registration" min="1950-01-01" max="\${esc(bDate())}"`), 'Backlog 1630: Datumsfeld Erstzulassung mit min/max');
+  ok(/data-ezbuild>\$\{esc\(t\('ez_build_hint'\)/.test(app), 'Hinweis dauerhaft in der Fahrzeugakte');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
