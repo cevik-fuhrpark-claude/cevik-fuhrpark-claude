@@ -46129,6 +46129,55 @@ await test('Backlog 1634 (Blickwinkel „Leitung erfasst ein Schreiben, dessen T
   for (const l of ['de', 'uk', 'en']) { for (const k of ['{d}', '{ez}', '{p}']) ok(STRINGS[l].fine_before_reg.includes(k), l + k); ok(STRINGS[l].fine_before_reg_other.includes('{p}') && STRINGS[l].fine_before_reg_fix && STRINGS[l].fine_before_reg_locked, l); }
 });
 
+await test('Backlog 1635 (Blickwinkel „Leitung erfasst ein Schreiben, dessen Tatzeit nach der Außerbetriebnahme des zugeordneten Fahrzeugs liegt“): Bußgeld zeigt Hinweis mit Datum/Grund laut Protokoll, auch für eine Standzeit mit späterer Wiederinbetriebnahme; nicht vor der Außerbetriebnahme, nicht nach der Rückkehr, nicht für Leserolle', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const A = 'VIN:WMA15SZZ2HM722774';
+  const body = (ref, d) => ({ kind: 'anhoerung', authority: 'Bußgeldstelle Test 1635', reference: ref, offense_type: 'geschwindigkeit', offense_at: d + 'T10:15', plate_in_letter: 'SZ-YC 5513', amount_eur: 30 });
+  const a = await U.fleet.post('/api/fines', body('AZ-1635-1', day(-5))); eq(a.status, 201, JSON.stringify(a.data)); eq(a.data.vehicle_matched, true);
+  const b = await U.fleet.post('/api/fines', body('AZ-1635-2', day(-20))); eq(b.status, 201);
+  const c = await U.fleet.post('/api/fines', body('AZ-1635-3', day(-1))); eq(c.status, 201);
+  const get = async (id, u = U.fleet) => (await u.get(`/api/fines/${id}`)).data;
+  eq((await get(a.data.id)).offense_after_deactivation, undefined, 'aktiv, kein Protokoll');
+  // außer Betrieb genommen am Tag -10 (verkauft) – Fahrzeug bleibt zugeordnet
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1635-1', NULL, 'vehicle.deactivate', ?, ?, ?)`).run(A, JSON.stringify({ plate: 'SZ-YC 5513', reason: 'verkauft an Händler' }), day(-10) + 'T08:00:00.000Z');
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(A);
+  const d1 = await get(a.data.id);
+  eq(d1.offense_after_deactivation && d1.offense_after_deactivation.since, day(-10) + 'T08:00:00.000Z', JSON.stringify(d1.offense_after_deactivation));
+  eq(d1.offense_after_deactivation.reason, 'verkauft an Händler'); eq(d1.offense_after_deactivation.active_again, undefined);
+  eq((await get(c.data.id)).offense_after_deactivation?.since, day(-10) + 'T08:00:00.000Z', 'Tat nach Außerbetriebnahme');
+  eq((await get(b.data.id)).offense_after_deactivation, undefined, 'Tat vor der Außerbetriebnahme');
+  const dv = await U.viewer.get(`/api/fines/${a.data.id}`); eq(dv.status, 200); eq(dv.data.offense_after_deactivation, undefined, 'Leserolle');
+  // wieder in Betrieb am Tag -3: Tat am Tag -5 lag in der Standzeit (mit Ende), Tat am Tag -1 danach → kein Hinweis
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1635-2', NULL, 'vehicle.activate', ?, '{}', ?)`).run(A, day(-3) + 'T08:00:00.000Z');
+  db.prepare('UPDATE vehicles SET active=1 WHERE id=?').run(A);
+  const d2 = await get(a.data.id);
+  eq(d2.offense_after_deactivation && d2.offense_after_deactivation.active_again, day(-3) + 'T08:00:00.000Z', JSON.stringify(d2.offense_after_deactivation));
+  eq((await get(c.data.id)).offense_after_deactivation, undefined, 'nach der Rückkehr');
+  // Protokoll ohne Grund → kein reason
+  db.prepare(`UPDATE audit_log SET detail='{}' WHERE id='al-1635-1'`).run();
+  eq((await get(a.data.id)).offense_after_deactivation.reason, undefined, 'ohne Grund');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="fafterdeact"') && app.includes('data-freason'), 'Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['{d}', '{p}', '{s}']) { ok(STRINGS[l].fine_after_deact.includes(k), l + k); ok(STRINGS[l].fine_after_deact_back.includes(k), l + k); } ok(STRINGS[l].fine_after_deact_back.includes('{b}') && STRINGS[l].fine_after_deact_reason && STRINGS[l].fine_after_deact_fix, l); }
+});
+
+await test('Backlog 1636 (Blickwinkel „Fahrer erfasst einen Kilometerstand an einem außer Betrieb genommenen Fahrzeug“): km-Stand an außer Betrieb genommenen Fahrzeugen nur für Inhaber/Leitung, Fahrer/Werkstatt erhalten „Fahrzeug ist außer Betrieb.“; Akte zeigt das Formular nur Inhaber/Leitung', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const A = 'VIN:WMA15SZZ2HM722774';
+  eq((await U.driver.post(`/api/vehicles/${A}/odometer`, { km: 123456 })).status, 201, 'aktiv: Fahrer darf');
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(A);
+  for (const [n, u] of [['Fahrer', U.driver], ['Werkstatt', U.ws]]) {
+    const r = await u.post(`/api/vehicles/${A}/odometer`, { km: 123500 });
+    eq(r.status, 400, n + ' ' + JSON.stringify(r.data)); eq(r.data.message, 'Fahrzeug ist außer Betrieb.', n);
+  }
+  eq(db.prepare('SELECT COUNT(*) AS n FROM odometer_readings WHERE vehicle_id=? AND km=123500').get(A).n, 0, 'nichts gespeichert');
+  // Leitung: Stand bei Rückgabe/Verkauf nachtragen bleibt möglich
+  const f = await U.fleet.post(`/api/vehicles/${A}/odometer`, { km: 123600, note: 'Stand bei Übergabe an Käufer (Test)' }); eq(f.status, 201, JSON.stringify(f.data));
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("(v.active || ['owner', 'fleet'].includes(S.me.role))) html += `<details class=\"panel\"><summary>${esc(t('add_km'))}"), 'Formular nur Inhaber/Leitung bei außer Betrieb');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

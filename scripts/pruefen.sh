@@ -279,6 +279,8 @@ UI-Erstzulassung vor Baujahr: dauerhafter Hinweis in der Fahrzeugakte, Datumsfel
 UI-Unsichtbare Zeichen: Meldung nur aus Breite-null-Leerzeichen/weichem Trennzeichen gilt als zu kurz, Feld markiert, DE/UK/EN 390/820/1366 (Backlog 1631)|ui-unsichtbare-zeichen.py|/tmp/cfp-unsichtbare-zeichen.log
 UI-Lagerjournal Entnahme ohne Vorgang (Werkstattbedarf, Backlog 1633)|ui-lager-entnahme-ohne-vorgang.py|/tmp/cfp-lager-entnahme-ohne-vorgang.log
 UI-Bußgeld Tatzeit vor der Erstzulassung (Backlog 1634)|ui-bussgeld-vor-erstzulassung.py|/tmp/cfp-bussgeld-vor-erstzulassung.log
+UI-Bußgeld Tatzeit nach der Außerbetriebnahme (Backlog 1635)|ui-bussgeld-nach-ausserbetriebnahme.py|/tmp/cfp-bussgeld-nach-ausserbetriebnahme.log
+UI-Kilometerstand an außer Betrieb genommenem Fahrzeug nur Inhaber/Leitung (Backlog 1636)|ui-km-ausser-betrieb.py|/tmp/cfp-km-ausser-betrieb.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log

@@ -66,6 +66,12 @@ http.createServer(async (req, res) => {
   // Nur lokal (nicht im Worker): Vorgang samt Ereignissen um N Stunden zurückdatieren (Dauer-Kennzahlen im Browser prüfen, scripts/ui-kpi-ausfall.py)
   if (url.pathname === '/__dev/backdate' && req.method === 'POST') {
     const vid = url.searchParams.get('vehicle');
+    const did = url.searchParams.get('deact');
+    if (did) { // Backlog 1635: Außerbetriebnahme laut Protokoll zurückdatieren (über die API nur „jetzt“; scripts/ui-bussgeld-nach-ausserbetriebnahme.py)
+      const hv = Math.min(Math.max(Number(url.searchParams.get('hours')) || 0, 0), 24 * 400);
+      const n = env.DB.db.prepare(`UPDATE audit_log SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '-${hv} hours') WHERE target=? AND action='vehicle.deactivate'`).run(String(did)).changes;
+      res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ audit: Number(n) })); return;
+    }
     if (vid) { // Fahrzeug-Anlage zurückdatieren (Verfügbarkeit zählt erst ab Anlage)
       const hv = Math.min(Math.max(Number(url.searchParams.get('hours')) || 0, 0), 24 * 400);
       const n = env.DB.db.prepare(`UPDATE vehicles SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '-${hv} hours') WHERE id=?`).run(String(vid)).changes;

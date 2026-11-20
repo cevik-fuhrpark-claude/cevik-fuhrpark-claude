@@ -223,6 +223,21 @@ export async function fineDetail(env, user, envName, id) {
       if (ids.length === 1) { const cur = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(ids[0]).first(); if (cur) r.other_vehicle = { id: cur.id, plate: cur.plate }; }
       out.offense_before_registration = r;
     }
+    // Backlog 1635 (Blickwinkel „Leitung erfasst ein Schreiben, dessen Tatzeit nach der Außerbetriebnahme des zugeordneten Fahrzeugs liegt“):
+    // das Kennzeichen trägt nur noch ein außer Betrieb genommenes (verkauftes/abgemeldetes) Fahrzeug, dem das Schreiben zugeordnet wurde
+    // (bewusst, weil Schreiben oft Wochen nach der Tat kommen). Lag die Tat aber nach der Außerbetriebnahme, sind die Fahrerzuordnungen
+    // schon beendet – die Ermittlung findet niemanden bzw. Tippfehler im Datum. Maßgeblich ist der letzte Wechsel laut Protokoll vor der
+    // Tatzeit (auch bei später wieder in Betrieb genommenen). Nur Hinweis, keine Automatik; ohne Protokolleintrag (Import) kein Hinweis.
+    if (f.offense_at) {
+      const ev = await env.DB.prepare(`SELECT a.action, a.created_at, a.detail,
+          (SELECT MIN(b.created_at) FROM audit_log b WHERE b.target=?1 AND b.action='vehicle.activate' AND b.created_at > ?2) AS back_at
+        FROM audit_log a WHERE a.target=?1 AND a.action IN ('vehicle.deactivate','vehicle.activate') AND a.created_at <= ?2 ORDER BY a.created_at DESC LIMIT 1`)
+        .bind(f.vehicle_id, f.offense_at).first();
+      if (ev && ev.action === 'vehicle.deactivate') {
+        let reason = null; try { reason = JSON.parse(ev.detail || '{}').reason || null; } catch { reason = null; }
+        out.offense_after_deactivation = { since: ev.created_at, ...(reason ? { reason } : {}), ...(ev.back_at ? { active_again: ev.back_at } : {}) };
+      }
+    }
   }
   if (isMgr(user)) {
     out.events = events;

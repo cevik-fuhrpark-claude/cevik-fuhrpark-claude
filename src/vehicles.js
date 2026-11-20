@@ -1840,8 +1840,12 @@ export async function addOdometer(env, user, vehicleId, body) {
     if (d < today) measuredAt = `${d}T12:00:00.000Z`;
   }
   const note = str(body.note, { key: 'note', max: 300, field: 'Bemerkung' });
-  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
+  // Backlog 1636 (Blickwinkel „Fahrer erfasst einen Kilometerstand an einem außer Betrieb genommenen Fahrzeug“, z. B. über einen alten
+  // QR-Aufkleber oder Link): Abfahrtskontrolle/Meldung lehnen außer Betrieb genommene Fahrzeuge ab, der km-Stand nahm ihn an – ein Stand
+  // eines verkauften Lkw verfälschte dann Verlauf/Datenqualität. Nur Inhaber/Leitung dürfen nachtragen (z. B. Stand bei Rückgabe/Verkauf).
+  if (!v.active && !['owner', 'fleet'].includes(user.role)) throw bad('validation', 'Fahrzeug ist außer Betrieb.');
   // Plausibilität gegen die zeitlich benachbarten Werte: davor nicht größer, danach nicht kleiner – sonst nur mit Begründung
   const [prev, next] = await Promise.all([
     env.DB.prepare('SELECT km, measured_at FROM odometer_readings WHERE vehicle_id=? AND measured_at <= ? ORDER BY measured_at DESC LIMIT 1').bind(vehicleId, measuredAt).first(),
