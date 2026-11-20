@@ -46178,6 +46178,51 @@ await test('Backlog 1636 (Blickwinkel „Fahrer erfasst einen Kilometerstand an 
   ok(app.includes("(v.active || ['owner', 'fleet'].includes(S.me.role))) html += `<details class=\"panel\"><summary>${esc(t('add_km'))}"), 'Formular nur Inhaber/Leitung bei außer Betrieb');
 });
 
+await test('Backlog 1637 (Blickwinkel „Leitung trägt einen Schadenzeitpunkt ein, an dem das Fahrzeug noch nicht zugelassen bzw. schon außer Betrieb war“): Vorgangsdetail zeigt der Leitung einen Hinweis (vor Erstzulassung; nach Außerbetriebnahme laut Protokoll, auch Standzeit mit Rückkehr); Tag ohne Uhrzeit nur bei ganztägiger Standzeit; nicht für Fahrer/Werkstatt', async () => {
+  const { e, U, cmd } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const A = 'VIN:WMA15SZZ2HM722774';
+  const r = await U.fleet.post('/api/cases', { vehicle_id: A, description: 'Spiegel beim Rangieren abgefahren', priority: 'niedrig', driveability: 'fahrbereit', occurred_at: day(-30), request_key: rk() });
+  eq(r.status, 201, JSON.stringify(r.data)); const id = r.data.id;
+  const get = async (u = U.fleet) => (await u.get(`/api/cases/${id}`)).data;
+  eq((await get()).occurred_vehicle, undefined, 'ohne Erstzulassung/Protokoll kein Hinweis');
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run(day(-10), A);
+  eq((await get()).occurred_vehicle?.before_registration, day(-10), 'vor der Erstzulassung');
+  for (const [n, u] of [['Werkstatt', U.ws], ['Leserolle', U.viewer]]) { const d = await u.get(`/api/cases/${id}`); if (d.status === 200) eq(d.data.occurred_vehicle, undefined, n); }
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run(day(-31).slice(0, 7), A);
+  // Erstzulassung nur Monat: Schadentag im selben oder späteren Monat → kein Hinweis
+  ok(!(await get()).occurred_vehicle || day(-30).slice(0, 7) > day(-31).slice(0, 7), 'Monat der Erstzulassung zählt nicht als „vor“');
+  db.prepare('UPDATE vehicles SET first_registration=NULL WHERE id=?').run(A);
+  // außer Betrieb am Tag -40 (Grund laut Protokoll) → Schaden am Tag -30 danach
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1637-1', NULL, 'vehicle.deactivate', ?, ?, ?)`).run(A, JSON.stringify({ plate: 'SZ-YC 5513', reason: 'abgemeldet' }), day(-40) + 'T08:00:00.000Z');
+  const d1 = (await get()).occurred_vehicle;
+  eq(d1 && d1.deactivated_since, day(-40) + 'T08:00:00.000Z', JSON.stringify(d1)); eq(d1.reason, 'abgemeldet'); eq(d1.active_again, undefined);
+  // wieder in Betrieb am Tag -20 (08:00 UTC): Standzeit mit Ende
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1637-2', NULL, 'vehicle.activate', ?, '{}', ?)`).run(A, day(-20) + 'T08:00:00.000Z');
+  eq((await get()).occurred_vehicle?.active_again, day(-20) + 'T08:00:00.000Z', 'Standzeit mit Rückkehr');
+  // Tag ohne Uhrzeit am Rückkehrtag → nicht ganztägig außer Betrieb → kein Hinweis; mit Uhrzeit vor der Rückkehr → Hinweis
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: day(-20) })).status, 200);
+  eq((await get()).occurred_vehicle, undefined, 'Rückkehrtag ohne Uhrzeit');
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: day(-20) + 'T06:30' })).status, 200);
+  eq((await get()).occurred_vehicle?.deactivated_since, day(-40) + 'T08:00:00.000Z', 'Uhrzeit vor der Rückkehr');
+  // nach der Rückkehr bzw. vor der Außerbetriebnahme → kein Hinweis
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: day(-15) })).status, 200);
+  eq((await get()).occurred_vehicle, undefined, 'nach der Rückkehr');
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: day(-45) })).status, 200);
+  eq((await get()).occurred_vehicle, undefined, 'vor der Außerbetriebnahme');
+  // Tag der Außerbetriebnahme ohne Uhrzeit: Fahrzeug lief am Morgen noch → kein Hinweis
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: day(-40) })).status, 200);
+  eq((await get()).occurred_vehicle, undefined, 'Tag der Außerbetriebnahme');
+  const { occurredVehicleState } = await import('../src/cases.js');
+  eq(occurredVehicleState('2026-03-15', '2026-04', null)?.before_registration, '2026-04'); eq(occurredVehicleState('2026-04-15', '2026-04', null), null);
+  eq(occurredVehicleState('2026-04-15', null, '{kaputt'), null, 'defektes JSON');
+  eq(occurredVehicleState('2026-04-15', null, JSON.stringify({ action: 'vehicle.activate', at: '2026-04-01T08:00:00.000Z' })), null, 'letzter Wechsel = in Betrieb');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('${occVehicle(d.occurred_vehicle, c, d)}') && app.includes('id="coccveh"') && app.includes('data-occreason'), 'Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].occ_before_reg.includes('{ez}') && STRINGS[l].occ_before_reg.includes('{d}') && STRINGS[l].occ_before_reg.includes('{p}'), l); for (const k of ['{d}', '{p}', '{s}']) { ok(STRINGS[l].occ_after_deact.includes(k), l + k); ok(STRINGS[l].occ_after_deact_back.includes(k), l + k); } ok(STRINGS[l].occ_after_deact_back.includes('{e}') && STRINGS[l].occ_veh_fix.includes('{b}'), l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

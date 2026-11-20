@@ -6272,6 +6272,15 @@ function repAssign(a, vid) {
   if (!a) return '';
   return `<dt>${esc(t('rep_assign'))}</dt><dd data-repassign><span class="chip mittel">${esc(t('rep_assign_not'))}</span><ul class="small" style="margin:4px 0 0;padding-left:18px"><li>${a.own_plates.length ? esc(t('rep_assign_own').replace('{p}', a.own_plates.join(', '))) : esc(t('rep_assign_none'))}</li>${a.vehicle_drivers.length ? `<li>${esc(t('rep_assign_drv').replace('{n}', a.vehicle_drivers.join(', ')))}</li>` : ''}</ul><p class="small muted" style="margin:2px 0 0">${esc(t('rep_assign_hint'))} <a href="#/vehicles/${esc(vid)}" class="noprint">${esc(t('vehicle_file'))} ›</a></p></dd>`;
 }
+// Backlog 1637: Schadenzeitpunkt vor der Erstzulassung bzw. während das Fahrzeug außer Betrieb war (nur Leitung, nur Hinweis) – im <dd> des
+// Schadenzeitpunkts, nie als eigenes <dd> (am PC ist `dl.kv` ein zweispaltiges Raster)
+function occVehicle(o, c, d) {
+  if (!o) return '';
+  const p = (d.vehicle && d.vehicle.plate) || '';
+  const txt = o.before_registration ? t('occ_before_reg').replace('{ez}', fmtD(o.before_registration))
+    : t(o.active_again ? 'occ_after_deact_back' : 'occ_after_deact').replace('{s}', fmtD(o.deactivated_since)).replace('{e}', fmtD(o.active_again || ''));
+  return `<div class="small" id="coccveh" role="note" style="margin-top:4px"><b>⚠️ ${esc(txt.replace('{d}', fmtOccurred(c.occurred_at)).replace('{p}', p))}</b>${o.reason ? `<div data-occreason>${esc(t('fine_after_deact_reason'))}: ${esc(o.reason)}</div>` : ''}<div>${esc(t('occ_veh_fix').replace('{b}', t('act_set_occurred_at')))}</div></div>`;
+}
 function occDrivers(o) {
   if (!o) return '';
   const row = (x) => `<li>${esc(x.display_name)} · ${x.basis === 'kontrolle' ? `${esc(t('occ_drv_check'))} ${fmtDT(x.at)}` : `${esc(t('occ_drv_assign'))} ${fmtD(x.at)} – ${x.until ? fmtD(x.until) : esc(t('occ_drv_open'))}`}${x.via_plate ? ` (${esc(t('occ_drv_via'))} ${esc(x.via_plate)})` : ''}</li>`;
@@ -6750,7 +6759,7 @@ async function viewCase(id, pre = null) {
       <dt>${esc(t('driveable'))}</dt><dd>${c.origin === 'kontrolle' && c.reported_driveability === 'unbekannt' ? `<span data-drvcheck>${esc(t('drv_not_asked_check'))}${S.me.role === 'driver' && OPEN_CASE_ST.includes(c.status) ? ' – ' + esc(t('check_defect_clarify')) : ''}</span>` : esc(t('drv_' + c.reported_driveability))}</dd>
       ${d.reporter_name || d.reporter_name_hidden ? `<dt>${esc(t('reported_by'))}</dt><dd>${esc(pnm(d.reporter_name, d.reporter_name_hidden))} · ${fmtDT(c.created_at)}</dd>` : `<dt>${esc(t('date'))}</dt><dd>${fmtDT(c.created_at)}</dd>`}${c.reporter_name_note ? `<dt>${esc(t('rnn_shown'))}</dt><dd data-rnn>${esc(c.reporter_name_note)}</dd>` : ''}${repAssign(d.reporter_assignment, c.vehicle_id)}
       ${srcInsp(d.source_inspection)}
-      ${c.occurred_at ? `<dt>${esc(t('occurred'))}</dt><dd data-occurred>${fmtOccurred(c.occurred_at)}${occLate(c)}</dd>${occDrivers(d.occurred_drivers)}` : ''}
+      ${c.occurred_at ? `<dt>${esc(t('occurred'))}</dt><dd data-occurred>${fmtOccurred(c.occurred_at)}${occLate(c)}${occVehicle(d.occurred_vehicle, c, d)}</dd>${occDrivers(d.occurred_drivers)}` : ''}
       <dt>${esc(t('received'))}</dt><dd>${c.fleet_received_at ? fmtDT(c.fleet_received_at) : esc(t('not_yet'))}${c.fleet_received_at && d.received_by ? ` · ${esc(d.received_by.name)}${d.received_by.current ? '' : ` <span class="chip mittel" data-recvgone>${esc(t('recv_gone'))}</span>`}` : ''}</dd>
       <dt>${esc(t('workshop'))}</dt><dd>${esc(wsName(c.workshop_site || c.suggested_workshop_site))}${c.planned_date ? ' · ' + esc(t('planned')) + ' ' + fmtD(c.planned_date) : ''}${planMissedInfo(c, A)}${c.status === 'wartet_teile' && c.parts_expected_date && c.planned_date && c.planned_date >= bDate() && c.planned_date < c.parts_expected_date ? ` <span class="chip mittel" data-planeta>${esc(t('plan_before_parts'))}</span>` : ''}${c.planned_date && c.planned_note ? `<br><span class="small" data-plannote>${esc(t('plan_note_lbl'))}: ${esc(c.planned_note)}</span>` : ''}</dd>${c.followup_on && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status) ? `<dt>${esc(t('followup'))}</dt><dd><span class="chip${c.followup_on <= bDate() ? ' mittel' : ''}">${fmtD(c.followup_on)}</span>${c.followup_note ? ' ' + esc(c.followup_note) : ''}</dd>` : ''}
       ${rdyOf(c) ? `<dt>${esc(t('rdy_title'))}</dt><dd id="rdy"><b>${fmtD(c.ready_expected_on)}</b>${c.ready_expected_on === bDate() ? ' (' + esc(t('today')) + ')' : ''}${c.ready_expected_on < bDate() ? ` <span class="chip mittel" data-rdypast>${esc(t('rdy_passed'))}</span>` : ''} <span class="small muted">${esc(t('rdy_by_ws'))}</span>${((m) => (m ? ` <span class="small" data-rdymoves>· ${esc(tn('rdy_moved', m.n))} (${esc(t('rdy_first'))} ${fmtD(m.first)})</span>` : ''))(rdyMoves(d))}</dd>` : ''}

@@ -464,14 +464,23 @@ export async function getCaseDetail(env, user, envName, caseId) {
       'rework', (SELECT MAX(created_at) FROM case_events WHERE case_id=c.id AND action='return_for_rework'),
       'safety', (SELECT COUNT(*) FROM open_items WHERE case_id=c.id AND status='offen' AND safety_relevant=1),
       'wheel', EXISTS(SELECT 1 FROM tire_events te WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel')) AS qc_state` : '';
+  // Backlog 1637 (Blickwinkel „Leitung trägt einen Schadenzeitpunkt ein, an dem das Fahrzeug noch nicht zugelassen bzw. schon außer Betrieb war“):
+  // letzter Wechsel außer Betrieb/in Betrieb laut Protokoll vor dem Schadenzeitpunkt (Tag ohne Uhrzeit: vor Tagesbeginn) samt erster Rückkehr danach –
+  // in derselben Abfrage (Abfragebudget Vorgangsdetail), nur Leitung
+  const vqBind = [c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])];
+  const occRef = mgrUser && c0.occurred_at ? (c0.occurred_at.length === 10 ? berlinDayStartIso(c0.occurred_at) : c0.occurred_at) : null;
+  let deactSql = '';
+  if (occRef) { vqBind.push(occRef); const k = '?' + vqBind.length;
+    deactSql = `, (SELECT json_object('action', a.action, 'at', a.created_at, 'detail', a.detail, 'back_at', (SELECT MIN(b.created_at) FROM audit_log b WHERE b.target=c.vehicle_id AND b.action='vehicle.activate' AND b.created_at > ${k}))
+      FROM audit_log a WHERE a.target=c.vehicle_id AND a.action IN ('vehicle.deactivate','vehicle.activate') AND a.created_at <= ${k} ORDER BY a.created_at DESC LIMIT 1) AS occ_deact`; }
   // Backlog 1026: Name der übernehmenden Werkstattperson in derselben Abfrage (Abfragebudget Vorgangsdetail)
-  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name,
+  const vq = await env.DB.prepare(`SELECT v.*, ${Q_COLS_SQL}, ${APPR_WAIT_SQL(berlinDate())}${srcSql}${qcSql}${deactSql}, (SELECT au.display_name FROM users au WHERE au.id=c.workshop_ack_by) AS ack_by_name,
       (SELECT json_group_array(json_object('position', x.position, 'size', x.size, 'dot', x.dot, 'winter_mark', x.winter_mark, 'created_at', x.created_at)) FROM (SELECT te.position, te.size, te.dot, te.winter_mark, te.created_at FROM tire_events te
         WHERE te.environment=c.environment AND te.vehicle_id=c.vehicle_id AND te.case_id=c.id AND te.event_type='wechsel' ORDER BY te.created_at, te.position LIMIT 40) x) AS tire_changes FROM cases c JOIN vehicles v ON v.id=c.vehicle_id WHERE c.id=?1`)
-    .bind(c0.id, ...(fromInsp ? [envName, ...(mgrUser ? [c0.check_item] : [])] : [])).first();
+    .bind(...vqBind).first();
   const c = { ...c0, q_at: vq ? vq.q_at : null, q_reply: vq ? vq.q_reply : null, q_lead: vq ? vq.q_lead : null, appraisal_wait_on: vq ? vq.appraisal_wait_on : null, workshop_ack_by_name: vq && c0.workshop_ack_by ? vq.ack_by_name || null : null };
   const srcInsp = vq && vq.src_insp ? JSON.parse(vq.src_insp) : null;
-  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, qc_state, ack_by_name, ...v }) => v)(vq) : null;
+  const vehicle = vq ? (({ q_at, q_reply, q_lead, src_insp, appraisal_wait_on, qc_state, ack_by_name, occ_deact, ...v }) => v)(vq) : null;
   // reach: 0 = deaktiviert, 1 = erreichbar, 2 = aktiv, aber nicht benachrichtigbar (ohne Passwort/andere Umgebung; Regel wie candidateUsers.reporter_ok)
   // + Zuordnung des Melders zur Meldezeit (Backlog 421, nur Leitung) in derselben Abfrage (Abfragebudget Vorgangsdetail ≤ 20)
   const reporter = await env.DB.prepare(`SELECT display_name, CASE WHEN role='driver' OR was_driver=1 THEN 'driver' ELSE role END AS role,
@@ -578,6 +587,9 @@ export async function getCaseDetail(env, user, envName, caseId) {
   if (detail.claim) { const dt = caseDowntime(c, events); if (dt) detail.claim.downtime = dt; }
   // Fahrer laut Zuordnung/Abfahrtskontrolle zum Schadenzeitpunkt (Backlog 285) – nur Leitung (Fahrerdaten), nur wenn angegeben
   if (isManager(user) && c.occurred_at) detail.occurred_drivers = await driversAtOccurrence(env, envName, c);
+  // Backlog 1637: Schadenzeitpunkt vor der Erstzulassung bzw. in einer Zeit außer Betrieb laut Protokoll → Tippfehler im Datum oder falsches
+  // Fahrzeug; die Fahrer zum Schadenzeitpunkt sind dann leer bzw. irreführend. Nur Hinweis für die Leitung, keine Automatik.
+  if (isManager(user) && c.occurred_at && vq) { const ov = occurredVehicleState(c.occurred_at, vq.first_registration, vq.occ_deact); if (ov) detail.occurred_vehicle = ov; }
   // Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Melder (Fahrer) war zur Meldezeit laut Zuordnung nicht diesem
   // Fahrzeug bzw. dessen Gespann zugeordnet – nur Leitung (Fahrerdaten), nur Hinweis, ändert keine Zuordnung
   if (isManager(user) && reporter?.role === 'driver') { const ra = reporterAssignment(c, JSON.parse(reporter.assign_rows || '[]')); if (ra) detail.reporter_assignment = ra; }
@@ -1009,6 +1021,21 @@ function occurredAtRaw(v, latest = nowIso()) {
   if (ms > Date.parse(latest) + 10 * 60000) throw bad('validation', 'Schadenzeitpunkt liegt in der Zukunft.');
   if (berlinDate(new Date(ms).toISOString()) < oneYearBack(lim)) throw bad('validation', 'Schadenzeitpunkt liegt mehr als ein Jahr zurück.');
   return new Date(ms).toISOString();
+}
+
+// Backlog 1637: Zustand des Fahrzeugs zum Schadenzeitpunkt – `before_registration` (Erstzulassung JJJJ-MM[-TT] nach dem Schadentag) bzw.
+// `deactivated_since` (+ `reason`, `active_again`) laut Protokoll. Tag ohne Uhrzeit: nur, wenn das Fahrzeug den ganzen Tag außer Betrieb war.
+// Ohne Erstzulassung bzw. ohne Protokolleintrag (Import) kein Hinweis.
+export function occurredVehicleState(occ, firstReg, deactJson) {
+  if (!occ) return null;
+  const dayOnly = occ.length === 10;
+  const day = dayOnly ? occ : berlinDate(occ);
+  if (firstReg && day && day < String(firstReg)) return { before_registration: String(firstReg) };
+  let ev = null; try { ev = deactJson ? JSON.parse(deactJson) : null; } catch { ev = null; }
+  if (!ev || ev.action !== 'vehicle.deactivate') return null;
+  if (dayOnly && ev.back_at) { const next = new Date(Date.parse(day + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10); if (ev.back_at < berlinDayStartIso(next)) return null; }
+  let reason = null; try { reason = JSON.parse(ev.detail || '{}').reason || null; } catch { reason = null; }
+  return { deactivated_since: ev.at, ...(reason ? { reason: String(reason) } : {}), ...(ev.back_at ? { active_again: ev.back_at } : {}) };
 }
 
 // Fahrer laut Fahrzeugzuordnung bzw. Abfahrtskontrolle (Fahrerrolle) zum Schadenzeitpunkt – nur Hinweis für die Leitung, keine Zuordnung.
