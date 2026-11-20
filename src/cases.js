@@ -645,10 +645,11 @@ export async function getCaseDetail(env, user, envName, caseId) {
     const kmn = await env.DB.prepare(`SELECT o.km, o.measured_at,
         (SELECT json_group_array(json_object('text', n.text, 'for_driver', n.for_driver, 'created_at', n.created_at, 'valid_until', n.valid_until, 'pickup', n.pickup)) FROM
           (SELECT text, for_driver, created_at, valid_until, CASE WHEN source_case_id IS NOT NULL AND source_case_id<>?4 THEN 1 ELSE 0 END AS pickup FROM vehicle_notes WHERE vehicle_id=?1 AND environment=?2 AND archived_at IS NULL AND (valid_until IS NULL OR valid_until >= ?3) ORDER BY created_at DESC, rowid DESC LIMIT 20) n) AS notes,
-        (SELECT json_group_array(json_object('case_id', w.case_id, 'case_no', w.case_no, 'status', w.status, 'workshop_site', w.workshop_site, 'item', w.item, 'item_kind', w.item_kind, 'supplier', w.supplier, 'warranty_until', w.warranty_until)) FROM
-          (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at FROM cases x JOIN
-            (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at FROM parts WHERE warranty_until >= ?5
-             UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
+        (SELECT json_group_array(json_object('case_id', w.case_id, 'case_no', w.case_no, 'status', w.status, 'workshop_site', w.workshop_site, 'item', w.item, 'item_kind', w.item_kind, 'supplier', w.supplier, 'warranty_until', w.warranty_until, 'part_number', w.part_number, 'stock_item_id', w.stock_item_id, 'document_ref', w.document_ref)) FROM
+          (SELECT x.id AS case_id, x.case_no, x.status, x.workshop_site, g.item, g.item_kind, g.supplier, g.warranty_until, g.created_at, g.part_number, g.stock_item_id, g.document_ref FROM cases x JOIN
+            -- Backlog 1620: Teilenummer/Lagerartikel/Beleg des Teils – „Teil erfassen“ erkennt dasselbe Teil noch in Gewährleistung
+            (SELECT case_id, name AS item, 'part' AS item_kind, supplier, warranty_until, created_at, part_number, stock_item_id, document_ref FROM parts WHERE warranty_until >= ?5
+             UNION ALL SELECT case_id, supplier AS item, 'external' AS item_kind, supplier, warranty_until, created_at, NULL, NULL, invoice_no FROM external_costs WHERE warranty_until >= ?5) g ON g.case_id=x.id
            WHERE x.vehicle_id=?1 AND x.environment=?2 AND x.id<>?4 AND x.created_at < ?6 AND (?7 IS NULL OR x.workshop_site=?7) ORDER BY g.warranty_until, g.created_at LIMIT ${WARR_CASE_MAX + 1}) w) AS warranties,
         -- Backlog 290 (Leasing-/Mietfahrzeug beschädigt): am Meldetag laufende Leasing-/Mietverträge – nur für die Leitung (?8), Verträge sind Geschäftsdaten;
         -- Backlog 414 (Full-Service-/Wartungsvertrag): laufende Wartungsverträge ebenso (Leistungsumfang prüfen, bevor die eigene Werkstatt auf eigene Kosten repariert)

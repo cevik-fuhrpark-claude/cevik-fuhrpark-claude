@@ -45861,6 +45861,31 @@ await test('Backlog 1617–1619 (Blickwinkel „Werkstatt bucht ein Teil auf den
   ok(app.includes('<p class="panel warn small" id="bksame" role="status" hidden></p><div id="stocksel">') && app.includes("if (action === 'add_part') partSameWatch(c); // Backlog 1619"), '1619: Hinweisfeld');
   for (const l of ['de', 'uk', 'en']) ok(['{no}', '{p}'].every((k) => STRINGS[l].bk_done.includes(k)) && ['{t}', '{no}', '{p}'].every((k) => STRINGS[l].bk_same_other.includes(k)), `${l}: bk_done/bk_same_other`);
 });
+await test('Backlog 1620 (Blickwinkel „Werkstatt baut ein Garantieteil ein und reicht die Garantie beim Lieferanten ein“): „Teil erfassen“ erkennt dasselbe Teil aus einem früheren Auftrag noch in Gewährleistung', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS } = await import('../public/i18n.js');
+  const st = await U.ws.post('/api/stock', { name: 'Lichtmaschine 28V', part_number: 'LM-28', unit_price_net: '400', initial_qty: 2 }); eq(st.status, 201);
+  const fut = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+  const a = await toRepair();
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Anlasser 24V', part_number: 'AN 24-7', supplier: 'Teilehandel Nord', document_ref: 'LS-4711', quantity: 1, unit_price_net: '300', warranty_until: fut })).status, 200);
+  eq((await cmd(U.ws, a, 'add_part', { stock_item_id: st.data.id, quantity: 1, warranty_until: fut })).status, 200);
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Glühlampe H7', quantity: 1 })).status, 200, 'ohne Gewährleistung');
+  const b = await toRepair({ description: 'Motor springt morgens schlecht an, Batterie lädt nicht' });
+  const vi = (await U.ws.get(`/api/cases/${b}`)).data.vehicle_info;
+  const w1 = vi.warranties.find((w) => w.item === 'Anlasser 24V'), w2 = vi.warranties.find((w) => w.item === 'Lichtmaschine 28V');
+  ok(w1 && w1.part_number === 'AN 24-7' && w1.document_ref === 'LS-4711' && w1.supplier === 'Teilehandel Nord' && w1.stock_item_id === null && w1.warranty_until === fut, JSON.stringify(w1));
+  ok(w2 && w2.stock_item_id === st.data.id && w2.part_number === 'LM-28', JSON.stringify(w2));
+  ok(!vi.warranties.some((w) => w.item === 'Glühlampe H7'), 'Teil ohne Gewährleistung nicht');
+  // Auftrag a selbst sieht seine eigenen Teile nicht als „früheren“ Auftrag
+  ok(!(await U.ws.get(`/api/cases/${a}`)).data.vehicle_info.warranties.length, 'eigener Auftrag nicht');
+  // Oberfläche: Hinweisfeld, Abgleich über Lagerartikel/Teilenummer (ohne Leer-/Trennzeichen)/Bezeichnung, nur Teile
+  ok(app.includes('<div id="stocksel"></div><div class="panel warn small" id="bkwarr" role="status" hidden></div>') && app.includes("if (action === 'add_part') partWarrWatch(d); // Backlog 1620"), 'Hinweisfeld');
+  ok(app.includes("filter((w) => w.item_kind === 'part')") && app.includes("(si && w.stock_item_id === si) || (!si && nm.length >= 3 && nz(w.item) === nm) || (!si && pn.length >= 3 && pz(w.part_number) === pn)"), 'Abgleich');
+  const pz = (x) => String(x || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); eq(pz('an24-7 '), pz(w1.part_number), 'Teilenummer anders geschrieben');
+  ok(app.includes(' <span class="small muted" data-viwref>${[w.part_number ? esc(t(\'bk_warr_pn\')'), 'Kurzinfo zum Fahrzeug nennt Teilenummer/Beleg');
+  for (const l of ['de', 'uk', 'en']) ok(['{d}', '{no}'].every((k) => STRINGS[l].bk_warr.includes(k)) && STRINGS[l].bk_warr_sup.includes('{s}') && STRINGS[l].bk_warr_doc.includes('{b}') && STRINGS[l].bk_warr_pn.includes('{n}') && STRINGS[l].bk_warr_hint.includes('0'), `${l}: bk_warr*`);
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
