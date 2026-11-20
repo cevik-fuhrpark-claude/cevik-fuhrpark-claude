@@ -45913,6 +45913,49 @@ await test('Backlog 1622–1624 (Blickwinkel „Leitung prüft eine Werkstattrec
     ok(PLURALS[l].inv_parts_same && Object.values(PLURALS[l].inv_parts_same).every((x) => x.includes('{n}')), `${l}: Mehrzahl`);
   }
 });
+await test('Backlog 1625 (Blickwinkel „Leitung macht beim Versicherer der Gegenseite den Nutzungsausfall geltend“): Ausfall laut Vorgang im Versicherungsfall – Kalendertage/Stunden aus dem Verlauf, ohne Fahrabschnitte bis zur Teilelieferung', async () => {
+  const { caseDowntime } = await import('../src/reports.js'); const { berlinDate } = await import('../src/util.js');
+  const T = (s) => `2026-03-${s}:00.000Z`; // März, Berlin = UTC+1
+  const ev = (action, at, payload = null, to_status = null) => ({ action, created_at: T(at), payload, to_status });
+  // ohne Übernahme und ohne Sperre: nichts (nie geschätzt)
+  eq(caseDowntime({ status: 'gemeldet' }, [ev('create', '02T08:00', {})], Date.parse(T('05T08:00'))), null, 'ohne Übernahme kein Ausfall');
+  // Übernahme 02.03. 09:00 → Freigabe 05.03. 15:00 = 78 h, 4 Kalendertage
+  let d = caseDowntime({ status: 'fahrzeug_freigegeben', closed_at: T('05T15:00') }, [ev('create', '02T08:00', {}), ev('acknowledge', '02T09:00'), ev('release', '05T15:00', null, 'fahrzeug_freigegeben')]);
+  eq(d.hours, 78); eq(d.days, 4); eq(d.from, T('02T09:00')); eq(d.to, T('05T15:00')); eq(d.open, false); ok(!('parts_drive_h' in d));
+  // Sperre ab Meldung (vor der Übernahme) zählt mit; Fahrabschnitt 03.03. 10:00 → 04.03. 10:00 (24 h) wird herausgeschnitten
+  d = caseDowntime({ status: 'fahrzeug_freigegeben', closed_at: T('06T12:00') }, [ev('create', '01T20:00', { safety_lock: true }), ev('lift_safety_lock', '02T08:00'), ev('acknowledge', '02T09:00'),
+    ev('wait_parts', '02T12:00', null, 'wartet_teile'), ev('set_parts_drive', '03T10:00', { on: true }), ev('resume_repair', '04T10:00', { parts_drive_ended: true }, 'in_reparatur'), ev('release', '06T12:00', null, 'fahrzeug_freigegeben')]);
+  eq(d.hours, 12 + 99 - 24, 'Sperre 12 h + Werkstatt 99 h − Fahrt 24 h'); eq(d.parts_drive_h, 24); eq(d.sections, 3, 'Sperre, Werkstatt bis Fahrt, Werkstatt nach Fahrt');
+  eq(d.days, 6, '01.–06.03. (Berlin) – jeder Tag mit Ausfall');
+  // Vermerk von Hand aufgehoben + Werkstattwechsel mit früherer Übernahme (prev_ack_at); offener Vorgang läuft bis jetzt
+  d = caseDowntime({ status: 'wartet_teile', workshop_ack_at: T('04T09:00') }, [ev('create', '01T08:00', {}), ev('reassign_workshop', '03T08:00', { prev_ack_at: T('02T09:00') }),
+    ev('set_parts_drive', '04T12:00', { on: true }), ev('set_parts_drive', '04T18:00', { cleared: true })], Date.parse(T('05T09:00')));
+  eq(d.open, true); eq(d.to, null); eq(d.from, T('02T09:00'), 'erste Übernahme vor dem Werkstattwechsel'); eq(d.hours, 72 - 6); eq(d.parts_drive_h, 6);
+  // Meldung „nicht fahrbereit“ sperrt ab der Meldung – Ausfall beginnt dort, nicht erst mit der Übernahme
+  d = caseDowntime({ status: 'in_reparatur' }, [ev('create', '02T06:00', { safety_lock: true }), ev('acknowledge', '03T09:00')], Date.parse(T('03T10:00')));
+  eq(d.from, T('02T06:00')); eq(d.hours, 28); eq(d.days, 2); eq(d.open, true);
+  // Ende genau um Mitternacht (Berlin) zählt den Folgetag nicht
+  d = caseDowntime({ status: 'fahrzeug_freigegeben', closed_at: '2026-03-02T23:00:00.000Z' }, [ev('acknowledge', '02T10:00'), { action: 'release', created_at: '2026-03-02T23:00:00.000Z', to_status: 'fahrzeug_freigegeben' }]);
+  eq(d.days, 1, 'Ende 00:00 Uhr Berlin');
+  // API: nur mit Versicherungsfall, nur Leitung; Werkstatt/Fahrer sehen den Versicherungsfall ohnehin nicht
+  const { U, cmd, toRepair } = await freshWorld();
+  const id = await toRepair();
+  ok(!(await U.fleet.get(`/api/cases/${id}`)).data.claim, 'ohne Versicherungsfall kein Ausfall-Abschnitt');
+  eq((await U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Gegner Versicherung AG', reported_on: berlinDate(), evidence: 'Schreiben', opponent_insurer: 'Gegner Versicherung AG', opponent_plate: 'M-AB 123' })).status, 200);
+  let x = (await U.fleet.get(`/api/cases/${id}`)).data.claim;
+  ok(x.downtime && x.downtime.open === true && x.downtime.days >= 1 && x.downtime.to === null, JSON.stringify(x.downtime));
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Teile bestellt')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  x = (await U.fleet.get(`/api/cases/${id}`)).data.claim;
+  ok(x.downtime && typeof x.downtime.hours === 'number' && x.downtime.open === true, 'während der Fahrt bis zur Teilelieferung weiter offen');
+  ok(!('claim' in (await U.ws.get(`/api/cases/${id}`)).data) || !(await U.ws.get(`/api/cases/${id}`)).data.claim, 'Werkstatt ohne Versicherungsfall');
+  // Oberfläche: Abschnitt im Versicherungsfall, Texte in allen Sprachen, Hinweis auf „nicht fahrbereit gemeldet“
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/function claimDowntime\(cl\)/.test(app) && /\$\{claimDowntime\(cl\)\}/.test(app), 'Abschnitt eingebaut');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['cdt_title', 'cdt_range', 'cdt_open', 'cdt_drive', 'cdt_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

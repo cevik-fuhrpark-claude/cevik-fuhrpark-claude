@@ -5,7 +5,7 @@ import { withKey, nowIso, uuid, sha256Hex, berlinWindowStartIso, bad, forbidden,
 import { notifyCaseEvent, notifyCasesCreated, notifyCostCleared } from './notify.js';
 import { prepareCaseWithdrawal, onHand, deQty } from './stock.js';
 import { canReadFineFile, fineVehiclesSql, gespannVehiclesSql } from './fines.js';
-import { siteSelection } from './reports.js';
+import { siteSelection, caseDowntime } from './reports.js';
 import { noKey, NO_KEY_SQL } from './contracts.js';
 import { SETTING_DEFAULTS } from './settings.js';
 import { winterMarks, winterStatus } from './tires.js';
@@ -574,6 +574,8 @@ export async function getCaseDetail(env, user, envName, caseId) {
   };
   // Versicherungsfall (nur Inhaber/Fuhrparkleitung) samt Versicherungsverträgen des Fahrzeugs zur Auswahl
   if (user.role === 'owner' || user.role === 'fleet') Object.assign(detail, await claimForCase(env, c.id, c.vehicle_id, c));
+  // Backlog 1625: Ausfall dieses Vorgangs (aus dem bereits gelesenen Verlauf, keine weitere Abfrage) – z. B. für den Nutzungsausfall gegenüber der Gegenseite
+  if (detail.claim) { const dt = caseDowntime(c, events); if (dt) detail.claim.downtime = dt; }
   // Fahrer laut Zuordnung/Abfahrtskontrolle zum Schadenzeitpunkt (Backlog 285) – nur Leitung (Fahrerdaten), nur wenn angegeben
   if (isManager(user) && c.occurred_at) detail.occurred_drivers = await driversAtOccurrence(env, envName, c);
   // Backlog 421 (Blickwinkel „Fahrer tauscht unterwegs den Lkw mit einem Kollegen“): Melder (Fahrer) war zur Meldezeit laut Zuordnung nicht diesem
