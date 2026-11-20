@@ -45956,7 +45956,7 @@ await test('Backlog 1625 (Blickwinkel „Leitung macht beim Versicherer der Gege
   for (const l of ['de', 'uk', 'en']) for (const k of ['cdt_title', 'cdt_range', 'cdt_open', 'cdt_drive', 'cdt_hint']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
-await test('Backlog 1626 (Folge aus 1625): Ausfallzeit der Kennzahlen, technische Verfügbarkeit und Fahrzeugakte „Ausfall je Monat“ ohne die Zeit „fährt bis zur Teilelieferung“ – je Vorgang herausgeschnitten, paralleler Werkstattauftrag zählt weiter', async () => {
+await test('Backlog 1626/1627 (Folge aus 1625): Ausfallzeit der Kennzahlen, technische Verfügbarkeit und Fahrzeugakte „Ausfall je Monat“ ohne die Zeit „fährt bis zur Teilelieferung“ – je Vorgang herausgeschnitten, paralleler Werkstattauftrag zählt weiter; Fahrzeugzeile nennt die nicht gezählte Zeit', async () => {
   const { partsDriveIntervalsOf, cutIntervals, DRIVE_EV_SQL } = await import('../src/reports.js');
   const T = (s) => Date.parse(`2026-03-${s}:00.000Z`);
   // Rechenkern: Vermerk an → aus, automatisches Ende über parts_drive_ended, payload als Text (drive_payload) oder Objekt, offener Abschnitt bis jetzt
@@ -45985,6 +45985,7 @@ await test('Backlog 1626 (Folge aus 1625): Ausfallzeit der Kennzahlen, technisch
   const kpi = async () => (await U.fleet.get(`/api/reports/kpi?from=${pm}&to=${pm}`)).data;
   let r = await kpi(); let v = r.vehicles.find((x) => x.vehicle_id === V1);
   eq(v.downtime_h, 72, 'Ausfall 96 h − 24 h Fahrt'); eq(v.availability_downtime_h, 72, 'Verfügbarkeit: Ausfall ohne Fahrt');
+  eq(v.parts_drive_h, 24, 'Backlog 1627: nicht gezählte Fahrzeit genannt');
   ok(v.workshop_h >= 96, 'Werkstattzeit bleibt (Durchlauf des Auftrags): ' + v.workshop_h);
   const ak = async () => (await U.fleet.get(`/api/vehicles/${V1}`)).data.downtime.months.find((x) => x.month === pm);
   eq((await ak()).hours, 72, 'Akte: Ausfall je Monat ohne Fahrt');
@@ -45994,15 +45995,19 @@ await test('Backlog 1626 (Folge aus 1625): Ausfallzeit der Kennzahlen, technisch
   await env.DB.prepare(`UPDATE cases SET created_at=?, workshop_ack_at=?, status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).bind(at('11T00:00'), at('11T00:00'), at('11T18:00'), id2).run();
   r = await kpi(); v = r.vehicles.find((x) => x.vehicle_id === V1);
   eq(v.downtime_h, 78, 'Ausfall mit parallelem Auftrag'); eq(v.availability_downtime_h, 78);
+  eq(v.parts_drive_h, 18, 'Backlog 1627: nur die tatsächlich nicht gezählten 18 h');
   eq((await ak()).hours, 78, 'Akte mit parallelem Auftrag');
   // ohne Vermerk (Ereignis entfernt) wieder die volle Zeit – Gegenprobe
   await env.DB.prepare(`DELETE FROM case_events WHERE case_id=? AND action='set_parts_drive'`).bind(id).run();
   r = await kpi(); v = r.vehicles.find((x) => x.vehicle_id === V1);
-  eq(v.downtime_h, 96, 'Gegenprobe ohne Fahrabschnitt'); eq((await ak()).hours, 96);
+  eq(v.downtime_h, 96, 'Gegenprobe ohne Fahrabschnitt'); eq((await ak()).hours, 96); ok(!('parts_drive_h' in v), 'ohne Fahrabschnitt kein Feld');
   // Texte: Definition, Akte, Hilfe, Hinweis am Vermerk (DE/UK/EN)
   const { STRINGS } = await import('../public/i18n.js');
   const W = { de: 'bis zur Teilelieferung fahren durfte', uk: 'їздити до поставки запчастин', en: 'allowed to drive until the parts arrived' };
   for (const l of ['de', 'uk', 'en']) for (const k of ['kpi_rules', 'vd_rule', 'kpi_av_rule']) ok(STRINGS[l][k].includes(W[l]), `${l}.${k}`);
+  for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].kpi_pdrive && STRINGS[l].kpi_pdrive.includes('{d}'), `${l}.kpi_pdrive`);
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/v\.parts_drive_h \? ` · \$\{esc\(t\('kpi_pdrive'\)/.test(app), 'Backlog 1627: Fahrzeugzeile der Kennzahlen nennt die nicht gezählte Zeit');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

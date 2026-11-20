@@ -814,6 +814,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   // Werkstattzeit (freigegebene Aufträge) und Ausfallzeit (Werkstatt-Übernahme → Freigabe/Ablehnung, offen bis jetzt, plus Sperrzeit) je Fahrzeug
   // als Zeitabschnitte – parallele Aufträge am selben Fahrzeug zählen einmal (16.10.2026: Werkstattzeit wurde vorher je Auftrag addiert)
   const shop = new Map(); const down = new Map(); const pwait = new Map();
+  const downRaw = new Map(); // Backlog 1627: Ausfall ohne Herausschneiden der Teilefahrt – Differenz = nicht gezählte Stunden „fährt bis zur Teilelieferung“
   const addIv = (m, vid, a, b) => { if (Number.isFinite(a) && Number.isFinite(b) && b > a) { if (!m.has(vid)) m.set(vid, []); m.get(vid).push([a, b]); } };
   // Kostenfreigaben: je Überschreitung (Ereignis „cost_limit_exceeded“) bis „Kosten freigeben“ – nur Anzahl und Dauer, keine Beträge
   const ca = { exceeded: 0, approved: 0, pending: 0, closed_without: 0, cleared: 0, cases: 0, wait: [] };
@@ -892,12 +893,14 @@ export async function kpiReport(env, user, envName, query = {}) {
     v.cases++; if (c.status === 'fahrzeug_freigegeben') v.released++; if (c.status === 'abgelehnt' && c.duplicate_of) v.duplicates++;
     if (workshop !== null) addIv(shop, c.vehicle_id, Date.parse(approved.created_at), clipEnd(Date.parse(c.closed_at))); // höchstens bis Zeitraumende wie Ausfall/Sperre (20.10.2026: 959 h in einem 720-h-Monat)
     // Backlog 1626: ohne die Zeit, in der das Fahrzeug laut Vorgang bis zur Teilelieferung fahren durfte (wie Fahrzeugliste/Disposition)
-    { const iv = workshopIntervalOf(c, now); if (iv) for (const [a, b] of cutIntervals([iv], partsDriveIntervalsOf(evs, now))) addIv(down, c.vehicle_id, a, clipEnd(b)); }
+    { const iv = workshopIntervalOf(c, now); if (iv) { addIv(downRaw, c.vehicle_id, iv[0], clipEnd(iv[1])); for (const [a, b] of cutIntervals([iv], partsDriveIntervalsOf(evs, now))) addIv(down, c.vehicle_id, a, clipEnd(b)); } }
     byVehicle.set(c.vehicle_id, v);
   }
-  for (const [vid, list] of locks) { byVehicle.get(vid).locked_h = unionMs(list) / H; for (const iv of list) addIv(down, vid, iv[0], iv[1]); }
+  for (const [vid, list] of locks) { byVehicle.get(vid).locked_h = unionMs(list) / H; for (const iv of list) { addIv(down, vid, iv[0], iv[1]); addIv(downRaw, vid, iv[0], iv[1]); } }
   for (const [vid, list] of shop) byVehicle.get(vid).workshop_h = unionMs(list) / H;
   for (const [vid, list] of down) byVehicle.get(vid).downtime_h = unionMs(list) / H;
+  // Backlog 1627: nicht als Ausfall gezählte Zeit „fährt bis zur Teilelieferung“ je Fahrzeug (nur wenn > 0, additiv)
+  for (const [vid, list] of downRaw) { const x = r1((unionMs(list) - unionMs(down.get(vid) || [])) / H); if (x > 0) byVehicle.get(vid).parts_drive_h = x; }
   for (const [vid, list] of pwait) byVehicle.get(vid).parts_wait_h = unionMs(list) / H;
   // außer Betrieb genommene: Ende = letzte Außerbetriebnahme laut Protokoll (wie `inactive_info`); ohne Protokolleintrag weiter nicht gezählt
   const offIds = [...plates.values()].filter((v) => !v.active && !v.eval_excluded && vOk(v.id)).map((v) => v.id);
