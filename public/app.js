@@ -51,6 +51,8 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 // Name einer Person; für Lesezugriff ausgeblendete Fahrernamen (Server setzt <feld>_hidden) als Hinweistext
 const pnm = (name, hidden) => (hidden ? t('name_hidden_driver') : name);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Backlog 1631: Meldungslänge ohne unsichtbare Zeichen (weiches Trennzeichen, Breite-null-Leerzeichen …) – wie `cleanText` am Server
+const visLen = (v) => String(v || '').replace(/[\u00AD\u034F\u180E\u200B\u2060-\u2064\uFEFF]/g, '').trim().length;
 // [CLAUDE] Kalenderdatum in Berlin wie der Server („heute“, Fristen, Monate) – nicht UTC (nachts bis 2 Uhr Vortag) und nicht Gerätezeitzone
 const BERLIN_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' });
 // Zeitpunkt (UTC) → Berliner Ortszeit für <input type="datetime-local"> (JJJJ-MM-TTTHH:MM), z. B. Tatzeit ändern (23.10.2026)
@@ -818,6 +820,14 @@ document.addEventListener('change', (e) => {
 document.addEventListener('input', (e) => { const el = e.target; if (el && el.dataset && el.dataset.cfpFx) { delete el.dataset.cfpFx; el.setCustomValidity(''); } }, true);
 // Backlog 985: km-Stand diktiert mit ausgeschriebener Einheit/Bezeichnung („123.456 Kilometer“, „Kilometerstand 123 456“, „123 456 кілометрів“) –
 // das Muster der km-Felder meldete sonst „Format stimmt nicht“, maxlength 12 schnitt „123.456 Kilometer“ ab (jetzt 40). Beim Verlassen eines km-Felds nur Einheit/Bezeichnung entfernen (Ziffern unverändert).
+// Backlog 1631: aus PDF/E-Mail/Webseite kopierte Werte tragen oft unsichtbare Zeichen (weiches Trennzeichen, Breite-null-Leerzeichen) –
+// „12[U+200B]345“ war dann „ungültige Zahl“, ohne dass man etwas sah. Beim Verlassen jedes Text-/Zahlfelds entfernen (vor den km-/Einheiten-Helfern;
+// nie in Passwortfeldern). Server bereinigt ebenso (`cleanText`).
+const INVIS_RX = /[\u00AD\u034F\u180E\u200B\u2060-\u2064\uFEFF]/g;
+document.addEventListener('change', (e) => {
+  const el = e.target; if (!el || !(el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|tel|email|url|number|)$/.test(el.getAttribute('type') || ''))) || el.readOnly) return;
+  const v = String(el.value || ''); const c = v.replace(INVIS_RX, ''); if (c !== v) { el.value = c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+}, true);
 const KM_FIELD = /^(km|odometer_km|done_km|due_km|last_done_km|next_due_km)$/;
 document.addEventListener('change', (e) => {
   const el = e.target; if (!el || el.tagName !== 'INPUT' || el.readOnly || el.disabled || el.getAttribute('inputmode') !== 'numeric') return;
@@ -6327,7 +6337,7 @@ async function viewNewMulti() {
     const sb = $('#sb'); const ids = chosen().map((x) => x.value);
     if (ids.length < 2) { toast(t('multi_need_two'), true); markInvalid($('#mpick'), t('multi_need_two')); $('#vq').focus(); return; }
     if (ids.length > BATCH_MAX) { toast(tfill('multi_too_many', { max: BATCH_MAX }), true); markInvalid($('#mpick'), tfill('multi_too_many', { max: BATCH_MAX })); return; }
-    if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
+    if (visLen($('#d').value) < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
     const occ = occurredValue($('#occd').value, $('#occt').value);
     if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); $('#occd').focus(); return; }
     if (occ && occ.slice(0, 10) > bDate()) { toast(t('occ_future'), true); markInvalid($('#occd'), t('occ_future')); $('#occd').focus(); return; }
@@ -6550,7 +6560,7 @@ async function viewNew(preId) {
     const veh = $('input[name=veh]:checked');
     // Prüfung in der App-Sprache (Browser-Meldungen wären in der Gerätesprache)
     if (!veh) { toast(t('choose_vehicle'), true); const vp = $('.vehpick'); if (vp) { vp.setAttribute('role', 'radiogroup'); markInvalid(vp, t('choose_vehicle')); } $('#vq').focus(); return; }
-    if ($('#d').value.trim().length < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
+    if (visLen($('#d').value) < 5) { toast(t('desc_too_short'), true); markInvalid($('#d'), t('desc_too_short')); $('#d').focus(); return; }
     const occ = occurredValue($('#occd').value, $('#occt').value);
     if (occ === undefined) { toast(t('occ_need_date'), true); markInvalid($('#occd'), t('occ_need_date')); $('#occd').focus(); return; }
     if (occ && occ.slice(0, 10) > bDate()) { toast(t('occ_future'), true); markInvalid($('#occd'), t('occ_future')); $('#occd').focus(); return; }

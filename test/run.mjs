@@ -46037,6 +46037,35 @@ await test('Backlog 1629/1630 (Blickwinkel „Leitung nimmt einen fabrikneuen Lk
   ok(/data-ezbuild>\$\{esc\(t\('ez_build_hint'\)/.test(app), 'Hinweis dauerhaft in der Fahrzeugakte');
 });
 
+await test('Backlog 1631 (Blickwinkel „Leitung kopiert Aktenzeichen, Rechnungsnummer oder Text aus PDF, E-Mail oder Webseite“): unsichtbare Formatzeichen (U+00AD, U+200B, U+2060, U+FEFF …) werden entfernt – Dublette erkannt, Pflichtangaben und Schadenmeldung nur aus solchen Zeichen abgewiesen, persischer Halbabstand bleibt', async () => {
+  const { U, V1 } = await freshWorld();
+  const { cleanText, str } = await import('../src/util.js');
+  eq(cleanText('A\u00ADB\u200BC\u2060D\uFEFFE\u034FF\u180EG\u2062H'), 'ABCDEFGH', 'alle unsichtbaren Formatzeichen entfernt');
+  eq(cleanText('نمی\u200Cخواهد 👨\u200D🔧'), 'نمی\u200Cخواهد 👨\u200D🔧', 'ZWNJ/ZWJ bleiben');
+  let thrown = false; try { str('\u200C\u200D ', { required: true, field: 'X' }); } catch { thrown = true; } ok(thrown, 'nur Verbinder = leer');
+  const body = (reference, authority = 'Stadt Dortmund Bußgeldstelle') => ({ kind: 'anhoerung', authority, reference, offense_type: 'geschwindigkeit', offense_at: new Date(Date.now() - 86400000).toISOString(), location: 'B1', plate_in_letter: 'XX 1631' });
+  const a = await U.fleet.post('/api/fines', body('123.45\u00AD678901.2')); eq(a.status, 201, JSON.stringify(a.data));
+  eq((await U.fleet.get(`/api/fines/${a.data.id}`)).data.fine.reference, '123.45678901.2', 'gespeichert ohne weiches Trennzeichen');
+  const d = await U.fleet.post('/api/fines', body('123.45.678901.2')); eq(d.status, 409, 'Dublette trotz weichem Trennzeichen'); eq(d.data.error, 'duplicate_fine');
+  const b = await U.fleet.post('/api/fines', body('77\u200B/2026')); eq(b.status, 201);
+  const d2 = await U.fleet.post('/api/fines', body('77/2026', 'Stadt\u2060 Dortmund Bußgeldstelle\uFEFF')); eq(d2.status, 409, 'Dublette trotz Breite-null-Leerzeichen/Wortverbinder'); eq(d2.data.id, b.data.id);
+  const e = await U.fleet.post('/api/fines', body('99/2026', '\u200B\u2060\u00AD')); eq(e.status, 400, 'Behörde nur aus unsichtbaren Zeichen'); eq(e.data.field_key, 'authority');
+  const c = await U.driver.post('/api/cases', { vehicle_id: V1, description: '\u200B'.repeat(30), priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() });
+  eq(c.status, 400, 'Schadenmeldung nur aus Breite-null-Leerzeichen'); eq(c.data.field_key, 'description');
+  const c1 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'ab\u00AD\u00AD\u00AD\u00AD\u00AD', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(c1.status, 400, '„zu kurz“ zählt nur sichtbare Zeichen');
+  const c2 = await U.driver.post('/api/cases', { vehicle_id: V1, description: 'Spie\u00ADgel ab\u200Bgefahren', priority: 'niedrig', driveability: 'fahrbereit', request_key: rk() }); eq(c2.status, 201, JSON.stringify(c2.data));
+  eq((await U.driver.get(`/api/cases/${c2.data.id}`)).data.case.description, 'Spiegel abgefahren', 'Meldung ohne unsichtbare Zeichen gespeichert');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(!app.includes("$('#d').value.trim().length < 5") && (app.match(/visLen\(\$\('#d'\)\.value\) < 5/g) || []).length === 2, 'Meldeformulare zählen sichtbare Zeichen');
+  const vl = new Function(`${app.match(/const visLen = [^\n]+/)[0]}; return visLen;`)();
+  eq(vl('\u200B'.repeat(9)), 0); eq(vl(' Spie\u00ADgel '), 7);
+  // Zahlen/km aus PDF kopiert: unsichtbare Zeichen stören nicht mehr (vorher „ungültige Zahl“)
+  const { num, kmNum } = await import('../src/util.js');
+  eq(kmNum('12\u200B345'), 12345); eq(kmNum('123.456\u00AD'), 123456); eq(num('1\u2060234,50', { cents: true, money: true }), 1234.5);
+  ok(/const INVIS_RX = [^\n]+\n\s*document\.addEventListener\('change'[^\n]+\n[^\n]+el\.readOnly\) return;/.test(app) && app.indexOf('const INVIS_RX') < app.indexOf('const KM_FIELD'), 'Felder werden beim Verlassen bereinigt (vor den km-Helfern)');
+  ok(app.includes("/^(text|search|tel|email|url|number|)$/.test(el.getAttribute('type') || '')"), 'nie in Passwortfeldern');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

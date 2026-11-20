@@ -195,8 +195,15 @@ export function isValidVin(v) {
 // [CLAUDE] Freitext bereinigen (22.10.2026, Fund „ungewöhnliche Texteingaben“): einheitlich NFC (ein am Mac kopiertes „Ü“ als U + ¨
 // traf weder Kennzeichen-Zuordnung noch Suche), Bidi-Steuerzeichen (Überschreiben/Einbetten/Isolieren; „‮AZ-123“ wurde verdreht
 // angezeigt, auch die folgenden Angaben der Zeile) und Steuerzeichen außer Tab/Zeilenumbruch entfernen (Null-Byte kürzte still).
-const TEXT_CTRL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g;
+// Backlog 1631 (Blickwinkel „Leitung kopiert Aktenzeichen, Rechnungsnummer oder Text aus PDF, E-Mail oder Webseite“): unsichtbare
+// Formatzeichen ohne Bedeutung im Text – weiches Trennzeichen U+00AD (PDF-Silbentrennung), Breite-null-Leerzeichen U+200B, Wortverbinder
+// U+2060, unsichtbare Rechenzeichen U+2061–2064, BOM U+FEFF mitten im Text, CGJ U+034F, U+180E – werden ebenfalls entfernt. Vorher galt
+// „123.45[U+00AD]678901.2“ (mit U+00AD) nicht als Dublette von „123.45.678901.2“, und eine Pflichtangabe bzw. Schadenmeldung nur aus solchen
+// Zeichen wurde als (leerer) Text gespeichert. U+200C/U+200D bleiben (persischer Halbabstand, Emoji-Folgen); nur aus ihnen bestehender
+// Text gilt in `str()` als leer.
+const TEXT_CTRL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u00AD\u034F\u180E\u200B\u2060-\u2064\uFEFF\u202A-\u202E\u2066-\u2069]/g;
 export const cleanText = (s) => String(s).normalize('NFC').replace(TEXT_CTRL, '');
+const onlyJoiners = (s) => /^[\u200C\u200D\s]*$/.test(s);
 // Text auf n UTF-16-Einheiten kürzen, ohne ein Emoji zu zerteilen (halbes Surrogatpaar → „�“ in Anzeige/CSV)
 export const cutText = (s, n) => { const x = String(s ?? ''); if (x.length <= n) return x; const r = x.slice(0, n); return /[\uD800-\uDBFF]$/.test(r) ? r.slice(0, -1) : r; };
 
@@ -209,7 +216,7 @@ function strBase(v, { max = 2000, required = false, field = 'Feld' } = {}) {
   // Objekt/Liste statt Text (z. B. {"name": []}) nie als „[object Object]“ speichern
   if (typeof v === 'object') throw bad('validation', `${field}: ungültiger Wert.`);
   const s = cleanText(v).trim();
-  if (!s) {
+  if (!s || onlyJoiners(s)) {
     if (required) throw bad('validation', `${field} ist erforderlich.`);
     return null;
   }
@@ -328,7 +335,7 @@ function numBase(v, { min = -Infinity, max = Infinity, field = 'Zahl', nullable 
   else {
     // nur Text oder Zahl (17.10.2026: Liste ['7'] galt als 7, true als 1); leer ohne nullable → 400 statt still 0
     if (typeof v !== 'string') throw bad('validation', `${field}: ungültige Zahl.`);
-    let t = v.trim();
+    let t = cleanText(v).trim(); // Backlog 1631: „12[U+200B]345“ (Breite-null-Leerzeichen aus PDF/E-Mail) ist 12345
     // Backlog 1004: Feld „Monatsrate“ – Zahlweise monatlich („450 €/Monat“, „mtl. 450“) wird entfernt; Jahres-/Halbjahres-/Quartalsbetrag
     // („4.800 € jährlich“, „Jahresbeitrag 4800“, „1.200 € vierteljährlich“) mit eigener Meldung abgewiesen – nie umgerechnet
     if (monthly) { const rp = ratePeriod(t); if (rp && rp.period !== 'month') throw bad('validation', `${field}: „${t.replace(/\s+/g, ' ').slice(0, 40)}“ ist ein ${RATE_PERIOD_DE[rp.period]} – bitte die Monatsrate laut Vertrag eingeben (die App rechnet nicht um; Zahlweise gern in die Bemerkung).`); if (rp) t = rp.value; }
