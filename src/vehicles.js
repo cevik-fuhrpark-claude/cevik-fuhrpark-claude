@@ -14,6 +14,7 @@ import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL, DR
 import { maintenanceWarnDays } from './settings.js';
 import { kmRejection } from './telematics.js';
 import { massTonnes } from '../public/hours.js';
+import { inactiveInfo as inactiveSuccessor } from './vnotes.js';
 
 const isManager = (u) => u.role === 'owner' || u.role === 'fleet';
 // Feuerlöscher/Verbandkasten/Ladungssicherung: Intervall bzw. Ablaufdatum trägt die Fuhrparkleitung selbst ein (keine Vorgabe der App)
@@ -328,10 +329,17 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // unveränderlich, eine HU vor dem Verkauf ist möglich). Ohne Protokolleintrag kein Hinweis.
   const deactDay = inactiveInfo ? berlinDate(inactiveInfo.since) : null;
   if (deactDay) for (const e of maintenanceHistory) if (e.done_date > deactDay) e.after_deactivation = true;
+  // Backlog 1641 (Blickwinkel „Werkstatt lädt einen Prüfbericht/Versicherungsnachweis am außer Betrieb genommenen Fahrzeug hoch – Nachfolger
+  // mit gleichem Kennzeichen“): Dokumente lassen sich nicht löschen und erscheinen beim Nachfolger nicht (Prüfbericht fehlt dort weiter, Ablauf-
+  // Befunde prüft der Agent bei außer Betrieb genommenen Fahrzeugen nicht). Hochgeladen nach dem Berliner Tag der noch geltenden
+  // Außerbetriebnahme → `after_deactivation`; `documents_successor` = einziges Fahrzeug in Betrieb mit demselben Kennzeichen (Korrekturweg).
+  // Nur Hinweis, nur bei außer Betrieb genommenen Fahrzeugen (bis 2 Abfragen).
+  if (deactDay) for (const f of documents) if (berlinDate(f.created_at) > deactDay) f.after_deactivation = true;
+  const docSucc = !v.active && !tl && VEHICLE_DOC_READ.includes(user.role) ? ((await inactiveSuccessor(env, v)) || {}).successor || null : null;
   // Sicherheitssperre aus allen Vorgängen (Werkstatt sieht nur eigene/übernommene – Kennzeichen zeigte dort sonst kein Schloss, 20.10.2026)
   const locked = allCases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   // Kennzeichenverlauf (Backlog 256): bisherige Kennzeichen mit „bis“ (Zeitpunkt der Änderung in der App)
-  const out = { former_plates: tl ? [] : formerPlates, locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, report_missing: reportMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, hu_sp: husp };
+  const out = { former_plates: tl ? [] : formerPlates, locked, inactive_info: inactiveInfo, failed_inspection: failedInspection, result_missing: resultMissing, report_missing: reportMissing, vehicle: v, telematics, cases: caseRows, inspections, ...(tl ? {} : { inspections_truncated: inspectionsTruncated }), last_check: lastCheck || null, recurring_defects: recurring, maintenance, maintenance_history: maintenanceHistory, ...(tl ? {} : { maintenance_history_truncated: maintTruncated, maintenance_history_max: MAINT_HIST_MAX }), odometer, drivers, coupled, documents, ...(docSucc ? { documents_successor: docSucc } : {}), hu_sp: husp };
   if (okCase) Object.defineProperty(out, '_okCase', { value: okCase, enumerable: false });
   if (isManager(user)) {
     if (!tl) {
@@ -2064,7 +2072,7 @@ function docValidRange(d) {
 }
 export async function uploadVehicleDocument(env, user, envName, vehicleId, request, query = {}) {
   if (!['owner', 'fleet', 'workshop'].includes(user.role)) throw forbidden();
-  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound();
   const kind = oneOf(query.kind || 'sonstiges', DOC_KINDS, 'Dokumentart');
   const note = str(query.note || null, { max: 200, field: 'Bemerkung' });
@@ -2101,7 +2109,8 @@ export async function uploadVehicleDocument(env, user, envName, vehicleId, reque
     throw bad('too_many', `Maximal ${MAX_VEHICLE_DOCS} Dokumente je Fahrzeug.`);
   }
   await audit(env, user.id, 'vehicle.document', vehicleId, { kind, filename: name, size: buf.length, valid_until: validUntil });
-  return { id, duplicate: false };
+  const inact = await inactiveSuccessor(env, v); // Backlog 1641: außer Betrieb → Hinweis (seit, ggf. Nachfolger); Hochladen bleibt erlaubt
+  return { id, duplicate: false, ...(inact ? { vehicle_inactive: inact } : {}) };
 }
 
 // Angaben eines Fahrzeugdokuments korrigieren (Art, Bemerkung, „gültig bis“) – vorher nur durch Löschen/neu Hochladen möglich, und das

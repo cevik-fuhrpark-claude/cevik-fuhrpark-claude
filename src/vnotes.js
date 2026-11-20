@@ -21,7 +21,7 @@ async function vehicleOk(env, vehicleId) {
 // bei Fahrern (keine Zuordnung mehr) – ein „Bremse quietscht“ für den Nachfolger mit demselben Kennzeichen blieb so still liegen. Erfassen
 // bleibt erlaubt (z. B. „Käufer holt am … ab“); Liste und Antwort nennen den Zustand (seit laut Protokoll) und – wenn genau ein Fahrzeug in
 // Betrieb dasselbe Kennzeichen trägt – dieses Fahrzeug als Korrekturweg. Nur Hinweis, nur für außer Betrieb genommene Fahrzeuge (2 Abfragen).
-async function inactiveInfo(env, v) {
+export async function inactiveInfo(env, v) { // auch Fahrzeugdokumente (Backlog 1641)
   if (v.active) return null;
   const [dx, others] = await Promise.all([
     env.DB.prepare(`SELECT created_at FROM audit_log WHERE target=? AND action='vehicle.deactivate' ORDER BY created_at DESC LIMIT 1`).bind(v.id).first(),

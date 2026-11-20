@@ -46324,6 +46324,48 @@ await test('Backlog 1640 (Blickwinkel „Disposition hinterlegt einen Fahrzeughi
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].vn_inact && STRINGS[l].vn_inact_succ, l); ok(STRINGS[l].vn_inact_since.includes('{s}'), l); }
 });
 
+await test('Backlog 1641 (Blickwinkel „Werkstatt lädt einen Prüfbericht/Versicherungsnachweis am außer Betrieb genommenen Fahrzeug hoch – Nachfolger mit gleichem Kennzeichen“): Antwort beim Hochladen nennt `vehicle_inactive`, Akte markiert Dokumente nach dem Tag der Außerbetriebnahme (`after_deactivation`) und nennt `documents_successor` nur bei genau einem Fahrzeug in Betrieb mit gleichem Kennzeichen; Hochladen bleibt erlaubt; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const A = 'VIN:WMA15SZZ2HM722774';
+  const plateA = db.prepare('SELECT plate FROM vehicles WHERE id=?').get(A).plate;
+  const H = (n) => ({ 'content-type': 'application/pdf', 'x-filename': encodeURIComponent(n) });
+  const pdf = (x) => new TextEncoder().encode(`%PDF-1.4\n% ${x}\n%%EOF`);
+  const up = (u, x, kind = 'pruefbericht') => u.req('POST', `/api/vehicles/${A}/documents?kind=${kind}`, pdf(x), H(x + '.pdf'));
+  const detail = async (u = U.fleet) => (await u.get(`/api/vehicles/${A}`)).data;
+  let r = await up(U.ws, 'vorher'); eq(r.status, 201); ok(!('vehicle_inactive' in r.data), 'in Betrieb: kein Hinweis');
+  let d = await detail(); ok(!d.documents.some((f) => f.after_deactivation) && !('documents_successor' in d), 'in Betrieb: keine Markierung');
+  // Dokument vom Tag vor der Außerbetriebnahme bleibt unmarkiert
+  const since = new Date(Date.now() - 3 * 86400000).toISOString();
+  db.prepare('UPDATE files SET created_at=? WHERE vehicle_id=? AND case_id IS NULL').run(new Date(Date.now() - 5 * 86400000).toISOString(), A);
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(A);
+  // ohne Protokolleintrag (Import): Hinweis ohne Datum, keine Markierung
+  r = await up(U.ws, 'ohne-protokoll'); eq(r.status, 201, 'Hochladen bleibt erlaubt'); eq(JSON.stringify(r.data.vehicle_inactive), '{}', 'ohne Protokoll/Nachfolger');
+  d = await detail(); ok(!d.documents.some((f) => f.after_deactivation), 'ohne Protokoll keine Markierung');
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1641-1', NULL, 'vehicle.deactivate', ?, ?, ?)`).run(A, JSON.stringify({ plate: plateA, reason: 'Verkauf' }), since);
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES('VIN:NF1641','NF1641',?,'lkw','Dortmund',1,0,?,?)`).run(plateA.replace(/[\s-]/g, '').toLowerCase(), now, now);
+  r = await up(U.ws, 'nachher', 'versicherung'); eq(r.status, 201); eq(JSON.stringify(r.data.vehicle_inactive), JSON.stringify({ since, successor: { id: 'VIN:NF1641', plate: plateA.replace(/[\s-]/g, '').toLowerCase() } }), 'Antwort');
+  for (const [n, u] of [['Leitung', U.fleet], ['Werkstatt', U.ws], ['Inhaber', U.owner]]) {
+    d = await detail(u);
+    const by = Object.fromEntries(d.documents.map((f) => [f.filename, !!f.after_deactivation]));
+    eq(JSON.stringify([by['vorher.pdf'], by['ohne-protokoll.pdf'], by['nachher.pdf']]), '[false,true,true]', n + ': Markierung nach dem Tag der Außerbetriebnahme');
+    eq(d.documents_successor && d.documents_successor.id, 'VIN:NF1641', n + ': Nachfolger');
+  }
+  // Duplikat derselben Datei: unverändert ohne Zusatz
+  r = await up(U.ws, 'nachher', 'versicherung'); eq(r.data.duplicate, true); ok(!('vehicle_inactive' in r.data), 'Dublette ohne Hinweis');
+  // zwei Fahrzeuge in Betrieb mit gleichem Kennzeichen → mehrdeutig, kein Nachfolger
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES('VIN:NF1641B','NF1641B',?,'lkw','Dortmund',1,0,?,?)`).run(plateA, now, now);
+  d = await detail(); ok(!('documents_successor' in d), 'mehrdeutig'); ok(d.documents.some((f) => f.after_deactivation), 'Markierung bleibt');
+  // wieder in Betrieb → weder Markierung noch Nachfolger
+  db.prepare('UPDATE vehicles SET active=1 WHERE id=?').run(A);
+  d = await detail(); ok(!d.documents.some((f) => f.after_deactivation) && !('documents_successor' in d), 'wieder in Betrieb');
+  r = await up(U.ws, 'wieder'); ok(!('vehicle_inactive' in r.data), 'Antwort wieder in Betrieb');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(['data-docdeact', 'data-docafter', 'data-docinact', 'data-docsucc', "t('doc_deact_note')", "t('doc_inact_warn')"].every((x) => app.includes(x)), 'Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].doc_after_deact && STRINGS[l].doc_inact_warn && STRINGS[l].doc_succ, l); ok(STRINGS[l].doc_deact_note.includes('{s}'), l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
