@@ -4555,6 +4555,7 @@ const claimChip = (st) => `<span class="chip ${CLAIM_CLS[st]}">${esc(t('cls_' + 
 
 const claimNamedIn = (list) => (list && list.length ? `<p class="small" data-conamed>ℹ️ ${esc(t('co_named_in'))} ${list.map((x) => `<a href="#/cases/${esc(x.case_id)}" style="white-space:nowrap" translate="no">${esc(x.case_no)}</a> (${plate(x.plate)})`).join(', ')}</p>` : '');
 
+
 async function claimSection(...a) { return (await lazyModule('schaden')).claimSection(...a); }
 async function viewClaims(...a) { return (await lazyModule('verwaltung')).viewClaims(...a); }
 

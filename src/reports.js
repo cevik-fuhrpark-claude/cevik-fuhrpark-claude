@@ -671,6 +671,45 @@ export function workshopIntervalOf(c, now = Date.now()) {
   const b = c.status === 'fahrzeug_freigegeben' || c.status === 'abgelehnt' ? (c.closed_at ? Date.parse(c.closed_at) : NaN) : now;
   return Number.isFinite(a) && Number.isFinite(b) && b > a ? [a, b] : null;
 }
+// Backlog 1625 (Blickwinkel „Leitung macht beim Versicherer der Gegenseite den Nutzungsausfall geltend“): Ausfall EINES Vorgangs aus dem
+// Ereignisprotokoll – gleiche Grundlage wie die Ausfallzeit der Kennzahlen (Werkstatt-Übernahme → Freigabe/Ablehnung, Sicherheitssperre),
+// aber ohne die Zeit, in der das Fahrzeug laut Vorgang bis zur Teilelieferung fahren durfte (Backlog 880: Vermerk an → aus bzw. `parts_drive_ended`).
+// evs: Ereignisse zeitlich sortiert mit bereits gelesenem `payload` (Objekt). Nichts geschätzt: ohne Übernahme/Sperre kein Ergebnis (null).
+export function caseDowntime(c, evs, now = Date.now()) {
+  const pl = (e) => (e.payload && typeof e.payload === 'object' ? e.payload : {});
+  const acks = [];
+  for (const e of evs) {
+    if (e.action === 'acknowledge' || e.action === 'start_repair' || pl(e).implicit_ack) acks.push(e.created_at);
+    if (e.action === 'reassign_workshop' && pl(e).prev_ack_at) acks.push(pl(e).prev_ack_at);
+  }
+  if (c.workshop_ack_at) acks.push(c.workshop_ack_at);
+  const first = acks.filter((x) => Number.isFinite(Date.parse(x))).sort()[0] || null;
+  const list = [...lockIntervalsOf(evs.map((e) => (e.action === 'create' ? { ...e, create_payload: JSON.stringify(pl(e)) } : e)), now)];
+  const w = workshopIntervalOf({ ...c, first_ack_at: first }, now); if (w) list.push(w);
+  if (!list.length) return null;
+  // Fahrabschnitte „fährt bis zur Teilelieferung“ (nie während einer Sperre – der Vermerk ist dann nicht möglich bzw. endet)
+  const drive = []; let from = null;
+  for (const e of evs) {
+    const at = Date.parse(e.created_at);
+    if (e.action === 'set_parts_drive' && pl(e).on) { if (from === null) from = at; }
+    else if (from !== null && ((e.action === 'set_parts_drive' && pl(e).cleared) || pl(e).parts_drive_ended)) { if (at > from) drive.push([from, at]); from = null; }
+  }
+  if (from !== null && now > from) drive.push([from, now]);
+  // Ausfallabschnitte zusammenführen und die Fahrabschnitte herausschneiden
+  const s = [...list].sort((x, y) => x[0] - y[0]); const merged = [];
+  for (const [a, b] of s) { const l = merged[merged.length - 1]; if (l && a <= l[1]) l[1] = Math.max(l[1], b); else merged.push([a, b]); }
+  let cut = merged;
+  for (const [x, y] of drive) cut = cut.flatMap(([a, b]) => (y <= a || x >= b ? [[a, b]] : [...(x > a ? [[a, x]] : []), ...(y < b ? [[y, b]] : [])]));
+  const ms = unionMs(cut);
+  if (!(ms > 0)) return null;
+  const open = !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status); // Vorgang läuft noch (auch während das Fahrzeug bis zur Teilelieferung fährt)
+  // Kalendertage (Berlin), an denen das Fahrzeug mindestens zeitweise ausfiel – ein Abschnitt, der um Mitternacht endet, zählt den Folgetag nicht
+  const days = new Set();
+  for (const [a, b] of cut) { let d = berlinDate(new Date(a).toISOString()); const last = berlinDate(new Date(b - 1).toISOString()); for (let i = 0; i < 4000 && d <= last; i++) { days.add(d); d = new Date(Date.parse(d + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10); } }
+  const driveMs = unionMs(drive.flatMap(([x, y]) => merged.map(([a, b]) => [Math.max(a, x), Math.min(b, y)]).filter(([a, b]) => b > a)));
+  return { hours: r1(ms / H), days: days.size, from: new Date(cut[0][0]).toISOString(), to: open ? null : new Date(cut[cut.length - 1][1]).toISOString(), open,
+    sections: cut.length, ...(driveMs > 0 ? { parts_drive_h: r1(driveMs / H) } : {}) };
+}
 // Ausfallstunden je Berliner Kalendermonat (months: ['JJJJ-MM', …]); Abschnitte an Monatsgrenzen geteilt, Überschneidungen einmal
 export function downtimeByMonth(intervals, months, now = Date.now()) {
   return months.map((m) => {

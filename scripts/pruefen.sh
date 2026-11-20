@@ -726,6 +726,7 @@ UI-Werkstattauftrag, Fahrzeug unterwegs im Ausland: Standort in der Zeile, Hinwe
 UI-Teil auf falschen Auftrag: Hinweis bei demselben Teil heute auf anderem Auftrag, Lager in der Teileliste, Bestätigung mit Auftrag (DE/UK/EN; Backlog 1617–1619)|ui-teil-falscher-auftrag.py|/tmp/cfp-teil-falscher-auftrag.log
 UI-Garantieteil: Hinweis bei demselben Teil aus früherem Auftrag noch in Gewährleistung, mit Lieferant/Beleg (DE/UK/EN; Backlog 1620)|ui-garantieteil.py|/tmp/cfp-garantieteil.log
 UI-Rechnung-Teile: Beleg am Teil, Hinweis auf doppelt gezählte Rechnung bei Fremdleistung/Teil (DE/UK/EN; Backlog 1622–1624)|ui-rechnung-teile.py|/tmp/cfp-rechnung-teile.log
+UI-Nutzungsausfall: Ausfall laut Vorgang im Versicherungsfall, Hinweis „nicht fahrbereit gemeldet“ (DE/UK/EN; Backlog 1625)|ui-nutzungsausfall.py|/tmp/cfp-nutzungsausfall.log
 UI-Disposition „Wieder einsatzbereit“: außer Betrieb fehlt, ruhend gekennzeichnet, neue Meldung ohne Sperre genannt (DE/UK/EN; Backlog 1608/1609)|ui-dispo-ersatz.py|/tmp/cfp-dispo-ersatz.log
 UI-Import: Dateifehler am Dateifeld/an „Quelle“ (DE/UK/EN; Backlog 1580)|ui-import-dateifehler.py|/tmp/cfp-import-dateifehler.log
 UI-Lieferantenwechsel: Wareneingang nennt letzten Lieferanten/Preis, Hinweis anderer Lieferant und Preisabweichung (DE/UK/EN; Backlog 860)|ui-lieferantenwechsel.py|/tmp/cfp-lieferantenwechsel.log
