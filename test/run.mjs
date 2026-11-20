@@ -1740,7 +1740,7 @@ await test('Kennzahlen als CSV: je Fahrzeug (alle, mit Standort) und je Dringlic
   const vt = dec(v); ok(vt.startsWith('\ufeffKennzeichen;FIN-Schlüssel;Art;Standort;'), 'BOM + Kopfzeile');
   const vl = vt.trim().split('\r\n');
   eq(vl.length, r.vehicles.length + 1, 'alle Fahrzeuge (nicht nur 20)');
-  ok(vl.slice(1).every((l) => l.split(';').length === 13), 'gleiche Spaltenzahl (inkl. Ausfallzeit, Verfügbarkeit, Ausfall der Verfügbarkeit)');
+  ok(vl.slice(1).every((l) => l.split(';').length === 14), 'gleiche Spaltenzahl (inkl. Ausfallzeit, Verfügbarkeit, Ausfall der Verfügbarkeit, Teilefahrt – Backlog 1628)');
   ok(r.vehicles.every((x) => 'site' in x), 'Standort je Fahrzeug in der JSON-Antwort');
   const p = await users.fleet.get(`/api/reports/kpi?from=${ym}&to=${ym}&format=csv&part=priority`);
   const pl = dec(p).trim().split('\r\n');
