@@ -323,6 +323,11 @@ export async function vehicleDetail(env, user, envName, vehicleId, opts = {}) {
   // Akte: Verlauf höchstens MAINT_HIST_MAX (eine Zeile mehr gelesen → maintenance_history_truncated, App verlinkt die Zeitleiste „Prüfungen“).
   // Erst nach failedInspection/resultMissing kürzen – die Hinweise nutzen alle gelesenen Ereignisse.
   const maintTruncated = !tl && maintenanceHistory.length > MAINT_HIST_MAX; if (maintTruncated) maintenanceHistory.length = MAINT_HIST_MAX;
+  // Backlog 1639 (Blickwinkel „Werkstatt erfasst eine HU/Wartung am außer Betrieb genommenen Fahrzeug – Nachfolger mit gleichem Kennzeichen“):
+  // Durchführung nach dem Tag der (noch geltenden) Außerbetriebnahme laut Protokoll → `after_deactivation` (nur Hinweis; Durchführungen sind
+  // unveränderlich, eine HU vor dem Verkauf ist möglich). Ohne Protokolleintrag kein Hinweis.
+  const deactDay = inactiveInfo ? berlinDate(inactiveInfo.since) : null;
+  if (deactDay) for (const e of maintenanceHistory) if (e.done_date > deactDay) e.after_deactivation = true;
   // Sicherheitssperre aus allen Vorgängen (Werkstatt sieht nur eigene/übernommene – Kennzeichen zeigte dort sonst kein Schloss, 20.10.2026)
   const locked = allCases.some((c) => c.safety_lock && !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status));
   // Kennzeichenverlauf (Backlog 256): bisherige Kennzeichen mit „bis“ (Zeitpunkt der Änderung in der App)

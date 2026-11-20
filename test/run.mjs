@@ -46266,6 +46266,34 @@ await test('Backlog 1638 (Blickwinkel „Leitung erfasst einen Vertrag am falsch
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].ct_end_before_reg.includes('{e}') && STRINGS[l].ct_end_before_reg.includes('{ez}'), l); ok(STRINGS[l].ct_start_after_deact.includes('{b}') && STRINGS[l].ct_start_after_deact.includes('{s}'), l); ok(STRINGS[l].ct_veh_dates_fix.includes('{end}') && STRINGS[l].ct_veh_dates_fix.includes('{edit}'), l); }
 });
 
+await test('Backlog 1639 (Blickwinkel „Werkstatt erfasst eine HU/Wartung am außer Betrieb genommenen Fahrzeug – Nachfolger mit gleichem Kennzeichen“): Prüf-/Wartungsverlauf markiert Durchführungen nach dem Tag der Außerbetriebnahme (laut Protokoll) mit `after_deactivation`; nicht am Tag selbst, nicht ohne Protokoll, nicht nach Rückkehr; Formularhinweis und Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const A = 'VIN:WMA15SZZ2HM722774';
+  const done = async (d, ev) => { const r = await U.fleet.post(`/api/vehicles/${A}/husp/HU/complete`, { done_date: d, evidence: ev }); eq(r.status, 200, JSON.stringify(r.data)); };
+  await done(day(-30), 'HU alt'); await done(day(-20), 'HU am Tag'); await done(day(-5), 'HU Nachfolger');
+  const akte = async (u = U.fleet) => (await u.get(`/api/vehicles/${A}`)).data;
+  const flags = (d) => Object.fromEntries(d.maintenance_history.filter((h) => h.kind === 'HU').map((h) => [h.evidence, !!h.after_deactivation]));
+  let d = await akte(); eq(JSON.stringify(flags(d)), JSON.stringify({ 'HU Nachfolger': false, 'HU am Tag': false, 'HU alt': false }), 'in Betrieb: kein Hinweis');
+  // außer Betrieb ohne Protokolleintrag (z. B. Import) → kein Hinweis
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(A);
+  d = await akte(); ok(!d.maintenance_history.some((h) => h.after_deactivation), 'ohne Protokoll');
+  // Außerbetriebnahme am Tag -20 (08:00 UTC) → nur die spätere Durchführung
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1639-1', NULL, 'vehicle.deactivate', ?, ?, ?)`).run(A, JSON.stringify({ plate: 'SZ-YC 5513', reason: 'Verkauf' }), day(-20) + 'T08:00:00.000Z');
+  d = await akte(); eq(JSON.stringify(flags(d)), JSON.stringify({ 'HU Nachfolger': true, 'HU am Tag': false, 'HU alt': false }));
+  for (const [n, u] of [['Werkstatt', U.ws], ['Fahrer', U.driver]]) { const x = await u.get(`/api/vehicles/${A}`); if (x.status === 200 && x.data.maintenance_history) eq(x.data.maintenance_history.filter((h) => h.after_deactivation).length, 1, n); }
+  // Berliner Tag: Außerbetriebnahme kurz vor Mitternacht UTC zählt zum nächsten Berliner Tag
+  db.prepare('UPDATE audit_log SET created_at=? WHERE id=?').run(day(-6) + 'T23:30:00.000Z', 'al-1639-1');
+  d = await akte(); eq(flags(d)['HU Nachfolger'], false, 'Tag -5 ist in Berlin der Tag der Außerbetriebnahme');
+  // wieder in Betrieb → kein Hinweis
+  db.prepare('UPDATE vehicles SET active=1 WHERE id=?').run(A);
+  d = await akte(); ok(!d.maintenance_history.some((h) => h.after_deactivation), 'wieder in Betrieb');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-mhdeact') && app.includes("t('mh_after_deact')") && app.includes('p.dataset.mddeact') && app.includes("t('md_deact_warn')"), 'Hinweise in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].mh_after_deact.includes('{s}'), l); ok(STRINGS[l].md_deact_warn.includes('{s}'), l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
