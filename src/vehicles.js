@@ -10,7 +10,7 @@ import { vehicleContracts } from './contracts.js';
 import { notifyUsers, nt, maintKindLang } from './notify.js';
 import { REQUIRED_KINDS, REPORT_KINDS, kmDue, ruleDueKm, KM_RATE_WINDOW_DAYS, KM_DROP_SQL, parseKmDrop, kmCounterDropAfter, kmBasisForDone, FIXING_CASE_SQL, defectCase } from './maintenance.js';
 import { winterMarks, winterStatus } from './tires.js';
-import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL } from './reports.js';
+import { lockIntervalsOf, workshopIntervalOf, downtimeByMonth, FIRST_ACK_SQL, DRIVE_EV_SQL, DRIVE_PAYLOAD_SQL, partsDriveIntervalsOf, cutIntervals } from './reports.js';
 import { maintenanceWarnDays } from './settings.js';
 import { kmRejection } from './telematics.js';
 import { massTonnes } from '../public/hours.js';
@@ -420,11 +420,12 @@ async function vehicleDowntime(env, envName, vehicleId, cases, createdAt) {
   // nur Vorgänge, die in den Zeitraum hineinreichen (offen oder nach Beginn abgeschlossen)
   const rel = cases.filter((c) => !c.closed_at || Date.parse(c.closed_at) >= since);
   const ivs = [];
-  for (const c of rel) { const iv = workshopIntervalOf(c, now); if (iv) ivs.push(iv); }
-  const evs = rel.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload FROM case_events
-    WHERE case_id IN (SELECT value FROM json_each(?)) AND (action IN ('create','set_safety_lock','lift_safety_lock') OR to_status IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY case_id, created_at`)
+  const evs = rel.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, ${DRIVE_PAYLOAD_SQL} FROM case_events
+    WHERE case_id IN (SELECT value FROM json_each(?)) AND (action IN ('create','set_safety_lock','lift_safety_lock') OR to_status IN ('fahrzeug_freigegeben','abgelehnt') OR ${DRIVE_EV_SQL}) ORDER BY case_id, created_at`)
     .bind(JSON.stringify(rel.map((c) => c.id))).all()).results : [];
   const by = new Map(); for (const e of evs) { if (!by.has(e.case_id)) by.set(e.case_id, []); by.get(e.case_id).push(e); }
+  // Backlog 1626: Werkstattabschnitt ohne die Zeit „fährt bis zur Teilelieferung“ (wie Fahrzeugliste/Disposition)
+  for (const c of rel) { const iv = workshopIntervalOf(c, now); if (iv) ivs.push(...cutIntervals([iv], partsDriveIntervalsOf(by.get(c.id) || [], now))); }
   for (const list of by.values()) ivs.push(...lockIntervalsOf(list, now));
   // Verfügbarkeit je Monat (16.10.2026): Ausfall gegen die Stunden des Monats ab Anlage des Fahrzeugs bis Monatsende bzw. jetzt; davor null
   const c0 = Date.parse(createdAt);

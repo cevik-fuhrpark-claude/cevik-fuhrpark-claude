@@ -675,6 +675,28 @@ export function workshopIntervalOf(c, now = Date.now()) {
 // Ereignisprotokoll – gleiche Grundlage wie die Ausfallzeit der Kennzahlen (Werkstatt-Übernahme → Freigabe/Ablehnung, Sicherheitssperre),
 // aber ohne die Zeit, in der das Fahrzeug laut Vorgang bis zur Teilelieferung fahren durfte (Backlog 880: Vermerk an → aus bzw. `parts_drive_ended`).
 // evs: Ereignisse zeitlich sortiert mit bereits gelesenem `payload` (Objekt). Nichts geschätzt: ohne Übernahme/Sperre kein Ergebnis (null).
+// Backlog 1626: Abschnitte, in denen das Fahrzeug laut Vorgang „bis zur Teilelieferung fahren durfte“ (Backlog 880): Vermerk an
+// (`set_parts_drive` mit on) bis Vermerk aus (cleared) bzw. automatisches Ende (`parts_drive_ended` an Fortsetzen/Sperre/Restarbeit), offen bis jetzt.
+// evs: Ereignisse EINES Vorgangs zeitlich sortiert; payload als Objekt (`payload`) oder Text (`drive_payload`, aus DRIVE_PAYLOAD_SQL).
+export const DRIVE_EV_SQL = "(action='set_parts_drive' OR instr(payload,'parts_drive_ended')>0)";
+export const DRIVE_PAYLOAD_SQL = `CASE WHEN ${DRIVE_EV_SQL} THEN payload END AS drive_payload`;
+export function partsDriveIntervalsOf(evs, now = Date.now()) {
+  const pl = (e) => { if (e.payload && typeof e.payload === 'object') return e.payload; if (e.drive_payload) { try { return JSON.parse(e.drive_payload) || {}; } catch { return {}; } } return {}; };
+  const out = []; let from = null;
+  for (const e of evs) {
+    const at = Date.parse(e.created_at);
+    if (e.action === 'set_parts_drive' && pl(e).on) { if (from === null) from = at; }
+    else if (from !== null && ((e.action === 'set_parts_drive' && pl(e).cleared) || pl(e).parts_drive_ended)) { if (at > from) out.push([from, at]); from = null; }
+  }
+  if (from !== null && now > from) out.push([from, now]);
+  return out;
+}
+// Zeitabschnitte list ohne die Abschnitte cut (beide [a, b] in ms)
+export function cutIntervals(list, cut) {
+  let r = list;
+  for (const [x, y] of cut) r = r.flatMap(([a, b]) => (y <= a || x >= b ? [[a, b]] : [...(x > a ? [[a, x]] : []), ...(y < b ? [[y, b]] : [])]));
+  return r;
+}
 export function caseDowntime(c, evs, now = Date.now()) {
   const pl = (e) => (e.payload && typeof e.payload === 'object' ? e.payload : {});
   const acks = [];
@@ -688,18 +710,11 @@ export function caseDowntime(c, evs, now = Date.now()) {
   const w = workshopIntervalOf({ ...c, first_ack_at: first }, now); if (w) list.push(w);
   if (!list.length) return null;
   // Fahrabschnitte „fährt bis zur Teilelieferung“ (nie während einer Sperre – der Vermerk ist dann nicht möglich bzw. endet)
-  const drive = []; let from = null;
-  for (const e of evs) {
-    const at = Date.parse(e.created_at);
-    if (e.action === 'set_parts_drive' && pl(e).on) { if (from === null) from = at; }
-    else if (from !== null && ((e.action === 'set_parts_drive' && pl(e).cleared) || pl(e).parts_drive_ended)) { if (at > from) drive.push([from, at]); from = null; }
-  }
-  if (from !== null && now > from) drive.push([from, now]);
+  const drive = partsDriveIntervalsOf(evs, now);
   // Ausfallabschnitte zusammenführen und die Fahrabschnitte herausschneiden
   const s = [...list].sort((x, y) => x[0] - y[0]); const merged = [];
   for (const [a, b] of s) { const l = merged[merged.length - 1]; if (l && a <= l[1]) l[1] = Math.max(l[1], b); else merged.push([a, b]); }
-  let cut = merged;
-  for (const [x, y] of drive) cut = cut.flatMap(([a, b]) => (y <= a || x >= b ? [[a, b]] : [...(x > a ? [[a, x]] : []), ...(y < b ? [[y, b]] : [])]));
+  const cut = cutIntervals(merged, drive);
   const ms = unionMs(cut);
   if (!(ms > 0)) return null;
   const open = !['fahrzeug_freigegeben', 'abgelehnt'].includes(c.status); // Vorgang läuft noch (auch während das Fahrzeug bis zur Teilelieferung fährt)
@@ -736,15 +751,17 @@ export async function fleetAvailability(env, envName, from, to, vehicles, now = 
   const loIso = new Date(lo).toISOString(); const hiIso = new Date(hi).toISOString();
   const cs = (await env.DB.prepare(`SELECT id, vehicle_id, status, workshop_ack_at, ${FIRST_ACK_SQL('cases')}, closed_at FROM cases WHERE environment=? AND vehicle_id IN (SELECT value FROM json_each(?))
     AND created_at < ? AND (closed_at IS NULL OR closed_at > ? OR status NOT IN ('fahrzeug_freigegeben','abgelehnt'))`).bind(envName, JSON.stringify([...vStart.keys()]), hiIso, loIso).all()).results;
-  const evs = cs.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload FROM case_events
-    WHERE case_id IN (SELECT value FROM json_each(?)) AND (action IN ('create','set_safety_lock','lift_safety_lock') OR to_status IN ('fahrzeug_freigegeben','abgelehnt')) ORDER BY case_id, created_at`)
+  const evs = cs.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, ${DRIVE_PAYLOAD_SQL} FROM case_events
+    WHERE case_id IN (SELECT value FROM json_each(?)) AND (action IN ('create','set_safety_lock','lift_safety_lock') OR to_status IN ('fahrzeug_freigegeben','abgelehnt') OR ${DRIVE_EV_SQL}) ORDER BY case_id, created_at`)
     .bind(JSON.stringify(cs.map((c) => c.id))).all()).results : [];
   const evBy = new Map();
   for (const e of evs) { if (!evBy.has(e.case_id)) evBy.set(e.case_id, []); evBy.get(e.case_id).push(e); }
   const ivs = new Map();
   for (const c of cs) {
     const a0 = vStart.get(c.vehicle_id);
-    const list = [...lockIntervalsOf(evBy.get(c.id) || [], now)]; const w = workshopIntervalOf(c, now); if (w) list.push(w);
+    // Backlog 1626: Werkstattabschnitt ohne die Zeit „fährt bis zur Teilelieferung“ (Fahrzeugliste/Disposition werten es dann als verfügbar)
+    const ce = evBy.get(c.id) || [];
+    const list = [...lockIntervalsOf(ce, now)]; const w = workshopIntervalOf(c, now); if (w) list.push(...cutIntervals([w], partsDriveIntervalsOf(ce, now)));
     for (const [a, b] of list) { const x = Math.max(a, a0); const z = Math.min(b, vEnd.get(c.vehicle_id)); if (z > x) { if (!ivs.has(c.vehicle_id)) ivs.set(c.vehicle_id, []); ivs.get(c.vehicle_id).push([x, z]); } }
   }
   let vh = 0; let dh = 0; const by_vehicle = [];
@@ -778,7 +795,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const site = query.site ? String(query.site).slice(0, 20) : null;
   const cases = site ? allCases.filter((c) => (c.workshop_site || 'ohne') === site) : allCases;
   const ids = cases.map((c) => c.id);
-  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, CASE WHEN action IN ('wait_parts','set_parts_eta','parts_partial') THEN payload END AS parts_payload FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
+  const events = ids.length ? (await env.DB.prepare(`SELECT case_id, action, to_status, created_at, CASE WHEN action='create' THEN payload END AS create_payload, CASE WHEN action IN ('wait_parts','set_parts_eta','parts_partial') THEN payload END AS parts_payload, ${DRIVE_PAYLOAD_SQL} FROM case_events WHERE case_id IN (SELECT value FROM json_each(?)) ORDER BY case_id, created_at`)
     .bind(JSON.stringify(ids)).all()).results : [];
   const evBy = new Map();
   for (const e of events) { if (!evBy.has(e.case_id)) evBy.set(e.case_id, []); evBy.get(e.case_id).push(e); }
@@ -874,7 +891,8 @@ export async function kpiReport(env, user, envName, query = {}) {
     const v = byVehicle.get(c.vehicle_id) || { vehicle_id: c.vehicle_id, cases: 0, released: 0, duplicates: 0, workshop_h: 0, parts_wait_h: 0, locked_h: 0, downtime_h: 0 };
     v.cases++; if (c.status === 'fahrzeug_freigegeben') v.released++; if (c.status === 'abgelehnt' && c.duplicate_of) v.duplicates++;
     if (workshop !== null) addIv(shop, c.vehicle_id, Date.parse(approved.created_at), clipEnd(Date.parse(c.closed_at))); // höchstens bis Zeitraumende wie Ausfall/Sperre (20.10.2026: 959 h in einem 720-h-Monat)
-    { const iv = workshopIntervalOf(c, now); if (iv) addIv(down, c.vehicle_id, iv[0], clipEnd(iv[1])); }
+    // Backlog 1626: ohne die Zeit, in der das Fahrzeug laut Vorgang bis zur Teilelieferung fahren durfte (wie Fahrzeugliste/Disposition)
+    { const iv = workshopIntervalOf(c, now); if (iv) for (const [a, b] of cutIntervals([iv], partsDriveIntervalsOf(evs, now))) addIv(down, c.vehicle_id, a, clipEnd(b)); }
     byVehicle.set(c.vehicle_id, v);
   }
   for (const [vid, list] of locks) { byVehicle.get(vid).locked_h = unionMs(list) / H; for (const iv of list) addIv(down, vid, iv[0], iv[1]); }
@@ -952,7 +970,7 @@ export async function kpiReport(env, user, envName, query = {}) {
   const inspection_defects = { inspections: dd.inspections, without_order: dd.without_order, settled_without_order: dd.settled_without_order, ordered: dd.ordered, released: dd.released, open: dd.open, reinspected: dd.reinspected, defects_again: dd.defects_again,
     to_release_days: { n: dd.days.length, median_d: r1(quantile(dd.days, 0.5)), p90_d: r1(quantile(dd.days, 0.9)) } };
   return { from, to, environment: envName, site, sites, vehicle_site, vehicle_sites, by_priority, by_workshop, by_workshop_unassigned: wsUnassigned, vehicles, generated_at: new Date().toISOString(), availability: availability ? { ...availability, by_vehicle: undefined, lowest: availability.by_vehicle.filter((x) => x.downtime_h > 0 || x.pct < 100).slice(0, 5) } : null, parts_eta, cost_approvals, inspection_defects,
-    definitions: { status_basis: 'Vorgänge nach Meldemonat; Status (offen/freigegeben/abgelehnt), Dauern, ausstehende Kostenfreigaben und überschrittene Liefertermine zum Abrufzeitpunkt (generated_at) – spätere Freigaben ändern auch Werte vergangener Monate', duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung); ohne interne Aufträge (Prüftermin, Prüfmangel, Winterreifen – von der Leitung selbst angelegt)', internal: 'Teilmenge von „Vorgänge“: interne Aufträge der Leitung (Prüftermin, Prüfmangel, Winterreifen); nicht in Erstbewertung und „Meldung → Freigabe“', workshop_ack: 'Werkstattfreigabe → erste Übernahme durch eine Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene, ohne interne Aufträge)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug (nur freigegebene Aufträge, höchstens bis Zeitraumende; parallele Aufträge am selben Fahrzeug zählen einmal)', availability_downtime_h: 'Ausfallstunden der technischen Verfügbarkeit je Fahrzeug (alle Vorgänge, die in den Zeitraum hineinreichen; Grundlage von „Verfügbarkeit %“)', downtime_h: 'Ausfallzeit je Fahrzeug: Werkstatt-Übernahme → technische Freigabe bzw. Ablehnung (offen bis jetzt, höchstens bis Zeitraumende) und Zeit mit Sicherheitssperre zusammen, Überschneidungen einmal; Vorgänge aus dem Zeitraum, ohne Übernahme-Zeitstempel nicht gezählt', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe, höchstens bis Zeitraumende; Überschneidungen einmal), Vorgänge aus dem Zeitraum', by_workshop: 'Je Werkstatt laut aktueller Zuordnung des Vorgangs (nach Werkstattwechsel zählt der ganze Vorgang bei der neuen Werkstatt); Übernahme, Meldung bis Freigabe und Teile-Wartezeit wie bei den Dringlichkeiten; Nacharbeit = Rückgaben aus der Abschlusskontrolle (rework_returns) bzw. Vorgänge mit mindestens einer Rückgabe (cases_with_rework); Vorgänge ohne Werkstatt nur in by_workshop_unassigned; erneut binnen 90 Tagen = von den freigegebenen Aufträgen mit Prüfpunkt aus einer Kontrolle (released_check_items) die, deren Prüfpunkt am selben Fahrzeug binnen 90 Tagen nach der Freigabe erneut aus einer Kontrolle gemeldet wurde (again_90d; nicht abgelehnt, keine Dublette); again_window_open = ohne erneute Meldung, aber noch keine 90 Tage seit der Freigabe; again_cases = höchstens 10 dieser Aufträge mit der ersten erneuten Meldung (jüngste zuerst)', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; ohne Auftrag erledigt = ohne Mängelauftrag, aber später erneut durchgeführt oder Fahrzeug außer Betrieb (nicht „ohne Auftrag“); mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', availability: 'Technische Verfügbarkeit: 100 % minus Ausfallstunden (Werkstatt-Übernahme → technische Freigabe/Ablehnung, offen bis jetzt, und Sicherheitssperre; je Fahrzeug Überschneidungen einmal) durch Fahrzeugstunden im Zeitraum (Monatsbeginn bis Monatsende bzw. jetzt, Berliner Zeit; frühestens ab Anlage des Fahrzeugs). Alle Vorgänge, die in den Zeitraum hineinreichen, auf den Zeitraum zugeschnitten. Aktive Fahrzeuge laut Stamm, außer Betrieb genommene bis zur Außerbetriebnahme (Protokoll), ohne von der Bewertung ausgenommene; Werkstattaufenthalte ohne Vorgang in der App sind nicht erfasst. Mit Werkstattfilter nicht berechnet', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
+    definitions: { status_basis: 'Vorgänge nach Meldemonat; Status (offen/freigegeben/abgelehnt), Dauern, ausstehende Kostenfreigaben und überschrittene Liefertermine zum Abrufzeitpunkt (generated_at) – spätere Freigaben ändern auch Werte vergangener Monate', duplicates: 'Teilmenge von „abgelehnt“: als Dublette eines anderen Vorgangs abgelehnte Meldungen (keine echte Ablehnung)', triage: 'Meldung → Eingang bestätigt (Fuhrparkleitung); ohne interne Aufträge (Prüftermin, Prüfmangel, Winterreifen – von der Leitung selbst angelegt)', internal: 'Teilmenge von „Vorgänge“: interne Aufträge der Leitung (Prüftermin, Prüfmangel, Winterreifen); nicht in Erstbewertung und „Meldung → Freigabe“', workshop_ack: 'Werkstattfreigabe → erste Übernahme durch eine Werkstatt', created_to_release: 'Meldung → technische Freigabe (nur freigegebene, ohne interne Aufträge)', workshop_h: 'Werkstattfreigabe → technische Freigabe je Fahrzeug (nur freigegebene Aufträge, höchstens bis Zeitraumende; parallele Aufträge am selben Fahrzeug zählen einmal)', availability_downtime_h: 'Ausfallstunden der technischen Verfügbarkeit je Fahrzeug (alle Vorgänge, die in den Zeitraum hineinreichen; Grundlage von „Verfügbarkeit %“)', downtime_h: 'Ausfallzeit je Fahrzeug: Werkstatt-Übernahme → technische Freigabe bzw. Ablehnung (offen bis jetzt, höchstens bis Zeitraumende) und Zeit mit Sicherheitssperre zusammen, Überschneidungen einmal; ohne die Zeit, in der das Fahrzeug laut Vorgang bis zur Teilelieferung fahren durfte (je Vorgang; ein paralleler Werkstattauftrag zählt weiter); Vorgänge aus dem Zeitraum, ohne Übernahme-Zeitstempel nicht gezählt', parts_wait_h: 'Zeit im Status „wartet auf Teile“', locked_h: 'Zeit mit Sicherheitssperre je Fahrzeug (Meldung bzw. Sperre → Aufhebung/Freigabe, höchstens bis Zeitraumende; Überschneidungen einmal), Vorgänge aus dem Zeitraum', by_workshop: 'Je Werkstatt laut aktueller Zuordnung des Vorgangs (nach Werkstattwechsel zählt der ganze Vorgang bei der neuen Werkstatt); Übernahme, Meldung bis Freigabe und Teile-Wartezeit wie bei den Dringlichkeiten; Nacharbeit = Rückgaben aus der Abschlusskontrolle (rework_returns) bzw. Vorgänge mit mindestens einer Rückgabe (cases_with_rework); Vorgänge ohne Werkstatt nur in by_workshop_unassigned; erneut binnen 90 Tagen = von den freigegebenen Aufträgen mit Prüfpunkt aus einer Kontrolle (released_check_items) die, deren Prüfpunkt am selben Fahrzeug binnen 90 Tagen nach der Freigabe erneut aus einer Kontrolle gemeldet wurde (again_90d; nicht abgelehnt, keine Dublette); again_window_open = ohne erneute Meldung, aber noch keine 90 Tage seit der Freigabe; again_cases = höchstens 10 dieser Aufträge mit der ersten erneuten Meldung (jüngste zuerst)', parts_eta: 'Je Abschnitt „wartet auf Teile“: zuletzt gesetzter Liefertermin gegen „Reparatur fortgesetzt“ (Berliner Datum); eingehalten = am oder vor dem Termin; ohne Termin nur gezählt; offen mit vergangenem Termin = überschritten (offen)', cost_approvals: 'Je Überschreitung der Kosten-Freigabegrenze bis „Kosten freigeben“ (Stunden); ausstehend = Vorgang offen ohne Freigabe; ohne Freigabe abgeschlossen = Vorgang freigegeben/abgelehnt ohne Kostenfreigabe; keine Beträge', inspection_defects: 'Prüfungen mit Prüfdatum im Zeitraum und erheblichen/gefährlichen Mängeln bzw. verkehrsunsicher; Mängelauftrag = jüngster nicht abgelehnter Auftrag zur Prüfung; Dauer = Prüfdatum → technische Freigabe des Auftrags (Tage, Berliner Datum); Nachprüfung = nächste spätere Durchführung derselben Prüfart; ohne Auftrag erledigt = ohne Mängelauftrag, aber später erneut durchgeführt oder Fahrzeug außer Betrieb (nicht „ohne Auftrag“); mit Standortfilter nur Prüfungen mit Auftrag an diesen Standort', availability: 'Technische Verfügbarkeit: 100 % minus Ausfallstunden (Werkstatt-Übernahme → technische Freigabe/Ablehnung, offen bis jetzt, ohne die Zeit „fährt bis zur Teilelieferung“ laut Vorgang, und Sicherheitssperre; je Fahrzeug Überschneidungen einmal) durch Fahrzeugstunden im Zeitraum (Monatsbeginn bis Monatsende bzw. jetzt, Berliner Zeit; frühestens ab Anlage des Fahrzeugs). Alle Vorgänge, die in den Zeitraum hineinreichen, auf den Zeitraum zugeschnitten. Aktive Fahrzeuge laut Stamm, außer Betrieb genommene bis zur Außerbetriebnahme (Protokoll), ohne von der Bewertung ausgenommene; Werkstattaufenthalte ohne Vorgang in der App sind nicht erfasst. Mit Werkstattfilter nicht berechnet', vehicle_site: 'Standort laut Fahrzeugstamm (aktueller Stand, Schreibweisen zusammengefasst); wirkt auf Vorgänge und Prüfungen; kombinierbar mit dem Werkstattfilter' } };
 }
 
 // Werkstatt-Auslastung als CSV (Excel DE): eine Zeile je Standort und Kalenderwoche (älteste zuerst), offene Aufträge je Status

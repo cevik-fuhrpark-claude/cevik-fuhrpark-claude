@@ -45956,6 +45956,55 @@ await test('Backlog 1625 (Blickwinkel „Leitung macht beim Versicherer der Gege
   for (const l of ['de', 'uk', 'en']) for (const k of ['cdt_title', 'cdt_range', 'cdt_open', 'cdt_drive', 'cdt_hint']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
+await test('Backlog 1626 (Folge aus 1625): Ausfallzeit der Kennzahlen, technische Verfügbarkeit und Fahrzeugakte „Ausfall je Monat“ ohne die Zeit „fährt bis zur Teilelieferung“ – je Vorgang herausgeschnitten, paralleler Werkstattauftrag zählt weiter', async () => {
+  const { partsDriveIntervalsOf, cutIntervals, DRIVE_EV_SQL } = await import('../src/reports.js');
+  const T = (s) => Date.parse(`2026-03-${s}:00.000Z`);
+  // Rechenkern: Vermerk an → aus, automatisches Ende über parts_drive_ended, payload als Text (drive_payload) oder Objekt, offener Abschnitt bis jetzt
+  const e = (action, at, p) => ({ action, created_at: new Date(T(at)).toISOString(), drive_payload: p ? JSON.stringify(p) : null });
+  eq(JSON.stringify(partsDriveIntervalsOf([e('set_parts_drive', '02T10:00', { on: true }), e('set_parts_drive', '02T16:00', { cleared: true }),
+    e('set_parts_drive', '03T08:00', { on: true }), e('resume_repair', '03T12:00', { parts_drive_ended: true }), e('set_parts_drive', '04T08:00', { on: true })], T('04T10:00'))),
+  JSON.stringify([[T('02T10:00'), T('02T16:00')], [T('03T08:00'), T('03T12:00')], [T('04T08:00'), T('04T10:00')]]));
+  eq(JSON.stringify(partsDriveIntervalsOf([{ action: 'set_parts_drive', created_at: new Date(T('02T10:00')).toISOString(), payload: { on: true } }, { action: 'lock', created_at: new Date(T('02T11:00')).toISOString(), payload: { parts_drive_ended: true } }])), JSON.stringify([[T('02T10:00'), T('02T11:00')]]), 'payload als Objekt');
+  eq(partsDriveIntervalsOf([e('set_parts_drive', '02T10:00', null)]).length, 0, 'ohne Vermerk kein Abschnitt');
+  eq(JSON.stringify(cutIntervals([[0, 100]], [[10, 20], [90, 120], [200, 300]])), JSON.stringify([[0, 10], [20, 90]]));
+  ok(/set_parts_drive/.test(DRIVE_EV_SQL) && /parts_drive_ended/.test(DRIVE_EV_SQL), 'Ereignisfilter');
+  // Ende zu Ende: Vorgang 1 im Vormonat 10. 10:00 (Übernahme) → 14. 10:00 (Freigabe) = 96 h, davon 11. 12:00 → 12. 12:00 unterwegs bis zur Teilelieferung
+  const { e: env, U, cmd, newCase, toRepair, V1 } = await freshWorld();
+  const { addMonths } = await import('../src/util.js'); const pm = addMonths(BERLIN_TODAY.slice(0, 7) + '-01', -1).slice(0, 7);
+  const at = (d) => `${pm}-${d}:00.000Z`;
+  await env.DB.prepare('UPDATE vehicles SET created_at=?').bind(addMonths(pm + '-01', -2) + 'T08:00:00.000Z').run();
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'wait_parts', {}, 'Teile bestellt')).status, 200);
+  eq((await cmd(U.fleet, id, 'set_parts_drive', { on: '1' })).status, 200);
+  eq((await cmd(U.ws, id, 'resume_repair', {}, 'Teile da')).status, 200);
+  const evs = (await env.DB.prepare('SELECT id, action, payload FROM case_events WHERE case_id=? ORDER BY created_at, rowid').bind(id).all()).results;
+  ok(evs.some((x) => x.action === 'resume_repair' && /parts_drive_ended/.test(x.payload || '')), 'Fortsetzen beendet den Vermerk');
+  const when = { create: '10T08:00', approve_repair: '10T09:00', start_repair: '10T10:00', wait_parts: '11T10:00', set_parts_drive: '11T12:00', resume_repair: '12T12:00' };
+  for (const x of evs) await env.DB.prepare('UPDATE case_events SET created_at=? WHERE id=?').bind(at(when[x.action] || '10T08:30'), x.id).run();
+  await env.DB.prepare(`UPDATE cases SET created_at=?, workshop_ack_at=?, status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).bind(at('10T08:00'), at('10T10:00'), at('14T10:00'), id).run();
+  const kpi = async () => (await U.fleet.get(`/api/reports/kpi?from=${pm}&to=${pm}`)).data;
+  let r = await kpi(); let v = r.vehicles.find((x) => x.vehicle_id === V1);
+  eq(v.downtime_h, 72, 'Ausfall 96 h − 24 h Fahrt'); eq(v.availability_downtime_h, 72, 'Verfügbarkeit: Ausfall ohne Fahrt');
+  ok(v.workshop_h >= 96, 'Werkstattzeit bleibt (Durchlauf des Auftrags): ' + v.workshop_h);
+  const ak = async () => (await U.fleet.get(`/api/vehicles/${V1}`)).data.downtime.months.find((x) => x.month === pm);
+  eq((await ak()).hours, 72, 'Akte: Ausfall je Monat ohne Fahrt');
+  // paralleler Auftrag 2 (11. 00:00 → 18:00) hält das Fahrzeug in der Werkstatt – die ersten 6 h der Fahrt von Vorgang 1 zählen dadurch weiter
+  const id2 = await newCase({ description: 'Bremse vorne quietscht' });
+  await env.DB.prepare('UPDATE case_events SET created_at=? WHERE case_id=?').bind(at('11T00:00'), id2).run();
+  await env.DB.prepare(`UPDATE cases SET created_at=?, workshop_ack_at=?, status='fahrzeug_freigegeben', closed_at=? WHERE id=?`).bind(at('11T00:00'), at('11T00:00'), at('11T18:00'), id2).run();
+  r = await kpi(); v = r.vehicles.find((x) => x.vehicle_id === V1);
+  eq(v.downtime_h, 78, 'Ausfall mit parallelem Auftrag'); eq(v.availability_downtime_h, 78);
+  eq((await ak()).hours, 78, 'Akte mit parallelem Auftrag');
+  // ohne Vermerk (Ereignis entfernt) wieder die volle Zeit – Gegenprobe
+  await env.DB.prepare(`DELETE FROM case_events WHERE case_id=? AND action='set_parts_drive'`).bind(id).run();
+  r = await kpi(); v = r.vehicles.find((x) => x.vehicle_id === V1);
+  eq(v.downtime_h, 96, 'Gegenprobe ohne Fahrabschnitt'); eq((await ak()).hours, 96);
+  // Texte: Definition, Akte, Hilfe, Hinweis am Vermerk (DE/UK/EN)
+  const { STRINGS } = await import('../public/i18n.js');
+  const W = { de: 'bis zur Teilelieferung fahren durfte', uk: 'їздити до поставки запчастин', en: 'allowed to drive until the parts arrived' };
+  for (const l of ['de', 'uk', 'en']) for (const k of ['kpi_rules', 'vd_rule', 'kpi_av_rule']) ok(STRINGS[l][k].includes(W[l]), `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
