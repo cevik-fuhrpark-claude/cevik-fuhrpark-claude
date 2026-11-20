@@ -1856,7 +1856,7 @@ await test('Kennzahlen: Werkstattzeit paralleler Aufträge einmal, Ausfallzeit a
   ok(Math.abs(v2.downtime_h - 9) < 0.05, 'Ausfall [9 h, 2 h] ∪ [3 h, jetzt] = 9 h: ' + v2.downtime_h);
   const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await users.fleet.get(`/api/reports/kpi?from=${from}&to=${BERLIN_YM}&format=csv`)).data).trim().split('\r\n');
   const head = csv[0].split(';'); const row = csv.find((l) => l.startsWith('KP-AF 1;')).split(';');
-  eq(head[head.length - 3], 'Ausfallzeit h'); eq(head[head.length - 2], 'Verfügbarkeit %'); eq(head[head.length - 1], 'Ausfall h (Verfügbarkeit)'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
+  eq(head[head.length - 4], 'Ausfallzeit h'); eq(head[head.length - 3], 'Verfügbarkeit %'); eq(head[head.length - 2], 'Ausfall h (Verfügbarkeit)'); eq(head[head.length - 1], 'nicht als Ausfall gezählt h (fährt bis zur Teilelieferung)', 'Backlog 1628'); eq(row[head.length - 1], '0', 'Backlog 1628: ohne Teilefahrt 0'); eq(row[head.indexOf('Ausfallzeit h')], '9'); eq(row[head.indexOf('Werkstattzeit h')], '8');
   const ig = await anon.req('GET', `/api/integration/v1/kpi?from=${from}&to=${BERLIN_YM}&environment=${await envOf(a)}`, undefined, { authorization: 'Bearer integration-token-xyz' });
   eq(ig.status, 200); ok(Math.abs(ig.data.vehicles.find((x) => x.vehicle_id === VK).downtime_h - 9) < 0.05, 'Integration liefert Ausfallzeit');
   // Fahrzeugakte: Ausfall je Berliner Monat (letzte 12), gleiche Regel; Summe = Kennzahl; nur Leitung
@@ -45956,7 +45956,7 @@ await test('Backlog 1625 (Blickwinkel „Leitung macht beim Versicherer der Gege
   for (const l of ['de', 'uk', 'en']) for (const k of ['cdt_title', 'cdt_range', 'cdt_open', 'cdt_drive', 'cdt_hint']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
-await test('Backlog 1626/1627 (Folge aus 1625): Ausfallzeit der Kennzahlen, technische Verfügbarkeit und Fahrzeugakte „Ausfall je Monat“ ohne die Zeit „fährt bis zur Teilelieferung“ – je Vorgang herausgeschnitten, paralleler Werkstattauftrag zählt weiter; Fahrzeugzeile nennt die nicht gezählte Zeit', async () => {
+await test('Backlog 1626/1627/1628 (Folge aus 1625): Ausfallzeit der Kennzahlen, technische Verfügbarkeit und Fahrzeugakte „Ausfall je Monat“ ohne die Zeit „fährt bis zur Teilelieferung“ – je Vorgang herausgeschnitten, paralleler Werkstattauftrag zählt weiter; Fahrzeugzeile nennt die nicht gezählte Zeit', async () => {
   const { partsDriveIntervalsOf, cutIntervals, DRIVE_EV_SQL } = await import('../src/reports.js');
   const T = (s) => Date.parse(`2026-03-${s}:00.000Z`);
   // Rechenkern: Vermerk an → aus, automatisches Ende über parts_drive_ended, payload als Text (drive_payload) oder Objekt, offener Abschnitt bis jetzt
@@ -45996,6 +45996,12 @@ await test('Backlog 1626/1627 (Folge aus 1625): Ausfallzeit der Kennzahlen, tech
   r = await kpi(); v = r.vehicles.find((x) => x.vehicle_id === V1);
   eq(v.downtime_h, 78, 'Ausfall mit parallelem Auftrag'); eq(v.availability_downtime_h, 78);
   eq(v.parts_drive_h, 18, 'Backlog 1627: nur die tatsächlich nicht gezählten 18 h');
+  { // Backlog 1628: CSV nennt dieselben Stunden als neue letzte Spalte
+    const csv = new TextDecoder('utf-8', { ignoreBOM: true }).decode((await U.fleet.get(`/api/reports/kpi?from=${pm}&to=${pm}&format=csv`)).data).trim().split('\r\n');
+    const head = csv[0].split(';'); const row = csv.find((l) => l.split(';')[1] === V1).split(';');
+    eq(head[head.length - 1], 'nicht als Ausfall gezählt h (fährt bis zur Teilelieferung)'); eq(row[head.length - 1], '18', 'Backlog 1628: CSV-Spalte'); eq(row[head.indexOf('Ausfallzeit h')], '78');
+    ok(r.definitions.parts_drive_h && /paralleler Werkstattauftrag/.test(r.definitions.parts_drive_h), 'Backlog 1628: Definition');
+  }
   eq((await ak()).hours, 78, 'Akte mit parallelem Auftrag');
   // ohne Vermerk (Ereignis entfernt) wieder die volle Zeit – Gegenprobe
   await env.DB.prepare(`DELETE FROM case_events WHERE case_id=? AND action='set_parts_drive'`).bind(id).run();
