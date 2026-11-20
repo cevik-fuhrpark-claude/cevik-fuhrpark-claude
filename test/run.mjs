@@ -45886,6 +45886,33 @@ await test('Backlog 1620 (Blickwinkel „Werkstatt baut ein Garantieteil ein und
   ok(app.includes(' <span class="small muted" data-viwref>${[w.part_number ? esc(t(\'bk_warr_pn\')'), 'Kurzinfo zum Fahrzeug nennt Teilenummer/Beleg');
   for (const l of ['de', 'uk', 'en']) ok(['{d}', '{no}'].every((k) => STRINGS[l].bk_warr.includes(k)) && STRINGS[l].bk_warr_sup.includes('{s}') && STRINGS[l].bk_warr_doc.includes('{b}') && STRINGS[l].bk_warr_pn.includes('{n}') && STRINGS[l].bk_warr_hint.includes('0'), `${l}: bk_warr*`);
 });
+await test('Backlog 1622–1624 (Blickwinkel „Leitung prüft eine Werkstattrechnung gegen die gebuchten Teile“): Beleg am Teil erfassen und anzeigen, Hinweis auf doppelt gezählte Rechnung', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js'); const { invoiceKey } = await import('../src/cases.js');
+  const a = await toRepair();
+  // 1623: Beleg kommt beim freien Teil an (Werkstatt), beim Lagerartikel sendet die Oberfläche keinen
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Bremsscheibe vorne', quantity: 2, unit_price_net: '120', supplier: 'Teilehandel Nord', document_ref: 'RE 2026/0815' })).status, 200);
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Bremsbeläge vorne', quantity: 1, document_ref: 'Nr. RE-2026-0815' })).status, 200, 'unbewertet');
+  const d = (await U.fleet.get(`/api/cases/${a}`)).data;
+  const p1 = d.parts.find((p) => p.name === 'Bremsscheibe vorne'); ok(p1 && p1.document_ref === 'RE 2026/0815' && p1.supplier === 'Teilehandel Nord', JSON.stringify(p1));
+  ok((await U.ws.get(`/api/cases/${a}`)).data.parts.every((p) => 'document_ref' in p), 'Werkstatt sieht den Beleg');
+  ok(app.includes('<input id="pdocref" name="document_ref" maxlength="200" autocomplete="off">') && app.includes('delete p.supplier; delete p.document_ref;'), '1623: Formularfeld, Lagerartikel ohne Beleg');
+  // 1622: Teileliste nennt beim freien Teil Lieferant und Beleg
+  ok(app.includes('${!p.stock_item_id && (p.supplier || p.document_ref) ? ` <span class="small muted" data-pdoc>'), '1622: Teileliste');
+  // 1624: gleicher Vergleichsschlüssel wie die Dublettenprüfung am Server
+  ok(app.includes(`const invKey = (v) => String(v || '').trim().replace(/^(?:nr|no|n°|nº|num(?:ber|éro|ero)?)[.:\\s]+/i, '').toUpperCase().replace(/[^A-Z0-9]/g, '');`), 'invKey wie invoiceKey');
+  eq(invoiceKey('RE 2026/0815'), invoiceKey('Nr. RE-2026-0815')); eq(invoiceKey('re2026.0815'), invoiceKey('RE 2026/0815'));
+  ok(app.includes("if (action === 'add_external_cost' || action === 'add_part') invoicePartsWatch(d, action); // Backlog 1624") && app.includes('<input name="invoice_no"><div class="panel warn small" id="xinvparts" role="status" hidden></div>') && app.includes('!(cov && cov.checked)'), '1624: Hinweisfelder, entfällt bei „ersetzt eigene Teile“');
+  // Fremdleistung mit derselben Rechnung bleibt möglich (nur Hinweis) – Server bucht ohne Rückfrage
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Teilehandel Nord', invoice_no: 'RE2026-0815', amount_net: '240' })).status, 200);
+  const d2 = (await U.fleet.get(`/api/cases/${a}`)).data; ok(d2.external_costs.some((x) => invoiceKey(x.invoice_no) === invoiceKey(p1.document_ref)), 'Fremdleistung für den Gegenhinweis vorhanden');
+  ok(!('external_costs' in (await U.ws.get(`/api/cases/${a}`)).data) || !(await U.ws.get(`/api/cases/${a}`)).data.external_costs, 'Werkstatt sieht keine Fremdleistungen (kein Gegenhinweis)');
+  for (const l of ['de', 'uk', 'en']) {
+    ok(STRINGS[l].part_doc_hint && STRINGS[l].inv_parts_sum.includes('{s}') && STRINGS[l].inv_parts_hint && STRINGS[l].inv_ext_same && STRINGS[l].inv_ext_hint, `${l}: Texte`);
+    ok(PLURALS[l].inv_parts_same && Object.values(PLURALS[l].inv_parts_same).every((x) => x.includes('{n}')), `${l}: Mehrzahl`);
+  }
+});
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

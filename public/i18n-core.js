@@ -1411,6 +1411,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1614: „Arbeit beginnen“ nennt Standort bzw. künftigen Werkstatttermin
 // Backlog 1617/1619 (Blickwinkel „Werkstatt bucht ein Teil auf den falschen Auftrag“)
 // Backlog 1620 (Blickwinkel „Werkstatt baut ein Garantieteil ein und reicht die Garantie beim Lieferanten ein“)
+// Backlog 1622–1624 (Blickwinkel „Leitung prüft eine Werkstattrechnung gegen die gebuchten Teile“)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);
