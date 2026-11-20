@@ -1,5 +1,5 @@
 // [CLAUDE] Hinweise zum Fahrzeug: kurze Notizen je Fahrzeug/Umgebung, optional für zugeordnete Fahrer sichtbar; Archiv statt Löschen
-import { nowIso, uuid, bad, conflict, forbidden, notFound, str, flag, hideDriverName, berlinDate, isCalendarDate } from './util.js';
+import { nowIso, uuid, bad, conflict, forbidden, notFound, str, flag, hideDriverName, berlinDate, isCalendarDate, normPlate } from './util.js';
 
 // aktiv = nicht archiviert und nicht abgelaufen („gültig bis“ heute einschließlich, Berliner Datum); Platzhalter ? = berlinDate()
 export const noteActiveSql = (a = '') => `${a}archived_at IS NULL AND (${a}valid_until IS NULL OR ${a}valid_until >= ?)`;
@@ -11,13 +11,30 @@ export const NOTES_MAX_ACTIVE = 20;
 export const NOTES_ARCHIVE_MAX = 100; // Archiv-Anzeige: neueste 100 (eine Zeile mehr gelesen → truncated; vollständig in der Zeitleiste „Hinweise“)
 
 async function vehicleOk(env, vehicleId) {
-  const v = await env.DB.prepare('SELECT id FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, plate, active FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
+  return v;
+}
+
+// Backlog 1640 (Blickwinkel „Disposition hinterlegt einen Fahrzeughinweis am außer Betrieb genommenen Fahrzeug – Nachfolger mit gleichem
+// Kennzeichen“): Hinweise am außer Betrieb genommenen (verkauften/abgemeldeten) Fahrzeug erscheinen weder auf Startseite/Disposition noch
+// bei Fahrern (keine Zuordnung mehr) – ein „Bremse quietscht“ für den Nachfolger mit demselben Kennzeichen blieb so still liegen. Erfassen
+// bleibt erlaubt (z. B. „Käufer holt am … ab“); Liste und Antwort nennen den Zustand (seit laut Protokoll) und – wenn genau ein Fahrzeug in
+// Betrieb dasselbe Kennzeichen trägt – dieses Fahrzeug als Korrekturweg. Nur Hinweis, nur für außer Betrieb genommene Fahrzeuge (2 Abfragen).
+async function inactiveInfo(env, v) {
+  if (v.active) return null;
+  const [dx, others] = await Promise.all([
+    env.DB.prepare(`SELECT created_at FROM audit_log WHERE target=? AND action='vehicle.deactivate' ORDER BY created_at DESC LIMIT 1`).bind(v.id).first(),
+    env.DB.prepare('SELECT id, plate FROM vehicles WHERE active=1 AND id<>?').bind(v.id).all()]);
+  const key = normPlate(v.plate);
+  const same = key ? others.results.filter((o) => normPlate(o.plate) === key) : [];
+  return { ...(dx ? { since: dx.created_at } : {}), ...(same.length === 1 ? { successor: { id: same[0].id, plate: same[0].plate } } : {}) };
 }
 
 export async function listNotes(env, user, envName, vehicleId, query = {}) {
   if (!READ.includes(user.role)) throw forbidden();
-  await vehicleOk(env, vehicleId);
+  const veh = await vehicleOk(env, vehicleId);
+  const inact = query.archived === '1' ? null : await inactiveInfo(env, veh);
   const archived = query.archived === '1';
   const today = berlinDate();
   // Archiv: archivierte und abgelaufene Hinweise (abgelaufen = „gültig bis“ vor heute), jüngstes Ende zuerst
@@ -27,12 +44,12 @@ export async function listNotes(env, user, envName, vehicleId, query = {}) {
     ORDER BY ${archived ? 'COALESCE(n.archived_at, n.valid_until)' : 'n.created_at'} DESC, n.rowid DESC LIMIT ?`).bind(vehicleId, envName, today, NOTES_ARCHIVE_MAX + 1).all()).results;
   // aktive Hinweise sind auf NOTES_MAX_ACTIVE begrenzt; nur das Archiv wächst – dort Hinweis statt stillem Abschneiden
   const truncated = rows.length > NOTES_ARCHIVE_MAX; if (truncated) rows.length = NOTES_ARCHIVE_MAX;
-  return { ...(archived ? { truncated, max: NOTES_ARCHIVE_MAX } : { max_active: NOTES_MAX_ACTIVE }), notes: rows.map((r) => { const o = { ...hideDriverName(user, r, 'created_by_name', 'created_by_role'), for_driver: !!r.for_driver, created_by_active: !!r.created_by_active, expired: !r.archived_at && !!r.valid_until && r.valid_until < today }; if (o.created_by_name_hidden) delete o.created_by_active; return o; }), can_write: WRITE.includes(user.role) };
+  return { ...(archived ? { truncated, max: NOTES_ARCHIVE_MAX } : { max_active: NOTES_MAX_ACTIVE }), ...(inact ? { vehicle_inactive: inact } : {}), notes: rows.map((r) => { const o = { ...hideDriverName(user, r, 'created_by_name', 'created_by_role'), for_driver: !!r.for_driver, created_by_active: !!r.created_by_active, expired: !r.archived_at && !!r.valid_until && r.valid_until < today }; if (o.created_by_name_hidden) delete o.created_by_active; return o; }), can_write: WRITE.includes(user.role) };
 }
 
 export async function addNote(env, user, envName, vehicleId, body) {
   if (!WRITE.includes(user.role)) throw forbidden();
-  await vehicleOk(env, vehicleId);
+  const veh = await vehicleOk(env, vehicleId);
   const text = str(body.text, { key: 'text', required: true, max: 500, field: 'Hinweis' });
   if (text.length < 3) throw bad('validation', 'Hinweis ist zu kurz.', { field_key: 'text' });
   const today = berlinDate();
@@ -72,7 +89,8 @@ export async function addNote(env, user, envName, vehicleId, body) {
   }
   if (!(r.meta && r.meta.changes)) throw bad('validation', `Höchstens ${NOTES_MAX_ACTIVE} aktive Hinweise je Fahrzeug – bitte erledigte archivieren.`);
   await audit(env, user.id, 'vehicle.note_add', vehicleId, { note: id, for_driver: flag(body.for_driver, 'Für Fahrer sichtbar', false, { key: 'for_driver' }), valid_until: validUntil });
-  return { id };
+  const inact = await inactiveInfo(env, veh); // Backlog 1640: nur Hinweis
+  return { id, ...(inact ? { vehicle_inactive: inact } : {}) };
 }
 
 export async function archiveNote(env, user, envName, vehicleId, noteId) {

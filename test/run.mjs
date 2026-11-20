@@ -46294,6 +46294,36 @@ await test('Backlog 1639 (Blickwinkel „Werkstatt erfasst eine HU/Wartung am au
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].mh_after_deact.includes('{s}'), l); ok(STRINGS[l].md_deact_warn.includes('{s}'), l); }
 });
 
+await test('Backlog 1640 (Blickwinkel „Disposition hinterlegt einen Fahrzeughinweis am außer Betrieb genommenen Fahrzeug – Nachfolger mit gleichem Kennzeichen“): Hinweisliste und Antwort beim Erfassen nennen `vehicle_inactive` (seit laut Protokoll, Nachfolger nur bei genau einem Fahrzeug in Betrieb mit gleichem Kennzeichen); in Betrieb und im Archiv ohne; Erfassen bleibt erlaubt; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const A = 'VIN:WMA15SZZ2HM722774';
+  const plateA = db.prepare('SELECT plate FROM vehicles WHERE id=?').get(A).plate;
+  const list = async (u = U.fleet, q = '') => (await u.get(`/api/vehicles/${A}/notes${q}`)).data;
+  let r = await list(); ok(!('vehicle_inactive' in r), 'in Betrieb: kein Hinweis');
+  let p = await U.fleet.post(`/api/vehicles/${A}/notes`, { text: 'Rampe klemmt' }); eq(p.status, 201); ok(!('vehicle_inactive' in p.data), 'Antwort in Betrieb');
+  // außer Betrieb ohne Protokoll (Import): Hinweis ohne Datum, ohne Nachfolger
+  db.prepare('UPDATE vehicles SET active=0 WHERE id=?').run(A);
+  r = await list(); eq(JSON.stringify(r.vehicle_inactive), '{}', 'ohne Protokoll/Nachfolger');
+  // Protokoll + Nachfolger mit gleichem Kennzeichen (andere Schreibweise)
+  const since = new Date(Date.now() - 3 * 86400000).toISOString();
+  db.prepare(`INSERT INTO audit_log(id, actor_id, action, target, detail, created_at) VALUES ('al-1640-1', NULL, 'vehicle.deactivate', ?, ?, ?)`).run(A, JSON.stringify({ plate: plateA, reason: 'Verkauf' }), since);
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES('VIN:NF1640','NF1640',?,'lkw','Dortmund',1,0,?,?)`).run(plateA.replace(/[\s-]/g, '').toLowerCase(), now, now);
+  for (const [n, u] of [['Leitung', U.fleet], ['Werkstatt', U.ws], ['Lesend', U.viewer]]) { const x = await list(u); eq(JSON.stringify(x.vehicle_inactive), JSON.stringify({ since, successor: { id: 'VIN:NF1640', plate: plateA.replace(/[\s-]/g, '').toLowerCase() } }), n); }
+  ok(!('vehicle_inactive' in await list(U.fleet, '?archived=1')), 'Archiv ohne');
+  p = await U.fleet.post(`/api/vehicles/${A}/notes`, { text: 'Käufer holt Freitag ab' }); eq(p.status, 201, 'Erfassen bleibt erlaubt'); eq(p.data.vehicle_inactive.successor.id, 'VIN:NF1640');
+  // zwei Fahrzeuge in Betrieb mit gleichem Kennzeichen → mehrdeutig, kein Nachfolger
+  db.prepare(`INSERT INTO vehicles(id,vin,plate,kind,site,active,eval_excluded,created_at,updated_at) VALUES('VIN:NF1640B','NF1640B',?,'lkw','Dortmund',1,0,?,?)`).run(plateA, now, now);
+  r = await list(); eq(JSON.stringify(r.vehicle_inactive), JSON.stringify({ since }), 'mehrdeutig');
+  // wieder in Betrieb → kein Hinweis
+  db.prepare('UPDATE vehicles SET active=1 WHERE id=?').run(A);
+  ok(!('vehicle_inactive' in await list()), 'wieder in Betrieb');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('data-vninact') && app.includes('data-vnsucc') && app.includes("t('vn_inact_succ')"), 'Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].vn_inact && STRINGS[l].vn_inact_succ, l); ok(STRINGS[l].vn_inact_since.includes('{s}'), l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
