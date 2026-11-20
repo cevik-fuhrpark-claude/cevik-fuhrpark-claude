@@ -551,7 +551,8 @@ export async function journal(env, user, envName, query = {}) {
   for (const [k, d] of [['from', from], ['to', to]]) if (!isCalendarDate(d)) throw bad('validation', 'Zeitraum: Datum im Format JJJJ-MM-TT angeben.', { field_key: k });
   if (from > to) throw bad('validation', 'Zeitraum: „von“ liegt nach „bis“.', { field_key: 'to' });
   if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) throw bad('validation', 'Zeitraum höchstens ein Jahr.', { field_key: 'from' });
-  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'korrektur', 'umlagerung', 'inventur'], 'Buchungsart') : null;
+  // Backlog 1633: `entnahme_ohne_vorgang` = Entnahmen ohne Vorgang (Werkstattbedarf, Verbrauchsmaterial) – stehen in keinen Fahrzeugkosten
+  const type = query.type ? oneOf(String(query.type), ['zugang', 'entnahme', 'entnahme_ohne_vorgang', 'korrektur', 'umlagerung', 'inventur'], 'Buchungsart', { key: 'type' }) : null;
   // optional: nur ein Artikel (Verweis aus der Artikelakte); gleiche Sichtprüfung wie die Artikelakte (Umgebung, Werkstatt nur eigenes Lager)
   const item = query.item ? await loadItem(env, user, envName, String(query.item).slice(0, 64)) : null;
   const inv = type === 'inventur'; // Inventurdifferenzen = Korrekturen aus „Inventur buchen“ (Beleg „Inventur JJJJ-MM-TT“)
@@ -559,14 +560,14 @@ export async function journal(env, user, envName, query = {}) {
   // am Vortag (z. B. Inventur am Monatsletzten) verdrängten Buchungen des Zeitraums, ohne Hinweis „gekürzt“
   const lo = berlinDayStartIso(from);
   const hi = berlinDayStartIso(new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10));
-  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : inv ? "AND m.type='korrektur' AND m.transfer_id IS NULL AND m.document_ref GLOB 'Inventur [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND m.note GLOB 'Inventur *: gezählt *'" : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
+  const typeSql = type === 'umlagerung' ? 'AND m.transfer_id IS NOT NULL' : type === 'entnahme_ohne_vorgang' ? "AND m.type='entnahme' AND m.transfer_id IS NULL AND m.case_id IS NULL" : inv ? "AND m.type='korrektur' AND m.transfer_id IS NULL AND m.document_ref GLOB 'Inventur [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND m.note GLOB 'Inventur *: gezählt *'" : type ? 'AND m.type=? AND m.transfer_id IS NULL' : '';
   // Inventur: Buchbestand unmittelbar vor der Korrektur (Summe aller früheren Buchungen des Artikels) und heutiger Artikelpreis
   const invSql = inv ? ', (SELECT COALESCE(SUM(p.qty),0) FROM stock_movements p WHERE p.item_id=m.item_id AND p.created_at < m.created_at) AS book_before, i.unit_price_net AS item_price_net' : '';
   const rows = (await env.DB.prepare(`SELECT m.id, m.type, m.qty, m.unit_price_net, m.supplier, m.document_ref, m.note, m.created_at, m.case_id, m.transfer_id, m.transfer_site,
       i.id AS item_id, i.site, i.name, i.part_number, i.unit, c.case_no, v.plate${invSql}
     FROM stock_movements m JOIN stock_items i ON i.id=m.item_id LEFT JOIN cases c ON c.id=m.case_id LEFT JOIN vehicles v ON v.id=c.vehicle_id
     WHERE m.environment=? AND m.created_at >= ? AND m.created_at < ? ${site ? 'AND i.site=?' : ''} ${item ? 'AND m.item_id=?' : ''} ${typeSql}
-    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && !inv ? [type] : []), JOURNAL_MAX + 1]).all()).results;
+    ORDER BY m.created_at, m.id LIMIT ?`).bind(...[envName, lo, hi, ...(site ? [site] : []), ...(item ? [item.id] : []), ...(type && type !== 'umlagerung' && type !== 'entnahme_ohne_vorgang' && !inv ? [type] : []), JOURNAL_MAX + 1]).all()).results;
   // kaufmännisch symmetrisch (18.10.2026: −0,125 wurde −0,12, +0,125 aber +0,13 – Rest 0,01 € bei Bestand 0)
   // gegen Gleitkommafehler wie alle Beträge (roundCents: 3,5 × 0,29 = 1,015 → 1,02; 18.10.2026)
   const r2 = roundCents;
@@ -577,7 +578,11 @@ export async function journal(env, user, envName, query = {}) {
   const sum = {};
   // Umlagerungen getrennt: Entnahme im Quell- und Zugang im Ziellager heben sich im Gesamtbestand auf
   for (const t of ['zugang', 'entnahme', 'korrektur', 'umlagerung']) sum[t] = { count: 0, value_net: 0, unvalued: 0 };
-  for (const r of list) { const x = sum[r.transfer_id ? 'umlagerung' : r.type]; x.count++; if (r.value_net === null) x.unvalued++; else x.value_net = r2(x.value_net + r.value_net); }
+  // Backlog 1633 (Blickwinkel „Leitung prüft am Monatsende, wofür Lagerware entnommen wurde“): Entnahmen zusätzlich getrennt nach „für einen
+  // Vorgang“ (steht in den Kosten je Fahrzeug) und „ohne Vorgang“ (Werkstattbedarf/Verbrauchsmaterial – in keinen Fahrzeugkosten); Summe unverändert
+  sum.entnahme.with_case = { count: 0, value_net: 0, unvalued: 0 }; sum.entnahme.without_case = { count: 0, value_net: 0, unvalued: 0 };
+  const addTo = (x, r) => { x.count++; if (r.value_net === null) x.unvalued++; else x.value_net = r2(x.value_net + r.value_net); };
+  for (const r of list) { addTo(sum[r.transfer_id ? 'umlagerung' : r.type], r); if (r.type === 'entnahme' && !r.transfer_id) addTo(sum.entnahme[r.case_id ? 'with_case' : 'without_case'], r); }
   if (inv) {
     // Wert der Differenz zum heute hinterlegten Artikelpreis (Korrekturen tragen keinen eigenen Preis); ohne Preis leer, nie 0 €
     const s = { count: 0, plus: 0, minus: 0, plus_value_net: 0, minus_value_net: 0, unvalued: 0 };

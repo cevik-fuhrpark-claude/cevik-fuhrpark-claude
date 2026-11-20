@@ -277,6 +277,7 @@ UI-Fahrerakte Fahrzeug zuordnen: Kennzeichen als Link mit „Beenden“, „zurz
 UI-Schadstoffklasse/Achsen: Fahrzeugdaten mit Auswahl (nur Lkw), Achszahl markiert, Anzeige, Anhänger ohne Klasse, Listenfilter, DE/UK/EN 390/820/1366 (Backlog 1530/1531)|ui-schadstoffklasse.py|/tmp/cfp-schadstoffklasse.log
 UI-Erstzulassung vor Baujahr: dauerhafter Hinweis in der Fahrzeugakte, Datumsfeld mit min/max, DE/UK/EN 390/820/1366 (Backlog 1629/1630)|ui-erstzulassung-baujahr.py|/tmp/cfp-erstzulassung-baujahr.log
 UI-Unsichtbare Zeichen: Meldung nur aus Breite-null-Leerzeichen/weichem Trennzeichen gilt als zu kurz, Feld markiert, DE/UK/EN 390/820/1366 (Backlog 1631)|ui-unsichtbare-zeichen.py|/tmp/cfp-unsichtbare-zeichen.log
+UI-Lagerjournal Entnahme ohne Vorgang (Werkstattbedarf, Backlog 1633)|ui-lager-entnahme-ohne-vorgang.py|/tmp/cfp-lager-entnahme-ohne-vorgang.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log

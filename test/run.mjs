@@ -46066,6 +46066,35 @@ await test('Backlog 1631 (Blickwinkel „Leitung kopiert Aktenzeichen, Rechnungs
   ok(app.includes("/^(text|search|tel|email|url|number|)$/.test(el.getAttribute('type') || '')"), 'nie in Passwortfeldern');
 });
 
+await test('Backlog 1633 (Blickwinkel „Leitung prüft am Monatsende, wofür Lagerware entnommen wurde“): Lagerjournal trennt Entnahmen für Vorgänge und ohne Vorgang (Werkstattbedarf), Filter „Entnahme ohne Vorgang“, Umlagerungen zählen nicht mit', async () => {
+  const { U, cmd, toRepair } = await freshWorld();
+  const a = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Bremsenreiniger', unit_price_net: 4.2, initial_qty: 20 })).data.id;
+  const b = (await U.ws.post('/api/stock', { site: 'DORTMUND', name: 'Kabelbinder ohne Preis', initial_qty: 100 })).data.id;
+  const id = await toRepair();
+  eq((await cmd(U.ws, id, 'add_part', { stock_item_id: a, quantity: 2 })).status, 200, 'Entnahme im Vorgang');
+  eq((await U.ws.post(`/api/stock/${a}/movements`, { type: 'entnahme', qty: 3, note: 'Werkstattbedarf', request_key: rk() })).status, 201, 'Entnahme ohne Vorgang');
+  eq((await U.ws.post(`/api/stock/${b}/movements`, { type: 'entnahme', qty: 10, request_key: rk() })).status, 201, 'Entnahme ohne Preis');
+  eq((await U.ws.post(`/api/stock/${a}/transfer`, { to_site: 'MUENCHEN', qty: 1 })).status, 201, 'Umlagerung');
+  const j = (await U.fleet.get('/api/stock/journal')).data;
+  const e = j.summary.entnahme;
+  eq(e.count, 3, 'Entnahmen gesamt ohne Umlagerung'); eq(e.value_net, -21, 'Summe unverändert (−2×4,20 − 3×4,20)'); eq(e.unvalued, 1);
+  eq(JSON.stringify(e.with_case), JSON.stringify({ count: 1, value_net: -8.4, unvalued: 0 }), 'für Vorgänge');
+  eq(JSON.stringify(e.without_case), JSON.stringify({ count: 2, value_net: -12.6, unvalued: 1 }), 'ohne Vorgang (unbewertete nie 0 €)');
+  eq(j.summary.umlagerung.count, 2, 'Umlagerung getrennt');
+  const f = (await U.ws.get('/api/stock/journal?type=entnahme_ohne_vorgang')).data;
+  eq(f.movements.length, 2, 'Filter: nur Entnahmen ohne Vorgang'); ok(f.movements.every((m) => m.type === 'entnahme' && !m.case_id && !m.transfer_id), 'keine Vorgangs-/Umlagerungsbuchung');
+  eq(f.type, 'entnahme_ohne_vorgang');
+  const csv = await U.fleet.get('/api/stock/journal?type=entnahme_ohne_vorgang&format=csv'); eq(csv.status, 200);
+  const txt = new TextDecoder('utf-8', { ignoreBOM: true }).decode(csv.data); eq(txt.trim().split('\r\n').length, 3, 'CSV: Kopf + 2 Zeilen'); ok(txt.includes(';Entnahme;'), 'Buchungsart Entnahme');
+  const bad = await U.fleet.get('/api/stock/journal?type=ohne'); eq(bad.status, 400); eq(bad.data.field_key, 'type', 'Feld markierbar');
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("'entnahme_ohne_vorgang', 'korrektur', 'umlagerung', 'inventur'].map(") && app.includes('<select id="jtype" name="type">'), 'Auswahl „Entnahme ohne Vorgang“, Feld markierbar');
+  ok(app.includes("t('sj_out_nocase')") && app.includes("t('sj_out_nocase_hint')"), 'Aufteilung und Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['mv_entnahme_ohne_vorgang', 'sj_out_case', 'sj_out_nocase', 'sj_out_nocase_hint']) ok(STRINGS[l][k], `${l}.${k}`);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
