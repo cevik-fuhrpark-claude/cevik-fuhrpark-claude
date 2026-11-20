@@ -46095,6 +46095,40 @@ await test('Backlog 1633 (Blickwinkel „Leitung prüft am Monatsende, wofür La
   for (const l of ['de', 'uk', 'en']) for (const k of ['mv_entnahme_ohne_vorgang', 'sj_out_case', 'sj_out_nocase', 'sj_out_nocase_hint']) ok(STRINGS[l][k], `${l}.${k}`);
 });
 
+await test('Backlog 1634 (Blickwinkel „Leitung erfasst ein Schreiben, dessen Tatzeit vor der Erstzulassung des zugeordneten Fahrzeugs liegt“): Bußgeld zeigt Hinweis (Jahr prüfen bzw. Kennzeichen gehörte damals einem anderen Fahrzeug), nennt das andere Fahrzeug mit demselben Kennzeichen; nicht ohne Erstzulassung, nicht nach der Erstzulassung, nicht für Leserolle', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const A = 'VIN:WMA15SZZ2HM722774'; const B = 'VIN:WDB9630051L917317';
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run(day(-10), A);
+  const body = (ref, d) => ({ kind: 'anhoerung', authority: 'Bußgeldstelle Test 1634', reference: ref, offense_type: 'geschwindigkeit', offense_at: d + 'T10:15', plate_in_letter: 'SZ-YC 5513', amount_eur: 30 });
+  const a = await U.fleet.post('/api/fines', body('AZ-1634-1', day(-30))); eq(a.status, 201, JSON.stringify(a.data)); eq(a.data.vehicle_matched, true);
+  const d1 = (await U.fleet.get(`/api/fines/${a.data.id}`)).data;
+  eq(d1.offense_before_registration && d1.offense_before_registration.first_registration, day(-10), JSON.stringify(d1.offense_before_registration));
+  eq(d1.offense_before_registration.other_vehicle, undefined, 'kein anderes Fahrzeug');
+  // Leserolle: kein Hinweis (nur für die Ermittlung)
+  const dv = await U.viewer.get(`/api/fines/${a.data.id}`); eq(dv.status, 200); eq(dv.data.offense_before_registration, undefined, 'Leserolle');
+  // nach der Erstzulassung: kein Hinweis
+  const b = await U.fleet.post('/api/fines', body('AZ-1634-2', day(-5))); eq(b.status, 201);
+  eq((await U.fleet.get(`/api/fines/${b.data.id}`)).data.offense_before_registration, undefined, 'nach EZ');
+  // Wunschkennzeichen vom verkauften Lkw übernommen: B (außer Betrieb, zugelassen vor der Tat) trägt dasselbe Kennzeichen → wird genannt
+  db.prepare('UPDATE vehicles SET plate=?, active=0, first_registration=? WHERE id=?').run('SZ-YC 5513', day(-2000), B);
+  const d2 = (await U.fleet.get(`/api/fines/${a.data.id}`)).data;
+  eq(d2.offense_before_registration.other_vehicle && d2.offense_before_registration.other_vehicle.id, B, JSON.stringify(d2.offense_before_registration));
+  // anderes Fahrzeug erst nach der Tat zugelassen → nicht genannt
+  db.prepare('UPDATE vehicles SET first_registration=? WHERE id=?').run(day(-20), B);
+  eq((await U.fleet.get(`/api/fines/${a.data.id}`)).data.offense_before_registration.other_vehicle, undefined, 'B erst nach der Tat zugelassen');
+  // früheres Kennzeichen (Umkennzeichnung) eines anderen Fahrzeugs zur Tatzeit → genannt
+  db.prepare('UPDATE vehicles SET plate=?, active=1, first_registration=NULL WHERE id=?').run('SZ-KC 5515', B);
+  db.prepare(`INSERT INTO vehicle_plates(id,vehicle_id,plate,valid_until,source) VALUES ('vp-1634',?,'SZ YC 5513',?,'test')`).run(B, day(-12) + 'T08:00:00.000Z');
+  eq((await U.fleet.get(`/api/fines/${a.data.id}`)).data.offense_before_registration.other_vehicle?.plate, 'SZ-KC 5515', 'früheres Kennzeichen');
+  // ohne Erstzulassung kein Hinweis
+  db.prepare('UPDATE vehicles SET first_registration=NULL WHERE id=?').run(A);
+  eq((await U.fleet.get(`/api/fines/${a.data.id}`)).data.offense_before_registration, undefined, 'ohne EZ');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'); ok(app.includes('id="fbeforeez"') && app.includes('data-fother'), 'Hinweis in der Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { for (const k of ['{d}', '{ez}', '{p}']) ok(STRINGS[l].fine_before_reg.includes(k), l + k); ok(STRINGS[l].fine_before_reg_other.includes('{p}') && STRINGS[l].fine_before_reg_fix && STRINGS[l].fine_before_reg_locked, l); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

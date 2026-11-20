@@ -1414,6 +1414,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1622–1624 (Blickwinkel „Leitung prüft eine Werkstattrechnung gegen die gebuchten Teile“)
 // Backlog 1625: Ausfall laut Vorgang im Versicherungsfall (Nutzungsausfall gegenüber der Gegenseite)
 // Backlog 1633: Lagerjournal – Entnahmen für Vorgänge / ohne Vorgang (Werkstattbedarf) getrennt
+// Backlog 1634: Bußgeld – Tatzeit vor der Erstzulassung des zugeordneten Fahrzeugs
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

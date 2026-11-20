@@ -205,6 +205,25 @@ export async function fineDetail(env, user, envName, id) {
     if (pk.vehicle) out.vehicle_matchable = { id: pk.vehicle.id, plate: pk.vehicle.plate };
     else if (!pk.ambiguous) { const tr = trailerOf(vs, f.plate_in_letter); if (tr) out.trailer_of = { id: tr.id, plate: tr.plate }; }
   }
+  // Backlog 1634 (Blickwinkel „Leitung erfasst ein Schreiben, dessen Tatzeit vor der Erstzulassung des zugeordneten Fahrzeugs liegt“):
+  // Tippfehler im Jahr der Tatzeit oder das Kennzeichen gehörte damals einem anderen Fahrzeug (Wunschkennzeichen vom verkauften Lkw
+  // übernommen) – die Fahrerermittlung am heutigen Fahrzeug wäre dann falsch. Nur Hinweis, keine Automatik; ohne Erstzulassung kein Hinweis.
+  if (f.vehicle_id && isMgr(user)) {
+    const v = await env.DB.prepare('SELECT plate, first_registration FROM vehicles WHERE id=?').bind(f.vehicle_id).first();
+    const day = berlinDate(f.offense_at);
+    if (v && v.first_registration && day && day < v.first_registration) {
+      const r = { first_registration: v.first_registration };
+      // anderes Fahrzeug mit demselben Kennzeichen (heute oder zur Tatzeit als früheres), zur Tatzeit schon zugelassen (bzw. Erstzulassung unbekannt)
+      const key = normPlate(v.plate);
+      const cand = (await env.DB.prepare(`SELECT x.id, x.plate, x.first_registration, NULL AS valid_until FROM vehicles x WHERE x.id<>?1
+        UNION ALL SELECT x.id, p.plate, x.first_registration, p.valid_until FROM vehicle_plates p JOIN vehicles x ON x.id=p.vehicle_id WHERE x.id<>?1 AND p.valid_until > ?2`)
+        .bind(f.vehicle_id, f.offense_at).all()).results
+        .filter((x) => key && normPlate(x.plate) === key && (!x.first_registration || x.first_registration <= day));
+      const ids = [...new Set(cand.map((x) => x.id))];
+      if (ids.length === 1) { const cur = await env.DB.prepare('SELECT id, plate FROM vehicles WHERE id=?').bind(ids[0]).first(); if (cur) r.other_vehicle = { id: cur.id, plate: cur.plate }; }
+      out.offense_before_registration = r;
+    }
+  }
   if (isMgr(user)) {
     out.events = events;
     // bestätigte bzw. beim Zurücksetzen abgelöste Fahrer im Verlauf mit Namen (20.10.2026: „bisheriger Fahrer bleibt im Verlauf“ galt nur in der Datenbank)
