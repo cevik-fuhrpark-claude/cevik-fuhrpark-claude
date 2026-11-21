@@ -1,6 +1,6 @@
-# [CLAUDE] UI-Test (19.10.2026): Fahrernachweis stornieren – Tippfehler „gültig bis“ (2036) per „Stornieren“ mit Begründung,
+# [CLAUDE] UI-Test (19.10.2026): Fahrernachweis stornieren – Tippfehler „gültig bis“ (Jahr +4; seit Backlog 1656 lehnt der Server Fahrerkarten > 5 Jahre ab) per „Stornieren“ mit Begründung,
 # danach gilt der richtige Nachweis; Storno im Verlauf sichtbar (DE/UK), Handy 390 px ohne Querscrollen.
-import asyncio, os
+import asyncio, os, datetime
 def _r(m):
     print(m)
     if m.startswith('FEHLER'): raise SystemExit(1)
@@ -14,7 +14,7 @@ async def main():
         s = await api('POST','/api/setup',{'setup_code':'test-setup-code-123','username':'dr.inh','display_name':'DR'})
         if s['s'] == 200: await api('POST','/api/invite/accept',{'token':s['d']['invite_token'],'password':PW}); await api('POST','/api/login',{'username':'dr.inh','password':PW})
         d = await api('POST','/api/drivers',{'display_name':'Anna Probe'}); D=d['d']['id']
-        t = await api('POST',f'/api/drivers/{D}/documents',{'kind':'fahrerkarte','valid_until':'2036-10-01','evidence':'Karte Tippfehler'})
+        t = await api('POST',f'/api/drivers/{D}/documents',{'kind':'fahrerkarte','valid_until':f'{datetime.date.today().year+4}-10-01','evidence':'Karte Tippfehler'})
         await api('POST',f'/api/drivers/{D}/documents',{'kind':'fahrerkarte','valid_until':'2026-10-01','evidence':'Karte richtig'})
         for lang in ['de','uk']:
             await api('PATCH','/api/me',{'language':lang}); await q.goto(B+'/#/'); await q.reload(); await q.goto(B+f'/#/drivers/{D}'); await q.wait_for_timeout(1200)

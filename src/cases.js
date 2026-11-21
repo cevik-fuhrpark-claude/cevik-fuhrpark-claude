@@ -787,7 +787,16 @@ function warrantyDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !isCalendarDate(d)) throw bad('validation', 'Gewährleistung bis: bitte gültiges Datum (JJJJ-MM-TT) angeben.');
   if (d > addMonths(berlinDate(), 120)) throw bad('validation', 'Gewährleistung bis: höchstens 10 Jahre voraus.');
+  // Backlog 1654 (Blickwinkel „Werkstatt erfasst ein Teil mit vertipptem Gewährleistungsjahr“): 2016 statt 2026 → nie aktiv, der
+  // Hinweis „gleiches Teil hat noch Gewährleistung“ (Backlog 1620) bliebe still. Abgelaufene Angaben laut Rechnung bleiben zulässig.
+  if (d < '2000-01-01') throw bad('validation', 'Gewährleistung bis liegt vor 2000 – bitte Jahr prüfen.');
   return d;
+}
+// Backlog 1654: Gewährleistungsende vor dem Monat der Erstzulassung des Fahrzeugs = Tippfehler im Jahr (wie 1647/1649)
+async function warrantyRegCheck(env, c, d) {
+  if (!d) return;
+  const fr = (await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(c.vehicle_id).first() || {}).first_registration;
+  if (fr && d.slice(0, 7) < String(fr).slice(0, 7)) throw bad('validation', 'Gewährleistung bis liegt vor der Erstzulassung des Fahrzeugs – bitte Jahr prüfen.', { field_key: 'warranty_until' });
 }
 // Nach einer Kostenbuchung: übersteigen die bewerteten Kosten (Ist + Schätzung; unbewertete Positionen zählen nicht) die Grenze bzw.
 // den zuletzt freigegebenen Betrag, wird der Auftrag einmalig markiert, im Verlauf vermerkt und die Fuhrparkleitung informiert.
@@ -1085,7 +1094,7 @@ function followupDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Wiedervorlage im Format JJJJ-MM-TT.');
   const today = berlinDate();
-  if (d < today) throw bad('followup_past', 'Wiedervorlage liegt in der Vergangenheit.');
+  if (d < today) throw bad('followup_past', 'Wiedervorlage liegt in der Vergangenheit.', { field_key: 'followup_on' }); // Backlog 1659: Feld markieren (eigener Code bleibt)
   if (d > oneYearAhead(today)) throw bad('validation', 'Wiedervorlage liegt mehr als ein Jahr in der Zukunft.');
   return d;
 }
@@ -1097,7 +1106,7 @@ function partsDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Liefertermin im Format JJJJ-MM-TT.');
   const today = berlinDate();
-  if (d < today) throw bad('parts_eta_past', 'Liefertermin liegt in der Vergangenheit.');
+  if (d < today) throw bad('parts_eta_past', 'Liefertermin liegt in der Vergangenheit.', { field_key: 'parts_expected_date' }); // Backlog 1659: Feld markieren (eigener Code bleibt)
   if (d > oneYearAhead(today)) throw bad('validation', 'Liefertermin liegt mehr als ein Jahr in der Zukunft.');
   return d;
 }
@@ -1109,7 +1118,7 @@ function readyDateRaw(v) {
   const d = String(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d + 'T00:00:00Z')) || new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) !== d) throw bad('validation', 'Fertigstellung im Format JJJJ-MM-TT.');
   const today = berlinDate();
-  if (d < today) throw bad('ready_past', 'Voraussichtliche Fertigstellung liegt in der Vergangenheit.');
+  if (d < today) throw bad('ready_past', 'Voraussichtliche Fertigstellung liegt in der Vergangenheit.', { field_key: 'ready_expected_on' }); // Backlog 1659: Feld markieren (eigener Code bleibt)
   if (d > oneYearAhead(today)) throw bad('validation', 'Voraussichtliche Fertigstellung liegt mehr als ein Jahr in der Zukunft.');
   return d;
 }
@@ -1737,6 +1746,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const on = withKey('towed_on', () => pastDay(p.towed_on, 'Abgeschleppt am'));
       if (on && !svc) throw bad('validation', 'Abschleppdatum nur zusammen mit dem Abschleppdienst angeben.', { field_key: 'tow_service' });
       if (on && on < oneYearBack(berlinDate())) throw bad('validation', 'Abgeschleppt am: liegt mehr als ein Jahr zurück.', { field_key: 'towed_on' });
+      // Backlog 1657 (Blickwinkel „Leitung trägt die Abschleppung nach und vertippt den Tag“): vor dem Schadenzeitpunkt kann nicht abgeschleppt
+      // worden sein (z. B. 12.10. statt 21.10.). Nur mit Schadenzeitpunkt; ein unverändert gespeicherter Altwert bleibt speicherbar (wie 1650).
+      if (on && c.occurred_at && on !== (c.towed_on || null) && on < (c.occurred_at.length === 10 ? c.occurred_at : berlinDate(c.occurred_at))) throw bad('validation', 'Abgeschleppt am liegt vor dem Schadenzeitpunkt.', { field_key: 'towed_on' });
       const from = { location: c.vehicle_location || null, service: c.tow_service || null, on: c.towed_on || null };
       const to = { location: loc, service: svc, on };
       if (from.location === to.location && from.service === to.service && from.on === to.on) throw bad('validation', 'Standort ist unverändert.', { field_key: 'vehicle_location' });
@@ -2113,7 +2125,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // (22.10.2026: Teil zählte als Schätzung, die Entnahme im Lagerjournal als tatsächlicher Wert)
       const stockPriced = !!stockItem && stockItem.unit_price_net !== null && stockItem.unit_price_net !== undefined;
       const valuation = price === null ? 'unvalued' : stockPriced ? (oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart'), 'actual') : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
-      const warranty = warrantyDate(p.warranty_until);
+      const warranty = warrantyDate(p.warranty_until); await warrantyRegCheck(env, c, warranty);
       // Foto/PDF zum Teil (Backlog 426: Typenschild/Teilenummer fotografiert): optional eine Datei dieses Vorgangs derselben Umgebung
       let ptFile = null;
       if (p.file_id !== undefined && p.file_id !== null && p.file_id !== '') {
@@ -2186,7 +2198,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       const amount = num(p.amount_net, { key: 'amount_net', min: 0, max: 10000000, field: 'Betrag', nullable: true, net: true, cents: true, decimalPoint: pointDec(user), decimalComma: commaDec(user) });
       const valuation = amount === null ? 'unvalued' : oneOf(p.valuation || 'actual', ['actual', 'estimate'], 'Wertart');
       const eid = uuid();
-      const warranty = warrantyDate(p.warranty_until);
+      const warranty = warrantyDate(p.warranty_until); await warrantyRegCheck(env, c, warranty);
       // Doppelte Rechnung (Backlog 233): gleiche Rechnungsnummer schon als Fremdleistung gebucht (dieser oder ein anderer Vorgang derselben
       // Umgebung) → Hinweis mit Fundstellen, Buchung nur nach ausdrücklicher Bestätigung (Sammelrechnung für mehrere Fahrzeuge ist zulässig).
       // Fremdleistungen buchen nur Inhaber/Fuhrparkleitung (sehen alle Vorgänge und Kosten).

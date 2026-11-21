@@ -296,6 +296,13 @@ UI-Begründung per Rückfrage: leer/zu kurz wird erneut erfragt (Backlog 1648)|u
 UI-Fremdleistung: Datum laut Rechnung vor der Erstzulassung (Backlog 1649)|ui-fremdleistung-erstzulassung.py|/tmp/cfp-fremdleistung-erstzulassung.log
 UI-Versicherungsfall: Daten nicht vor dem Schadenzeitpunkt (Backlog 1650)|ui-versicherung-schadentag.py|/tmp/cfp-versicherung-schadentag.log
 UI-Vertrag: Beginn vor der Erstzulassung → Hinweis (Backlog 1652)|ui-vertrag-erstzulassung.py|/tmp/cfp-vertrag-erstzulassung.log
+UI-Gewährleistung bis vor der Erstzulassung: Teil/Fremdleistung, min/max, Feldmarkierung (Backlog 1654)|ui-gewaehrleistung-erstzulassung.py|/tmp/cfp-gewaehrleistung-erstzulassung.log
+UI-Bestellvermerk: Liefertermin min/max, Feldmarkierung (Backlog 1655)|ui-bestellvermerk-liefertermin.py|/tmp/cfp-bestellvermerk-liefertermin.log
+UI-Fahrerkarte: Gültig bis höchstens 5 Jahre, min/max, Feldmarkierung (Backlog 1656)|ui-fahrerkarte-gueltig.py|/tmp/cfp-fahrerkarte-gueltig.log
+UI-Abschleppung nicht vor dem Schadenzeitpunkt: min, Feldmarkierung (Backlog 1657)|ui-abschleppung-schadentag.py|/tmp/cfp-abschleppung-schadentag.log
+UI-Dokumentablage: Gültig bis min/max, Beschriftungen, Feldmarkierung (Backlog 1658)|ui-dokument-gueltig.py|/tmp/cfp-dokument-gueltig.log
+UI-Wiedervorlage in der Vergangenheit: Feld markiert trotz eigenem Fehlercode (Backlog 1659)|ui-datum-vergangenheit-feld.py|/tmp/cfp-datum-vergangenheit-feld.log
+UI-Beschriftungen mit Feldern verknüpft (Bildschirmleser, Tippen fokussiert) auf Vorgang/Akte/Lager/Fahrer/Einstellungen (Backlog 1660)|ui-beschriftung-verknuepft.py|/tmp/cfp-beschriftung-verknuepft.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log

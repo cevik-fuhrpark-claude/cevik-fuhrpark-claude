@@ -13583,7 +13583,7 @@ await test('Fehlersuche 19.10. (47): km der Abfahrtskontrolle im Einfügen gepr�
 await test('Fahrernachweis stornieren (19.10.2026): Tippfehler „gültig bis“ korrigierbar – der neueste verbliebene Nachweis gilt wieder, Storno mit Begründung im Verlauf, nur Leitung', async () => {
   const { U } = await freshWorld(); const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
   const d = await U.fleet.post('/api/drivers', { display_name: 'Tippfehler Test' }); eq(d.status, 201); const D = d.data.id;
-  const typo = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(3650), evidence: 'Karte (Tippfehler)' }); eq(typo.status, 201);
+  const typo = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(1800), evidence: 'Karte (Tippfehler)' }); eq(typo.status, 201);
   const right = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(-5), evidence: 'Karte richtig' }); eq(right.data.older_than_current, true, 'richtiger zunächst nur Verlauf');
   let x = (await U.fleet.get(`/api/drivers/${D}`)).data; eq(x.status.items.find((i) => i.kind === 'fahrerkarte').status, 'ok', 'Tippfehler gilt');
   eq((await U.driver.post(`/api/drivers/${D}/documents/${typo.data.id}/cancel`, { reason: 'Tippfehler' })).status, 403);
@@ -15000,7 +15000,7 @@ await test('Fehlersuche 20.10. (13): Auslesungen (Fahrer ohne Vermerk, Akte-Verl
   // 1. Auslesungen: Fahrer bekommt eigene Auslesungen ohne Bemerkung/Erfasser; Fahrer-CSV Gesamtstatus „kritisch“ bei überfälliger Auslesung
   const D = (await F.post('/api/drivers', { display_name: 'Fahrer W', user_id: U.driver.id })).data.id;
   eq((await F.post(`/api/drivers/${D}/documents`, { kind: 'fuehrerschein', issued_on: '2015-01-01', valid_until: day(3000), evidence: 'FS' })).status, 201);
-  eq((await F.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(3000), evidence: 'FK' })).status, 201);
+  eq((await F.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: day(1500), evidence: 'FK' })).status, 201); // Backlog 1656: höchstens 5 Jahre
   eq((await F.post('/api/tacho/downloads', { kind: 'fahrerkarte', driver_id: D, downloaded_on: day(-60), evidence: 'Datei', note: 'Vermerk Leitung' })).status, 201);
   const own = (await U.driver.get('/api/tacho/downloads?driver_id=' + D)).data.downloads;
   eq(own.length, 1); ok(!('note' in own[0]) && !('created_by_name' in own[0]), 'ohne Vermerk/Erfasser');
@@ -42657,7 +42657,7 @@ await test('Backlog 1501 (WCAG 3.3.1): Server-Prüffehler nennen field_key – O
     for (const k of keys) ok(src.includes(`name="${k}"`) || src.includes(`data-fkey="${k}"`) || src.includes(`f('${k}', `) || ['password', 'employee_number'].includes(k), `${m}: Feld „${k}“ fehlt in der Oberfläche`);
   }
   // Oberfläche: api() merkt den Feldnamen, die Formular-Sperre markiert nach dem Absenden (nur sichtbare Felder desselben Formulars)
-  ok(/code === 'validation' && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\),/.test(src), 'api() merkt field_key');
+  ok(/\(code === 'validation' \|\| res\.status === 400\) && data && typeof data\.field_key === 'string'\) S\.fieldErr = \{ key: data\.field_key, msg: e\.message, at: Date\.now\(\),/.test(src), 'api() merkt field_key'); // Backlog 1659: auch 400 mit eigenem Code
   ok(/el\.removeAttribute\('aria-busy'\); if \(el\.form\) markServerField\(el\.form, t0\); \}\)/.test(src), 'Klick-Sperre (onclick in Formular) ruft markServerField');
   ok(/\.finally\(\(\) => \{ form\.cfpBusy = false; form\.removeAttribute\('aria-busy'\); markServerField\(form, t0\); \}\)/.test(src), 'Formular-Sperre ruft markServerField');
   const i = src.indexOf('function markServerField(form, since) {'); const j = src.indexOf('\n}\n', i); ok(i > 0, 'markServerField vorhanden');
@@ -42920,7 +42920,7 @@ await test('Backlog 1515 (Blickwinkel „Leitung ordnet einen Fahrer zu, dessen 
   eq(JSON.stringify((await akte(U.fleet)).doc_expired), JSON.stringify([{ kind: 'fahrerkarte', valid_until: '2020-03-31' }]), 'Fahrzeugakte (Leitung)');
   const wsv = await akte(U.ws); ok(!wsv || !wsv.doc_expired, 'Werkstatt sieht den Hinweis nicht');
   // neue gültige Fahrerkarte löst die alte ab → kein Hinweis
-  const card2 = await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fahrerkarte', valid_until: '2033-06-30', evidence: 'neue Karte' }); eq(card2.status, 201);
+  const card2 = await U.fleet.post(`/api/drivers/${dr.data.id}/documents`, { kind: 'fahrerkarte', valid_until: `${Number(BERLIN_TODAY.slice(0, 4)) + 4}-06-30`, evidence: 'neue Karte' }); eq(card2.status, 201);
   ok(!(await akte(U.fleet)).doc_expired, 'neuer gültiger Nachweis → kein Hinweis');
   // Storno der neuen Karte → alte gilt wieder → Hinweis kehrt zurück
   const cx = await U.fleet.post(`/api/drivers/${dr.data.id}/documents/${card2.data.id}/cancel`, { reason: 'falsch erfasst' }); eq(cx.status, 200, JSON.stringify(cx.data));
@@ -46606,6 +46606,124 @@ await test('Backlog 1653 (Folge aus 1652): Vertragsimport nennt in Vorschau und 
   const again = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); ok(again.data.rows.every((r) => !('start_before_registration' in r)), 'vorhandene Zeilen ohne Hinweis');
   const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("data-ctimpreg") , 'Oberfläche');
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_imp_before_reg.includes('{ez}'), l);
+});
+
+await test('Backlog 1654 (Backlog 195, Blickwinkel „Werkstatt erfasst ein Teil mit vertipptem Gewährleistungsjahr“): Gewährleistung bis vor 2000 oder vor dem Monat der Erstzulassung wird bei Teil und Fremdleistung mit field_key abgelehnt (nichts gebucht); Monat der Erstzulassung und abgelaufene Angabe ohne Erstzulassung bleiben zulässig; Formular mit min/max und for/id; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair();
+  db.prepare(`UPDATE vehicles SET first_registration='2024-03-15' WHERE id=?`).run(V1);
+  const np = () => db.prepare('SELECT COUNT(*) AS n FROM parts WHERE case_id=?').get(a).n; const nx = () => db.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').get(a).n;
+  const p0 = np(), x0 = nx();
+  const r1 = await cmd(U.ws, a, 'add_part', { name: 'Anlasser 24V', quantity: 1, warranty_until: '2014-03-31' });
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'warranty_until', 'Feld'); ok(/vor der Erstzulassung/.test(r1.data.message || JSON.stringify(r1.data)), 'Meldung');
+  const r2 = await cmd(U.ws, a, 'add_part', { name: 'Anlasser 24V', quantity: 1, warranty_until: '1999-12-31' });
+  eq(r2.status, 400); eq(r2.data.field_key, 'warranty_until', 'Feld (vor 2000)'); ok(/vor 2000/.test(JSON.stringify(r2.data)), 'Meldung vor 2000');
+  const r3 = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Elektrik Nord', amount_net: '80', warranty_until: '2024-02-29' });
+  eq(r3.status, 400, JSON.stringify(r3.data)); eq(r3.data.field_key, 'warranty_until', 'Feld Fremdleistung');
+  eq(np(), p0, 'kein Teil gebucht'); eq(nx(), x0, 'keine Fremdleistung gebucht');
+  eq((await cmd(U.ws, a, 'add_part', { name: 'Anlasser 24V', quantity: 1, warranty_until: '2024-03-01' })).status, 200, 'Monat der Erstzulassung');
+  db.prepare(`UPDATE vehicles SET first_registration=NULL WHERE id=?`).run(V1);
+  eq((await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Elektrik Nord', amount_net: '80', warranty_until: '2014-03-31' })).status, 200, 'ohne Erstzulassung: abgelaufene Angabe zulässig');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const id of ['pwarr', 'xwarr']) ok(app.includes(`<label for="${id}">`) && app.includes(`id="${id}" min="2000-01-01" max="\${esc(warrMax())}"`), 'Formular ' + id);
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  for (const m of ['Gewährleistung bis liegt vor 2000 – bitte Jahr prüfen.', 'Gewährleistung bis liegt vor der Erstzulassung des Fahrzeugs – bitte Jahr prüfen.']) ok(i18n.includes(`['${m}', '`), 'Übersetzung ' + m);
+});
+
+await test('Backlog 1655 (Backlog 195, Blickwinkel „Werkstatt vermerkt eine Bestellung mit vertipptem Liefertermin“): Liefertermin-Fehler nennen field_key eta (Bestelldatum nur API, ohne Feld); Formular „Bestellung vermerken“ setzt min heute/max +2 Jahre am Liefertermin', async () => {
+  const { U } = await freshWorld();
+  const id = (await U.ws.post('/api/stock', { name: 'Bestellvermerk 1655', min_qty: 10, initial_qty: 2, unit_price_net: 5 })).data.id;
+  const today = (await U.ws.get('/api/stock/journal')).data.to; const y = (d, n) => String(Number(d.slice(0, 4)) + n).padStart(4, '0') + d.slice(4);
+  // Bestelldatum gibt es nur in der API (Formular: heute) – ohne field_key, weil die Oberfläche kein Feld dafür hat (Wächter „Backlog 1501“)
+  const r1 = await U.ws.put(`/api/stock/${id}/order`, { qty: 5, ordered_on: y(today, 1) }); eq(r1.status, 400); eq(r1.data.field_key, undefined, 'Zukunft');
+  const r3 = await U.ws.put(`/api/stock/${id}/order`, { qty: 5, eta: y(today, 3) }); eq(r3.status, 400); eq(r3.data.field_key, 'eta', '> 2 Jahre');
+  eq((await U.ws.put(`/api/stock/${id}/order`, { qty: 5, eta: today })).status, 200, 'heute zulässig');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<input id="oeta" name="eta" type="date" min="${esc(bDate())}" max="${esc(etaMax())}">'), 'Formular min/max');
+});
+
+await test('Backlog 1656 (Backlog 195, Blickwinkel „Leitung erfasst eine neue Fahrerkarte mit vertipptem Jahr“): Fahrerkarte mit „gültig bis“ mehr als 63 Monate nach Ausstellung bzw. heute wird mit field_key valid_until abgelehnt (nichts gespeichert); genau 63 Monate und andere Arten bleiben zulässig; Formular mit min/max; Texte DE/UK/EN', async () => {
+  const { U } = await freshWorld();
+  const D = (await U.fleet.post('/api/drivers', { display_name: 'Karte 1656' })).data.id;
+  const { addMonths } = await import('../src/util.js');
+  const n = async () => (await U.fleet.get(`/api/drivers/${D}`)).data.documents.length; const n0 = await n();
+  const lim = addMonths(BERLIN_TODAY, 63); const over = new Date(Date.parse(lim + 'T00:00:00Z') + 864e5).toISOString().slice(0, 10);
+  const r1 = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: over, evidence: 'Karte Tippfehler' });
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'valid_until'); ok(/höchstens 5 Jahre/.test(r1.data.message), 'Meldung');
+  const iss = addMonths(BERLIN_TODAY, -24); const r2 = await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', issued_on: iss, valid_until: addMonths(iss, 64), evidence: 'Karte Tippfehler 2' });
+  eq(r2.status, 400, 'mit Ausstellung: Grenze ab Ausstellungsdatum'); eq(r2.data.field_key, 'valid_until');
+  eq(await n(), n0, 'nichts gespeichert');
+  eq((await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', issued_on: iss, valid_until: addMonths(iss, 60), evidence: 'Karte richtig' })).status, 201, '5 Jahre ab Ausstellung');
+  eq((await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fahrerkarte', valid_until: lim, evidence: 'Karte Grenze' })).status, 201, 'genau 63 Monate');
+  eq((await U.fleet.post(`/api/drivers/${D}/documents`, { kind: 'fuehrerschein', valid_until: addMonths(BERLIN_TODAY, 180), evidence: 'Führerschein' })).status, 201, 'Führerschein 15 Jahre');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('id="ddissued" name="issued_on" min="1950-01-01" max="${esc(bDate())}"') && app.includes('id="ddvalid" name="valid_until" min="1950-01-01"') && app.includes("ddf.kind.value === 'fahrerkarte' ? 63 : 240"), 'Formular min/max');
+  const { FK_MAX_MONTHS } = await import('../src/drivers.js'); eq(FK_MAX_MONTHS, 63);
+  const i18n = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'); ok(i18n.includes("['Fahrerkarte gilt höchstens 5 Jahre – „Gültig bis“ liegt zu weit nach der Ausstellung bzw. nach heute. Bitte Jahr prüfen.', '"), 'Übersetzung');
+});
+
+await test('Backlog 1657 (Backlog 195, Blickwinkel „Leitung trägt die Abschleppung nach und vertippt den Tag“): „Abgeschleppt am“ vor dem Schadenzeitpunkt wird mit field_key towed_on abgelehnt; gleicher Tag und ohne Schadenzeitpunkt zulässig; unveränderter Altwert bleibt speicherbar; Formular setzt min; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const id = await newCase({ occurred_at: day(-3) });
+  const r1 = await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'Abschlepphof Nord', tow_service: 'Abschleppdienst Nord', towed_on: day(-5) });
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'towed_on'); ok(/vor dem Schadenzeitpunkt/.test(r1.data.message), 'Meldung');
+  eq(db.prepare('SELECT towed_on FROM cases WHERE id=?').get(id).towed_on, null, 'nichts gespeichert');
+  eq((await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'Abschlepphof Nord', tow_service: 'Abschleppdienst Nord', towed_on: day(-3) })).status, 200, 'Tag des Schadens');
+  // Altwert vor dem (später gesetzten) Schadenzeitpunkt: unverändert speicherbar, nur Standorttext geändert
+  db.prepare('UPDATE cases SET towed_on=? WHERE id=?').run(day(-6), id);
+  eq((await cmd(U.fleet, id, 'set_vehicle_location', { vehicle_location: 'Werkstatt Dortmund', tow_service: 'Abschleppdienst Nord', towed_on: day(-6) })).status, 200, 'Altwert bleibt');
+  const id2 = await newCase();
+  eq((await cmd(U.fleet, id2, 'set_vehicle_location', { vehicle_location: 'Abschlepphof Nord', tow_service: 'Abschleppdienst Nord', towed_on: day(-5) })).status, 200, 'ohne Schadenzeitpunkt');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<input type="date" id="vlon" name="towed_on" min="${esc(towMin(c))}" max="${bDate()}"'), 'Formular min');
+  ok(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Abgeschleppt am liegt vor dem Schadenzeitpunkt.', '"), 'Übersetzung');
+});
+
+await test('Backlog 1658 (Backlog 195, Blickwinkel „Leitung lädt die Versicherungsbestätigung hoch und vertippt „gültig bis““): Dokumentablage – Hochladen und Korrigieren melden Prüffehler zu „gültig bis“, Art und Bemerkung mit field_key; Formulare mit min/max; Unterweisung für mehrere Fahrer mit min/max', async () => {
+  const { U, V1 } = await freshWorld(); const F = U.fleet;
+  const pdf = new TextEncoder().encode('%PDF-1.4\n% Versicherung 1658\n%%EOF'); const H = { 'content-type': 'application/pdf', 'x-filename': 'vers-1658.pdf' };
+  const y = Number(BERLIN_TODAY.slice(0, 4));
+  for (const [q, key] of [['valid_until=1989-12-31', 'valid_until'], [`valid_until=${y + 21}-01-01`, 'valid_until'], ['valid_until=2026-02-30', 'valid_until'], ['kind=ausweis', 'kind'], [`note=${'x'.repeat(201)}`, 'note']]) {
+    const r = await F.req('POST', `/api/vehicles/${V1}/documents?${q.startsWith('kind') ? '' : 'kind=versicherung&'}${q}`, pdf, H); eq(r.status, 400, q); eq(r.data.field_key, key, q);
+  }
+  const up = await F.req('POST', `/api/vehicles/${V1}/documents?kind=versicherung&valid_until=${y + 1}-01-31`, pdf, H); eq(up.status, 201);
+  const P = `/api/vehicles/${V1}/documents/${up.data.id}`;
+  for (const [b, key] of [[{ valid_until: '1989-12-31' }, 'valid_until'], [{ valid_until: '31.01.2027' }, 'valid_until'], [{ kind: 'ausweis' }, 'kind']]) { const r = await F.req('PATCH', P, b); eq(r.status, 400, JSON.stringify(b)); eq(r.data.field_key, key, JSON.stringify(b)); }
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const id of ['dfvalid', 'devalid']) ok(app.includes(`<label for="${id}">`) && app.includes(`<input type="date" id="${id}" name="valid_until" min="1990-01-01" max="\${esc(yAhead(20))}">`), 'Dokument hochladen/korrigieren ' + id);
+  ok(app.includes('<input type="date" name="valid_until" min="1950-01-01" max="${esc(yAhead(20))}">'), 'Unterweisung für mehrere Fahrer');
+  ok(!app.includes('<input type="date" name="valid_until">'), 'kein „gültig bis“ ohne Grenzen');
+});
+
+await test('Backlog 1659 (Backlog 1501 Nachlese): Datum in der Vergangenheit bei Wiedervorlage und voraussichtlicher Fertigstellung – eigener Fehlercode bleibt, Antwort nennt das Feld (field_key); Oberfläche markiert Felder auch bei 400 mit eigenem Code', async () => {
+  const { U, cmd, newCase, toRepair } = await freshWorld();
+  const y = new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10);
+  const a = await newCase();
+  const r1 = await cmd(U.fleet, a, 'set_followup', { followup_on: y }, 'Rückruf Versicherung');
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.error, 'followup_past'); eq(r1.data.field_key, 'followup_on');
+  const b = await toRepair();
+  const r2 = await cmd(U.ws, b, 'set_ready_date', { ready_expected_on: y });
+  eq(r2.status, 400, JSON.stringify(r2.data)); eq(r2.data.error, 'ready_past'); eq(r2.data.field_key, 'ready_expected_on');
+  const fs = await import('node:fs'); const src = fs.readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(src.includes("throw bad('parts_eta_past', 'Liefertermin liegt in der Vergangenheit.', { field_key: 'parts_expected_date' })"), 'Liefertermin Teile');
+  ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("if ((code === 'validation' || res.status === 400) && data && typeof data.field_key === 'string') S.fieldErr ="), 'Oberfläche');
+});
+
+await test('Backlog 1660 (WCAG 1.3.1/4.1.2, Blickwinkel „Fahrer mit Bildschirmleser füllt ein Formular aus“): Beschriftungen ohne for werden zur Laufzeit mit dem direkt folgenden Feld verknüpft (linkLabels per MutationObserver auf #app); erzeugte ids nur für Felder mit name; Start-Modul enthält die Funktion', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/function linkLabels\(root\) \{/.test(app) && app.includes("observe(appEl, { childList: true, subtree: true })"), 'linkLabels + Beobachter');
+  ok(app.includes("if (!c.id) { if (!c.name) continue; c.id = 'cfl' + (++lblSeq); }"), 'id nur mit name (keepScan)');
+  ok(!/id="cfl\d/.test(app), 'Präfix cfl frei');
+  const main = fs.readFileSync(new URL('../public/app-main.js', import.meta.url), 'utf8'); ok(main.includes('function linkLabels('), 'im Start-Modul (jede Ansicht)');
+  // Wirkung im Kleinen nachgestellt (ohne Browser): Beschriftung → Feld
+  const body = app.slice(app.indexOf('function linkLabels(root) {'), app.indexOf('\n}\n', app.indexOf('function linkLabels(root) {')) + 2);
+  let lblSeq = 0; const mk = (tag, a = {}) => ({ tagName: tag, ...a });
+  const inp = mk('INPUT', { type: 'text', name: 'insurer', id: '', labels: [] }); const lab = mk('LABEL', { nextElementSibling: inp, querySelector: () => null, htmlFor: '' });
+  const noName = mk('INPUT', { type: 'text', name: '', id: '', labels: [] }); const lab2 = mk('LABEL', { nextElementSibling: noName, querySelector: () => null, htmlFor: '' });
+  const root = { querySelectorAll: () => [lab, lab2] };
+  const linkLabels = new Function('lblSeqRef', `let lblSeq = 0; ${body}; return linkLabels;`)();
+  linkLabels(root); eq(lab.htmlFor, inp.id); ok(/^cfl\d+$/.test(inp.id), 'erzeugte id'); eq(lab2.htmlFor, '', 'ohne name nicht verknüpft');
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

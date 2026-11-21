@@ -1,6 +1,8 @@
 // [CLAUDE] AUTOMATISCH ERZEUGT durch scripts/build-app.mjs aus public/app.js – nicht von Hand bearbeiten (Code in app.js ändern, dann npm run build)
-import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, importErr, isMgr, isStockHash, lostDup, lostMark, ltxt, markGetField, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName } from './app-main.js';
+import { $, $$, S, SEND_TIMEOUT_MS, api, bDate, clipTxt, conflictKeep, conflictMine, decIn, download, downloadChecked, envFn, esc, eur, eur3, fmtD, fmtDT, fmtHM, fmtNum, helpLink, helpNorm, importErr, isMgr, isStockHash, lostDup, lostMark, ltxt, markGetField, markInvalid, nDays, noneP, nowMs, onPage, parseQty, partsEta, partsWaitDays, plate, pnCompact, printHead, printStamp, rc2, readCsvFile, reasonText, render, rkFor, stockHit, stockNoteText, supplierLabel, t, tn, toast, uid, unitL, wsAll, wsLabel, wsName, yAhead } from './app-main.js';
 
+
+const etaMax = () => yAhead(2);
 
 const stNote = (x) => stockNoteText(x, S.lang, { site: wsName, num: (n) => fmtNum(n), date: fmtD, unit: unitL });
 const stockOpt = (i) => `<option value="${esc(i.id)}">${esc(i.name)}${i.part_number ? ' · ' + esc(i.part_number) : ''} (${fmtNum(i.on_hand)} ${esc(unitL(i.unit))})</option>`;
@@ -717,7 +719,7 @@ async function viewStockItem(id) {
     ${it.ordered_on ? `<section class="panel" id="ordp"><h3>${esc(t('ordered'))}</h3><p>${esc(t('ordered_line').replace('{q}', fmtNum(it.ordered_qty)).replace('{u}', unitL(it.unit)).replace('{d}', fmtD(it.ordered_on)))}${it.ordered_eta ? ` · ${esc(t('ordered_eta'))}: ${esc(fmtD(it.ordered_eta))}` : ''}${it.ordered_note ? ` · ${esc(it.ordered_note)}` : ''}</p>
       <p class="small muted">${esc(t('ordered_hint'))}</p><div class="actions"><button type="button" class="btn secondary" id="ordclr">${esc(t('ordered_clear'))}</button></div></section>`
     : it.active ? `<details class="panel" id="ordp"><summary>${esc(t('order_mark'))}</summary><form id="of"><p class="small muted">${esc(t('ordered_hint'))}</p>
-      <label for="oqty">${esc(t('qty'))}</label><input id="oqty" name="qty" inputmode="decimal" required><label for="oeta">${esc(t('ordered_eta'))}</label><input id="oeta" name="eta" type="date">
+      <label for="oqty">${esc(t('qty'))}</label><input id="oqty" name="qty" inputmode="decimal" required><label for="oeta">${esc(t('ordered_eta'))}</label><input id="oeta" name="eta" type="date" min="${esc(bDate())}" max="${esc(etaMax())}">
       <label for="onote">${esc(t('note'))}</label><input id="onote" name="note" maxlength="200"><div class="actions"><button class="btn">${esc(t('save'))}</button></div></form></details>` : ''}
     ${others.length && it.active && it.on_hand > 0 ? `<details class="panel" id="trp"><summary>${esc(t('transfer'))}</summary><form id="tf"><p class="small muted">${esc(t('transfer_hint'))}</p>
       <label for="tsite">${esc(t('transfer_to'))}</label><select id="tsite" name="to_site" required>${others.map((w) => `<option value="${esc(w.code)}">${esc(wsLabel(w))}</option>`).join('')}</select>

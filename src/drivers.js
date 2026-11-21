@@ -2,7 +2,7 @@
 // Grundsätze: Fristen nur aus Dokumenten (nichts berechnet/erfunden). Personenbezogene Daten: Inhaber und Fuhrparkleitung sehen alles,
 // ein Fahrer nur seine eigene Akte (über verknüpftes Konto), alle anderen Rollen nichts. Jede Änderung im Audit-Log.
 import { findingText as fm } from '../public/finding-messages.js';
-import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, requestKey, withKey, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText } from './util.js';
+import { nowIso, laterIso, uuid, bad, forbidden, notFound, conflict, requestKey, withKey, str, oneOf, flag, berlinDate, berlinDaySql, isCalendarDate, cutText, addMonths } from './util.js';
 import { audit } from './auth.js';
 import { tachoStatus, warnDaysOf, TACHO_RULE, pnoKey, normName, periodOf } from './tacho.js';
 import { SETTING_DEFAULTS } from './settings.js';
@@ -328,6 +328,7 @@ async function cardDownloadHint(env, driverId) {
   return { card_download: { last_on: r.last_on || null } };
 }
 
+export const FK_MAX_MONTHS = 63; // Backlog 1656: 5 Jahre + 3 Monate Spielraum
 export async function addDriverDocument(env, user, envName, id, body) {
   if (!isMgr(user)) throw forbidden();
   await loadDriver(env, user, envName, id);
@@ -337,6 +338,10 @@ export async function addDriverDocument(env, user, envName, id, body) {
   const valid = date(body.valid_until, 'Gültig bis', { key: 'valid_until' });
   if (issued && valid && valid < issued) throw bad('validation', 'Gültig bis liegt vor dem Ausstellungsdatum.', { field_key: 'valid_until' });
   if (['fahrerkarte', 'code95'].includes(kind) && !valid) throw bad('validation', 'Gültig bis laut Dokument angeben.', { field_key: 'valid_until' });
+  // Backlog 1656 (Blickwinkel „Leitung erfasst eine neue Fahrerkarte mit vertipptem Jahr“): eine Fahrerkarte gilt höchstens 5 Jahre
+  // (VO (EU) 165/2014 Art. 26) – „gültig bis“ mehr als 5 Jahre (+ 3 Monate Spielraum) nach der Ausstellung bzw. nach heute ist ein Tippfehler
+  // (2036 statt 2031). Er galt sonst als gültige Karte, löste die richtige ab und unterdrückte „Fahrerkarte läuft ab“ jahrelang.
+  if (kind === 'fahrerkarte' && valid > addMonths(issued || berlinDate(), FK_MAX_MONTHS)) throw bad('validation', 'Fahrerkarte gilt höchstens 5 Jahre – „Gültig bis“ liegt zu weit nach der Ausstellung bzw. nach heute. Bitte Jahr prüfen.', { field_key: 'valid_until' });
   // Backlog 804 (Funkloch): erneutes Senden mit demselben request_key → vorhandener Nachweis (sonst zweiter Eintrag in der Akte)
   const rkey = requestKey(body.request_key);
   const byKey = async () => {
