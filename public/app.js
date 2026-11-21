@@ -8956,6 +8956,8 @@ function ctForm(c = {}, docs = null) {
     <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" value="${v('evidence')}"><label>${esc(t('note'))}</label><input name="note" maxlength="1000" value="${v('note')}">${docSel}`;
 }
 const ctDocLine = (c) => (c.file_id ? `<div><a href="${fileUrl(c.file_id)}" target="_blank" rel="noopener">📎 ${esc(t('ct_doc'))}: ${esc(c.file_name)}</a></div>` : c.file_other_env ? `<div class="small muted">📎 ${esc(t('ct_doc_other_env'))}</div>` : c.ended_on ? '' : `<div class="small muted">${esc(t('ct_doc_missing'))}</div>`);
+// Backlog 1652: Hinweis „Vertragsbeginn vor der Erstzulassung“ aus der Antwort (gespeichert, nur Hinweis)
+const ctRegWarn = (r) => (r && r.warning && r.warning.code === 'start_before_registration' ? t('ct_start_before_reg').replace('{d}', fmtD(r.warning.start_date)).replace('{ez}', fmtD(r.warning.first_registration)) : '');
 const ctBody = (fm) => { const b = Object.fromEntries(new FormData(fm)); for (const k of Object.keys(b)) if (b[k] === '') b[k] = null; return b; };
 // Backlog 1638: Vertrag endet vor der Erstzulassung bzw. beginnt nach der Außerbetriebnahme dieses (noch außer Betrieb genommenen) Fahrzeugs –
 // meist falsches Fahrzeug (Nachfolger mit gleichem Kennzeichen) oder Tippfehler im Jahr; nur Hinweis mit Korrekturweg
@@ -8979,7 +8981,7 @@ function bindCtSection(id, reload, odo = []) {
       const pr = sd && k > 0 ? odo.filter((o) => o.measured_at && BERLIN_FMT.format(new Date(o.measured_at)) <= sd).sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)))[0] : null;
       w.innerHTML = pr && String(Math.trunc(pr.km)).length > String(Math.trunc(k)).length ? `<p class="panel warn small" role="alert" data-ctskdigits style="margin:4px 0 0">⚠️ ${esc(t('ct_start_digits').replace('{prev}', fmtKm(pr.km)))}</p>` : ''; };
     fm.elements.start_km.addEventListener('input', upd); if (fm.elements.start_date) fm.elements.start_date.addEventListener('input', upd); });
-  const f = $('#ctf'); if (f) f.onsubmit = async (e) => { e.preventDefault(); const b = ctBody(f); try { await api('POST', `/api/vehicles/${encodeURIComponent(id)}/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract'])) { toast(t('saved_before')); reload(); return; } lostMark(f, b, err); toast(err.message, true); } }; // Backlog 804
+  const f = $('#ctf'); if (f) f.onsubmit = async (e) => { e.preventDefault(); const b = ctBody(f); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(ctRegWarn(r) || '✓', !!ctRegWarn(r)); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract'])) { toast(t('saved_before')); reload(); return; } lostMark(f, b, err); toast(err.message, true); } }; // Backlog 804
   // Ratenänderung an einem Vertrag, der vor dem laufenden Monat begann: gilt rückwirkend für alle Laufzeitmonate (Kostenbericht Vorjahr ändert sich) –
   // Rückfrage mit dem Weg „beenden + Folgevertrag“ (Backlog 188, Jahresabschluss)
   const rateRetro = (fm) => { const ri = fm.elements.monthly_rate_net; const sd = fm.elements.start_date;
@@ -8988,7 +8990,7 @@ function bindCtSection(id, reload, odo = []) {
   // selbst geänderten Felder zurück ins frische Formular, Felder der anderen Person markieren (vorher: „Bitte neu laden“, jeder neue Versuch
   // scheiterte am alten Stand, Neuladen verwarf die Eingaben)
   if (S.ctLost) { const L = S.ctLost; S.ctLost = null; const fm = $(`form[data-ctedit="${CSS.escape(L.id)}"]`); if (fm) conflictKeep(fm, L, 'ctlost-' + L.id); }
-  $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { const r = await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → duplicate */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) {
+  $$('form[data-ctedit]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); if (rateRetro(fm) && !confirm(t('ct_rate_retro_confirm'))) return; try { const r = await api('PATCH', `/api/contracts/${fm.dataset.ctedit}`, { ...ctBody(fm), ...(fm.dataset.upd ? { expected_updated_at: fm.dataset.upd } : {}) }, { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805j: Wiederholung → duplicate */ toast(r && r.duplicate ? t('saved_before') : ctRegWarn(r) || '✓', !!ctRegWarn(r)); reload(); } catch (err) {
     if (err.code === 'version_conflict') { S.ctLost = { id: fm.dataset.ctedit, ...conflictMine(fm) }; reload(); return; }
     toast(err.message, true); } }));
   $$('form[data-ctend]').forEach((fm) => (fm.onsubmit = async (e) => { e.preventDefault(); try { const r = await api('POST', `/api/contracts/${fm.dataset.ctend}/end`, ctBody(fm), { timeoutMs: SEND_TIMEOUT_MS }); /* Backlog 805g */ toast(r && r.duplicate ? t('saved_before') : '✓'); reload(); } catch (err) { toast(err.message, true); } }));

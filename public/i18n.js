@@ -4308,3 +4308,7 @@ Object.assign(STRINGS.en, { doc_after_deact: 'after taken out of service', doc_d
 Object.assign(STRINGS.de, { reason_empty: 'Bitte eine Begründung eingeben.', reason_too_short: 'Begründung ist zu kurz – bitte mindestens drei Zeichen eingeben.', reason_too_long: 'Begründung ist zu lang – höchstens 300 Zeichen.' });
 Object.assign(STRINGS.uk, { reason_empty: 'Будь ласка, введіть обґрунтування.', reason_too_short: 'Обґрунтування закоротке – введіть щонайменше три символи.', reason_too_long: 'Обґрунтування задовге – щонайбільше 300 символів.' });
 Object.assign(STRINGS.en, { reason_empty: 'Please enter a reason.', reason_too_short: 'Reason is too short – please enter at least three characters.', reason_too_long: 'Reason is too long – at most 300 characters.' });
+// Backlog 1652: Vertragsbeginn vor der Erstzulassung (gespeichert, nur Hinweis)
+Object.assign(STRINGS.de, { ct_start_before_reg: 'Gespeichert. Hinweis: Vertragsbeginn {d} liegt vor der Erstzulassung ({ez}) – bitte Jahr laut Vertrag prüfen.' });
+Object.assign(STRINGS.uk, { ct_start_before_reg: 'Збережено. Увага: початок договору {d} раніший за першу реєстрацію ({ez}) – перевірте рік за договором.' });
+Object.assign(STRINGS.en, { ct_start_before_reg: 'Saved. Note: contract start {d} is before the first registration ({ez}) – please check the year per contract.' });

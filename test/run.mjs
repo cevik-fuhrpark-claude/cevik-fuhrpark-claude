@@ -29040,7 +29040,7 @@ await test('Backlog 804b (Blickwinkel „Funkloch“): Prüftermin (Sonstiges) u
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   ok(app.includes("b.request_key = rkFor(mf, b); try { const r = await api('POST', `/api/vehicles/${encodeURIComponent(id)}/maintenance`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Prüftermin: Schlüssel + Zeitlimit');
-  ok(app.includes("/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast('✓'); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract']))"), 'Vertrag: Zeitlimit + „war bereits gespeichert“');
+  ok(app.includes("/contracts`, b, { timeoutMs: SEND_TIMEOUT_MS }); toast(ctRegWarn(r) || '✓', !!ctRegWarn(r)); reload(); } catch (err) { if (lostDup(f, b, err, ['duplicate_contract']))"), 'Vertrag: Zeitlimit + „war bereits gespeichert“'); // Backlog 1652: Hinweis Erstzulassung
   ok(app.includes("return post(`/api/drivers/${id}/documents`, b, ddf);") && app.includes("lcf, ['duplicate']);"), 'Fahrerakte: Nachweis mit Schlüssel, Kontrolle über Dublettenprüfung');
   ok(app.includes("/claim`, b, { timeoutMs: SEND_TIMEOUT_MS });"), 'Versicherungsfall mit Zeitlimit');
   const { U } = await freshWorld();
@@ -46573,6 +46573,23 @@ await test('Backlog 1651 (Wächter, Lehre aus 1650): alle ausgelieferten Skripte
   walk(root); ok(files.length >= 20, 'Skripte gefunden: ' + files.length);
   const bad = files.map((f) => [f, spawnSync(process.execPath, ['--check', f], { encoding: 'utf8' })]).filter(([, r]) => r.status !== 0).map(([f, r]) => path.relative(root, f) + ': ' + (r.stderr || '').split('\n').find((l) => /Error/.test(l)));
   eq(bad.join(' | '), '', 'Syntaxfehler');
+});
+
+await test('Backlog 1652 (Backlog 195, Blickwinkel „Leitung erfasst einen Leasingvertrag mit vertipptem Beginn“): Vertragsbeginn vor dem Monat der Erstzulassung wird gespeichert, die Antwort trägt den Hinweis start_before_registration (Anlegen und Ändern des Beginns); gleicher Monat, ohne Erstzulassung und unveränderter Beginn ohne Hinweis; Oberfläche zeigt ihn (DE/UK/EN)', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  db.prepare(`UPDATE vehicles SET first_registration='2024-03-15' WHERE id=?`).run(V1);
+  const mk = (b) => U.fleet.post(`/api/vehicles/${V1}/contracts`, { kind: 'leasing', evidence: 'Vertrag (Test)', ...b });
+  const r1 = await mk({ partner: 'Leasing A', contract_no: 'L-1652-1', start_date: '2014-03-01' }); eq(r1.status, 201, JSON.stringify(r1.data));
+  eq(JSON.stringify(r1.data.warning), JSON.stringify({ code: 'start_before_registration', start_date: '2014-03-01', first_registration: '2024-03-15' }), 'Hinweis beim Anlegen');
+  ok(db.prepare('SELECT 1 FROM vehicle_contracts WHERE id=?').get(r1.data.id), 'trotzdem gespeichert');
+  const r2 = await mk({ partner: 'Leasing B', contract_no: 'L-1652-2', start_date: '2024-03-01' }); eq(r2.status, 201); ok(!r2.data.warning, 'gleicher Monat ohne Hinweis');
+  const r3 = await U.fleet.patch(`/api/contracts/${r2.data.id}`, { note: 'geändert' }); eq(r3.status, 200, JSON.stringify(r3.data)); ok(!r3.data.warning, 'Beginn unverändert: kein Hinweis');
+  const r4 = await U.fleet.patch(`/api/contracts/${r2.data.id}`, { start_date: '2023-12-01' }); eq(r4.status, 200, JSON.stringify(r4.data)); eq(r4.data.warning?.code, 'start_before_registration', 'Hinweis beim Ändern des Beginns');
+  db.prepare(`UPDATE vehicles SET first_registration=NULL WHERE id=?`).run(V1);
+  const r5 = await mk({ partner: 'Leasing C', contract_no: 'L-1652-3', start_date: '2014-03-01' }); eq(r5.status, 201); ok(!r5.data.warning, 'ohne Erstzulassung kein Hinweis');
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("r.warning.code === 'start_before_registration'") && (app.match(/ctRegWarn\(r\)/g) || []).length >= 4, 'Oberfläche zeigt den Hinweis beim Anlegen und Ändern');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_start_before_reg.includes('{d}') && STRINGS[l].ct_start_before_reg.includes('{ez}'), l);
 });
 
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {

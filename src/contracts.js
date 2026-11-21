@@ -173,6 +173,16 @@ function contractKmBasis(drop, startDate, now) {
 }
 const dropOf = async (env, vehicleId) => parseKmDrop((await env.DB.prepare(`SELECT ${KM_DROP_SQL('?')} AS d`).bind(vehicleId).first() || {}).d);
 
+// Backlog 1652 (Blickwinkel „Leitung erfasst einen Leasingvertrag mit vertipptem Beginn“): Vertragsbeginn vor dem Monat der Erstzulassung ist
+// ungewöhnlich (Leasing/Versicherung beginnen meist mit der Zulassung), aber möglich (z. B. Finanzierung vor der Auslieferung) – deshalb nur
+// Hinweis in der Antwort, nicht abgelehnt; ohne Erstzulassung kein Hinweis
+async function startRegWarning(env, vehicleId, start) {
+  if (!start) return null;
+  const v = await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const fr = v && v.first_registration;
+  return fr && start.slice(0, 7) < String(fr).slice(0, 7) ? { code: 'start_before_registration', start_date: start, first_registration: fr } : null;
+}
+
 const DUP_MSG = 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).';
 
 export async function createContract(env, user, vehicleId, body, envName) {
@@ -195,7 +205,8 @@ export async function createContract(env, user, vehicleId, body, envName) {
       f.km_allowance ? contractKmBasis(await dropOf(env, v.id), f.start_date, now) : now).run();
   if (!r.meta || !r.meta.changes) throw conflict('duplicate_contract', 'Diesen Vertrag gibt es für das Fahrzeug bereits (gleiche Art und Vertragsnummer bzw. Partner und Beginn).');
   await audit(env, user.id, 'contract.create', id, { vehicle: v.plate, kind: f.kind, partner: f.partner, file: fileId || undefined });
-  return { id };
+  const warning = await startRegWarning(env, v.id, f.start_date);
+  return warning ? { id, warning } : { id };
 }
 
 async function loadContract(env, id) {
@@ -266,7 +277,8 @@ export async function updateContract(env, user, id, body, envName) {
     throw conflict('version_conflict', 'Vertrag wurde zwischenzeitlich geändert. Bitte neu laden.');
   }
   await audit(env, user.id, 'contract.update', id, { vehicle: c.plate, changed: Object.fromEntries(changed.map((k) => [k, { from: c[k], to: f[k] }])) });
-  return { id, changed };
+  const warning = changed.includes('start_date') ? await startRegWarning(env, c.vehicle_id, f.start_date) : null;
+  return warning ? { id, changed, warning } : { id, changed };
 }
 
 // Vertrag als beendet markieren (Rückgabe, Kündigung, Ablösung) – mit Datum und Grund; bleibt in der Akte sichtbar

@@ -295,6 +295,7 @@ UI-km-Stand vor der Erstzulassung: min, Beschriftung, Feldmarkierung (Backlog 16
 UI-Begründung per Rückfrage: leer/zu kurz wird erneut erfragt (Backlog 1648)|ui-begruendung-rueckfrage.py|/tmp/cfp-begruendung-rueckfrage.log
 UI-Fremdleistung: Datum laut Rechnung vor der Erstzulassung (Backlog 1649)|ui-fremdleistung-erstzulassung.py|/tmp/cfp-fremdleistung-erstzulassung.log
 UI-Versicherungsfall: Daten nicht vor dem Schadenzeitpunkt (Backlog 1650)|ui-versicherung-schadentag.py|/tmp/cfp-versicherung-schadentag.log
+UI-Vertrag: Beginn vor der Erstzulassung → Hinweis (Backlog 1652)|ui-vertrag-erstzulassung.py|/tmp/cfp-vertrag-erstzulassung.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log

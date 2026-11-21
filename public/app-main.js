@@ -5735,6 +5735,7 @@ const conflictMine = (fm) => { const seen = formVals(fm, true), cur = formVals(f
 
 
 
+
 function ctRet(rc) {
   if (!rc) return '';
   const parts = [rc.open_cases ? t('ct_ret_open').replace('{n}', rc.open_cases) : '', rc.open_items ? t('ct_ret_items').replace('{n}', rc.open_items) : ''].filter(Boolean);
