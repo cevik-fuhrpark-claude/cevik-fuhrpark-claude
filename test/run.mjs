@@ -13895,7 +13895,7 @@ await test('Fahrzeugakte 19.10.: km-Herkunft lesbar, Rückruf-Durchführung übe
   ok(/const reasonText = \(r\) => \{ const x = translateImportReason\(S\.lang, r\); return typeof x === 'string' \? x\.replace\(/.test(app), 'Import-Gründe mit Datum im Sprachformat');
   ok(app.includes('!(td.colSpan > 1)'), 'stackTables: Ganzzeilen ohne Spaltenname');
   ok(!/wieder aktiv/.test(STRINGS.de.imp_keep_hint) && /bleiben außer Betrieb/.test(STRINGS.de.imp_keep_hint), 'Import-Hinweis: außer Betrieb bleibt');
-  ok(app.includes("prompt(t('evx_reason'))") && STRINGS.uk.evx_reason && STRINGS.en.evx_reason, 'Ausnehmen fragt eigenen Grund');
+  ok(app.includes("askReason('evx_reason', 1)") && STRINGS.uk.evx_reason && STRINGS.en.evx_reason, 'Ausnehmen fragt eigenen Grund');
 });
 
 await test('Backlog 93 (19.10.): SP nur aus HU berechnet (kein SP-Eintrag) erscheint überfällig in Prüftermine, Werkstattplan und Kalender, keine Lücke „SP“, nichts angelegt', async () => {
