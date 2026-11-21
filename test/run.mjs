@@ -46366,6 +46366,30 @@ await test('Backlog 1641 (Blickwinkel „Werkstatt lädt einen Prüfbericht/Vers
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].doc_after_deact && STRINGS[l].doc_inact_warn && STRINGS[l].doc_succ, l); ok(STRINGS[l].doc_deact_note.includes('{s}'), l); }
 });
 
+await test('Backlog 1642 (Backlog 195, Blickwinkel „Leitung gibt einen Mietlkw zurück – die Pannen-Hotline des Vermieters bleibt hinterlegt“): Außer Betrieb nehmen nennt fahrzeugbezogene Nummern in „Panne & Notfall“ dieser Umgebung; archivierte, andere Fahrzeuge und andere Umgebung zählen nicht; nichts wird archiviert; Text DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const V2 = db.prepare(`SELECT id FROM vehicles WHERE active=1 AND id<>? ORDER BY id LIMIT 1`).get(V1).id;
+  const add = async (b) => { const r = await U.fleet.post('/api/emergency/contacts', { kind: 'panne', phone: '0800 164 2' + String(Math.floor(Math.random() * 1e5)).padStart(5, '0'), ...b }); eq(r.status, 201, JSON.stringify(r.data)); return r.data.id; };
+  const a = await add({ label: 'Vermieter-Hotline (Test)', scope: 'vehicle', vehicle_id: V1 });
+  const b = await add({ label: 'Schutzbrief (Test)', scope: 'vehicle', vehicle_id: V1 });
+  const c = await add({ label: 'Kühlgerät (Test)', scope: 'vehicle', vehicle_id: V1 });
+  await add({ label: 'Anderes Fahrzeug (Test)', scope: 'vehicle', vehicle_id: V2 });
+  await add({ label: 'Allgemein (Test)', scope: 'all' });
+  db.prepare(`UPDATE emergency_contacts SET archived_at=? WHERE id=?`).run(new Date().toISOString(), b); // archiviert → zählt nicht
+  db.prepare(`UPDATE emergency_contacts SET environment='production' WHERE id=?`).run(c); // andere Umgebung → zählt nicht
+  const r = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: false, reason: 'Mietfahrzeug zurückgegeben' }); eq(r.status, 200, JSON.stringify(r.data));
+  eq(r.data.emergency_contacts, 1, 'nur die aktive Nummer dieses Fahrzeugs und dieser Umgebung');
+  eq(db.prepare(`SELECT archived_at FROM emergency_contacts WHERE id=?`).get(a).archived_at, null, 'nichts wird archiviert');
+  const list = await U.fleet.get('/api/emergency/contacts'); eq(list.status, 200);
+  const row = list.data.contacts.find((x) => x.id === a); ok(row, 'bleibt in der Verwaltung'); eq(row.vehicle_active, false, 'als außer Betrieb gekennzeichnet');
+  const r2 = await U.fleet.post(`/api/vehicles/${V1}/active`, { active: true }); eq(r2.status, 200); eq(r2.data.emergency_contacts, undefined, 'beim Wieder-in-Betrieb nicht');
+  const r3 = await U.fleet.post(`/api/vehicles/${V2}/active`, { active: false, reason: 'Verkauft' }); eq(r3.status, 200, JSON.stringify(r3.data)); eq(r3.data.emergency_contacts, 1, 'anderes Fahrzeug: eigene Nummer');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes("r.emergency_contacts ? tn('em_vehicle_deact', r.emergency_contacts) : ''"), 'Oberfläche');
+  const { STRINGS, PLURALS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].em_vehicle_deact && STRINGS[l].em_vehicle_deact.includes('{n}'), l + ' Grundtext'); const p = PLURALS[l].em_vehicle_deact; ok(p && p.one.includes('{n}') && p.other.includes('{n}') && (l !== 'uk' || (p.few && p.many)), l + ' Pluralformen'); for (const f of Object.values(p)) { ok(f.includes(STRINGS[l].em_title), l + ' nennt den Bereich'); ok(f.includes(STRINGS[l].nav_more), l + ' nennt den Weg'); } }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

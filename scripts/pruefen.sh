@@ -286,6 +286,7 @@ UI-Vertrag beginnt nach der Außerbetriebnahme in der Fahrzeugakte (Backlog 1638
 UI-HU/Wartung nach der Außerbetriebnahme in der Fahrzeugakte (Backlog 1639)|ui-wartung-ausser-betrieb.py|/tmp/cfp-wartung-ausser-betrieb.log
 UI-Fahrzeughinweis am außer Betrieb genommenen Fahrzeug (Backlog 1640)|ui-hinweis-ausser-betrieb.py|/tmp/cfp-hinweis-ausser-betrieb.log
 UI-Fahrzeugdokument am außer Betrieb genommenen Fahrzeug (Backlog 1641)|ui-dokument-ausser-betrieb.py|/tmp/cfp-dokument-ausser-betrieb.log
+UI-Notfallnummer am außer Betrieb genommenen Fahrzeug (Backlog 1642)|ui-notfall-ausser-betrieb.py|/tmp/cfp-notfall-ausser-betrieb.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log
