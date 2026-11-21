@@ -46540,6 +46540,41 @@ await test('Backlog 1649 (Folge aus 1647): Fremdleistung mit km-Stand – Datum 
   ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('id="extkmo" name="odometer_on" min="2000-01-01" max="${bDate()}"'), 'Formular: min/max');
 });
 
+await test('Backlog 1650 (Backlog 195, Blickwinkel „Leitung erfasst einen Versicherungsfall mit vertipptem Jahr“): Gemeldet am, Anzeige, Besichtigung, Gutachten und Erstattung vor dem Schadenzeitpunkt werden mit field_key abgelehnt; ohne Schadenzeitpunkt keine Prüfung; unverändert gespeicherte Altwerte bleiben speicherbar; Formular setzt min und for/id; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, newCase } = await freshWorld(); const db = e.DB.db;
+  const id = await newCase();
+  const put = (b) => U.fleet.put(`/api/cases/${id}/claim`, { insurer: 'Test-Versicherung AG', reported_on: bDayOff(-1), evidence: 'Schadenmeldung (Test)', ...b });
+  // ohne Schadenzeitpunkt: frühes Meldedatum erlaubt (Meldezeit in der App kann später liegen)
+  eq((await put({ reported_on: bDayOff(-30) })).status, 200, 'ohne Schadenzeitpunkt keine Prüfung');
+  db.prepare('DELETE FROM insurance_claims WHERE case_id=?').run(id);
+  eq((await cmd(U.fleet, id, 'set_occurred_at', { occurred_at: bDayOff(-3) })).status, 200);
+  for (const [k, extra] of [['reported_on', {}], ['police_reported_on', { police_station: 'PI Test' }], ['appraisal_on', {}], ['appraisal_received_on', {}], ['reimbursed_on', { reimbursed_net: '100' }]]) {
+    const r = await put({ [k]: bDayOff(-4), ...extra }); eq(r.status, 400, k + ' ' + JSON.stringify(r.data)); eq(r.data.field_key, k, k + ': Feld');
+    if (k !== 'reimbursed_on') ok(/vor dem Schadenzeitpunkt/.test(r.data.message || ''), k + ': Meldung'); // Erstattung: zuerst „vor dem Meldedatum“ (gleiches Feld)
+  }
+  eq(db.prepare('SELECT COUNT(*) n FROM insurance_claims WHERE case_id=?').get(id).n, 0, 'nichts gespeichert');
+  const ok1 = await put({ reported_on: bDayOff(-3), police_station: 'PI Test', police_reported_on: bDayOff(-3) }); eq(ok1.status, 200, 'Schadentag selbst erlaubt: ' + JSON.stringify(ok1.data));
+  // Altbestand: gespeichertes Datum vor dem (später eingetragenen) Schadenzeitpunkt bleibt beim erneuten Speichern erlaubt, ein neues nicht
+  db.prepare('UPDATE insurance_claims SET police_reported_on=? WHERE case_id=?').run(bDayOff(-10), id);
+  const cur = (await U.fleet.get(`/api/cases/${id}`)).data.claim;
+  eq((await put({ reported_on: bDayOff(-3), police_station: 'PI Test', police_reported_on: bDayOff(-10), note: 'nachgetragen', expected_updated_at: cur.updated_at })).status, 200, 'unveränderter Altwert');
+  const cur2 = (await U.fleet.get(`/api/cases/${id}`)).data.claim;
+  eq((await put({ reported_on: bDayOff(-3), police_station: 'PI Test', police_reported_on: bDayOff(-11), expected_updated_at: cur2.updated_at })).data.field_key, 'police_reported_on', 'geänderter Wert wird geprüft');
+  const fs = await import('node:fs');
+  ok(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Datum liegt vor dem Schadenzeitpunkt des Vorgangs – bitte Jahr prüfen.', '"), 'Übersetzung UK/EN');
+  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const [l, n] of [['clrep', 'reported_on'], ['clreimb', 'reimbursed_on'], ['caon', 'appraisal_on'], ['carec', 'appraisal_received_on'], ['cpon', 'police_reported_on']]) ok(app.includes(`<label for="${l}">`) && app.includes(`id="${l}" name="${n}"`) && app.includes(`\${occMin('${n}')}`), 'Formular ' + n);
+});
+
+await test('Backlog 1651 (Wächter, Lehre aus 1650): alle ausgelieferten Skripte unter public/ sind syntaktisch gültig (node --check) – ein doppelt deklarierter Name in einer ausgelagerten Ansicht (app-schaden.js) ließ die Vorgangsansicht „Seite nicht verfügbar“ zeigen, ohne dass ein anderer Test rot wurde', async () => {
+  const fs = await import('node:fs'); const path = await import('node:path'); const { spawnSync } = await import('node:child_process');
+  const root = new URL('../public/', import.meta.url).pathname; const files = [];
+  const walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (f.name.endsWith('.js')) files.push(p); } };
+  walk(root); ok(files.length >= 20, 'Skripte gefunden: ' + files.length);
+  const bad = files.map((f) => [f, spawnSync(process.execPath, ['--check', f], { encoding: 'utf8' })]).filter(([, r]) => r.status !== 0).map(([f, r]) => path.relative(root, f) + ': ' + (r.stderr || '').split('\n').find((l) => /Error/.test(l)));
+  eq(bad.join(' | '), '', 'Syntaxfehler');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -44,6 +44,9 @@ function claimDowntime(cl) {
 }
 async function claimSection(cl, contracts, files = [], desc = '', c = null, coupled = []) {
 
+  const occStrict = c && c.occurred_at ? (String(c.occurred_at).length === 10 ? String(c.occurred_at) : BERLIN_FMT.format(new Date(c.occurred_at))) : '';
+  const occMin = (k) => (occStrict && !(cl && cl[k] && cl[k] < occStrict) ? ` min="${esc(occStrict)}"` : '');
+
 
   desc = recurFix(desc);
 
@@ -104,16 +107,16 @@ async function claimSection(cl, contracts, files = [], desc = '', c = null, coup
     <label>${esc(t('claim_contract'))}</label><select name="contract_id"><option value="">${esc(t('claim_no_contract'))}</option>${contracts.map((k) => `<option value="${esc(k.id)}"${(cl ? cl.contract_id === k.id : preK === k.id) ? ' selected' : ''}>${esc(k.partner)}${k.contract_no ? ' · ' + esc(k.contract_no) : ''}${kPeriod(k)}${k.ended_on ? ` (${esc(t('cs_beendet'))})` : ''}</option>`).join('')}</select>${!cl && preK ? `<p class="small muted" data-claimprek>${esc(t('claim_contract_pre').replace('{d}', fmtD(occDay)))}</p>` : ''}
     <label>${esc(t('claim_insurer'))}<span class="hint">${esc(t('claim_insurer_hint'))}</span></label><input name="insurer" maxlength="120" value="${v('insurer')}">
     <label>${esc(t('claim_no'))}</label><input name="claim_no" maxlength="60" value="${v('claim_no')}">
-    <label>${esc(t('claim_reported'))}</label><input type="date" name="reported_on" required max="${bDate()}" value="${cl ? v('reported_on') : ''}">
+    <label for="clrep">${esc(t('claim_reported'))}</label><input type="date" id="clrep" name="reported_on" required${occMin('reported_on')} max="${bDate()}" value="${cl ? v('reported_on') : ''}">
     <label>${esc(t('status_label'))}</label><select name="status">${CLAIM_ST.map((x) => `<option value="${x}"${(cl ? cl.status : 'gemeldet') === x ? ' selected' : ''}>${esc(t('cls_' + x))}</option>`).join('')}</select>
     <label>${esc(t('claim_deductible'))}</label><input name="deductible_net" inputmode="decimal" value="${money('deductible_net')}">
     <label>${esc(t('claim_reimbursed'))}</label><input name="reimbursed_net" inputmode="decimal" value="${money('reimbursed_net')}">
-    <label>${esc(t('claim_reimbursed_on'))}</label><input type="date" name="reimbursed_on" max="${bDate()}" value="${v('reimbursed_on')}">
+    <label for="clreimb">${esc(t('claim_reimbursed_on'))}</label><input type="date" id="clreimb" name="reimbursed_on"${occMin('reimbursed_on')} max="${bDate()}" value="${v('reimbursed_on')}">
     <label>${esc(t('evidence'))}</label><input name="evidence" required maxlength="300" value="${v('evidence')}"><label>${esc(t('note'))}</label><input name="note" maxlength="1000" value="${v('note')}">
     <fieldset class="panel" style="margin:.6rem 0"><legend>${esc(t('ca_title'))}</legend><p class="small muted" style="margin-top:0">${esc(t('ca_hint'))}</p>
     <label>${esc(t('ca_appraiser'))}</label><input name="appraiser" maxlength="120" value="${v('appraiser')}">
-    <label>${esc(t('ca_on'))}<span class="hint">${esc(t('ca_on_hint'))}</span></label><input type="date" name="appraisal_on" max="${bDate(366)}" value="${v('appraisal_on')}">
-    <label>${esc(t('ca_received'))}</label><input type="date" name="appraisal_received_on" max="${bDate()}" value="${v('appraisal_received_on')}">
+    <label for="caon">${esc(t('ca_on'))}<span class="hint">${esc(t('ca_on_hint'))}</span></label><input type="date" id="caon" name="appraisal_on"${occMin('appraisal_on')} max="${bDate(366)}" value="${v('appraisal_on')}">
+    <label for="carec">${esc(t('ca_received'))}</label><input type="date" id="carec" name="appraisal_received_on"${occMin('appraisal_received_on')} max="${bDate()}" value="${v('appraisal_received_on')}">
     <label>${esc(t('ca_net'))}<span class="hint">${esc(t('ca_net_hint'))}</span></label><input name="appraisal_net" inputmode="decimal" value="${money('appraisal_net')}"></fieldset>
     <fieldset class="panel" style="margin:.6rem 0"><legend>${esc(t('co_title'))}</legend><p class="small muted" style="margin-top:0">${esc(t('co_hint'))}</p>
     <label>${esc(t('co_plate'))}</label><input name="opponent_plate" maxlength="20" value="${v('opponent_plate')}">
@@ -122,7 +125,7 @@ async function claimSection(cl, contracts, files = [], desc = '', c = null, coup
     <fieldset class="panel" style="margin:.6rem 0"><legend>${esc(t('cp_title'))}</legend><p class="small muted" style="margin-top:0">${esc(t('cp_hint'))}</p>${cpPull.map((x, i) => `<button type="button" class="btn secondary" data-cppull="${i}" data-st="${esc(x.police_station || '')}" data-ref="${esc(x.police_ref || '')}" data-on="${esc(x.police_reported_on || '')}">${esc(t('cp_pull').replace('{c}', `${x.case_no} (${x.plate})`))}</button>`).join(' ')}
     <label>${esc(t('cp_station'))}</label><input name="police_station" maxlength="120" value="${v('police_station')}">
     <label>${esc(t('cp_ref'))}</label><input name="police_ref" maxlength="60" value="${v('police_ref')}">
-    <label>${esc(t('cp_on'))}</label><input type="date" name="police_reported_on" max="${bDate()}" value="${v('police_reported_on')}"></fieldset>
+    <label for="cpon">${esc(t('cp_on'))}</label><input type="date" id="cpon" name="police_reported_on"${occMin('police_reported_on')} max="${bDate()}" value="${v('police_reported_on')}"></fieldset>
     <label>${esc(t('claim_file'))}<span class="hint">${esc(t('claim_file_hint'))}</span></label><select name="file_id"><option value="">–</option>${files.map((f) => `<option value="${esc(f.id)}"${cl && cl.file_id === f.id ? ' selected' : ''}>${esc(f.filename)}</option>`).join('')}${cl && cl.file_id && cl.file_name && !files.some((f) => f.id === cl.file_id) ? `<option value="${esc(cl.file_id)}" selected>${esc(cl.file_name)}</option>` : ''}</select>
     <div class="actions"><button class="btn secondary">${esc(t('save'))}</button></div></form></details></section>`;
 }

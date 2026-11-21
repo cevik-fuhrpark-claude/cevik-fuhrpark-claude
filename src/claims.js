@@ -94,6 +94,15 @@ export async function saveClaim(env, user, envName, caseId, body) {
   const staleErr = () => conflict('version_conflict', ex ? 'Versicherungsfall wurde zwischenzeitlich geändert. Bitte neu laden.' : 'Versicherungsfall wurde zwischenzeitlich angelegt. Bitte neu laden.');
   if (stale && !ex) throw staleErr();
   const f = readBody(body, ex || {}, user);
+  // Backlog 1650 (Blickwinkel „Leitung erfasst einen Versicherungsfall mit vertipptem Jahr“): Meldung an den Versicherer, Anzeige, Besichtigung,
+  // Gutachten und Erstattung gibt es nicht vor dem Schadentag – nur wenn am Vorgang ein Schadenzeitpunkt steht (die Meldezeit in der App kann
+  // nach der Meldung beim Versicherer liegen); unverändert gespeicherte Altwerte bleiben speicherbar
+  if (c.occurred_at) {
+    const od = occurrenceDay({ occurred_at: c.occurred_at });
+    for (const k of ['reported_on', 'police_reported_on', 'appraisal_on', 'appraisal_received_on', 'reimbursed_on']) {
+      if (f[k] && f[k] < od && !(ex && ex[k] === f[k])) throw bad('validation', 'Datum liegt vor dem Schadenzeitpunkt des Vorgangs – bitte Jahr prüfen.', { field_key: k });
+    }
+  }
   let warning = null;
   if (f.contract_id) {
     const k = await env.DB.prepare(`SELECT id, partner, start_date, end_date, ended_on FROM vehicle_contracts WHERE id=? AND vehicle_id=? AND kind='versicherung'`).bind(f.contract_id, c.vehicle_id).first();
