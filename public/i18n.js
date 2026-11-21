@@ -1323,6 +1323,7 @@ const V_MORE = [
   ['Auslesedatum darf nicht in der Zukunft liegen.', 'Дата зчитування не може бути в майбутньому.', 'The download date must not be in the future.'],
   ['App-Konto nicht gefunden (Rolle Fahrer, gleiche Umgebung).', 'Обліковий запис не знайдено (роль «Водій», те саме середовище).', 'App account not found (role driver, same environment).'],
   ['Anhänger haben keinen Fahrtenschreiber.', 'Причепи не мають тахографа.', 'Trailers have no tachograph.'],
+  ['Auslesedatum liegt vor der Erstzulassung des Fahrzeugs.', 'Дата зчитування раніша за першу реєстрацію транспортного засобу.', 'The download date is before the vehicle’s first registration.'],
   ['Ablesedatum ungültig (JJJJ-MM-TT).', 'Недійсна дата зчитування пробігу (РРРР-ММ-ДД).', 'Invalid reading date (YYYY-MM-DD).'],
   ['HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.', 'HU/SP залежать лише від часу – не вказуйте строк за пробігом.', 'HU/SP depend on time only – do not enter a mileage due.'],
   ['Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', '«Строк за пробігом, км» не перевищує пробіг під час останньої перевірки.', '“Due at km” is not above the mileage at the last inspection.'],
@@ -1773,6 +1774,7 @@ const IMPORT_TPL = [
   [/^Fahrerakte ausgeschieden – Auslesung in der Akte erfassen: (.{0,200})$/, 'Картку водія позначено як звільненого – внесіть зчитування в картці водія: $1', 'Driver record marked as left – record the download in the driver record: $1'],
   [/^Frist in der Liste \((\d{4}-\d{2}-\d{2})\) weicht ab – vorhandene Frist (\d{4}-\d{2}-\d{2}) bleibt; in der Fahrzeugakte prüfen$/, 'Строк у списку ($1) відрізняється – наявний строк $2 залишається; перевірте в картці транспорту', 'Deadline in the list ($1) differs – existing deadline $2 is kept; check in the vehicle file'],
   [/^Anhänger ohne Fahrtenschreiber: (.{0,200})$/, 'Причіп без тахографа: $1', 'Trailer without tachograph: $1'],
+  [/^Auslesedatum vor der Erstzulassung: (.{0,200})$/, 'Дата зчитування раніша за першу реєстрацію: $1', 'Download date before first registration: $1'],
   [/^Reifengröße zu lang \(max\. 40 Zeichen\): (.{0,200})$/, 'Розмір шини задовгий (макс. 40 символів): $1', 'Tyre size too long (max. 40 characters): $1'],
   [/^FIN doppelt in der Datei mit abweichender Größe \(Zeile (\d+)\): (.{0,60})$/, 'VIN у файлі двічі з іншим розміром (рядок $1): $2', 'VIN twice in the file with a different size (line $1): $2'],
 ];

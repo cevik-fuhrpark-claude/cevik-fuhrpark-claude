@@ -46421,6 +46421,35 @@ await test('Backlog 1643 (Backlog 195, Blickwinkel „Nur noch eine Werkstatt ak
   } finally { db.prepare(`UPDATE workshops SET active=1 WHERE code IN ('MUENCHEN','EXTERN')`).run(); }
 });
 
+await test('Backlog 1644 (Backlog 195, Blickwinkel „Leitung erfasst eine Massenspeicher-Auslesung mit vertipptem Jahr“): Auslesedatum vor dem Monat der Erstzulassung wird einzeln (Feld downloaded_on) und im Import (Überspring-Grund) abgelehnt; gleicher Monat und Fahrzeuge ohne Erstzulassung bleiben erfassbar; Anhänger-Fehler am Feld vehicle_id; Akte setzt min/max und for/id; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const v = db.prepare(`SELECT id, plate FROM vehicles WHERE active=1 AND kind<>'anhaenger' AND vin IS NOT NULL ORDER BY id LIMIT 1`).get();
+  const v2 = db.prepare(`SELECT id FROM vehicles WHERE active=1 AND kind<>'anhaenger' AND id<>? ORDER BY id LIMIT 1`).get(v.id);
+  const now = new Date(); const ym = (d) => d.toISOString().slice(0, 7);
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15)); const first = ym(now) + '-01';
+  db.prepare(`UPDATE vehicles SET first_registration=? WHERE id=?`).run(first, v.id);
+  db.prepare(`UPDATE vehicles SET first_registration=NULL WHERE id=?`).run(v2.id);
+  const old = prev.toISOString().slice(0, 10);
+  const r1 = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: old, evidence: 'Datei M_test1644' });
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'downloaded_on', 'Feld Auslesedatum'); ok(/vor der Erstzulassung/.test(r1.data.message || r1.data.error || JSON.stringify(r1.data)), 'Meldung nennt die Erstzulassung');
+  eq(db.prepare(`SELECT COUNT(*) n FROM tacho_downloads WHERE vehicle_id=?`).get(v.id).n, 0, 'nichts gespeichert');
+  const r2 = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: first, evidence: 'Datei M_test1644' }); eq(r2.status, 201, 'Monat der Erstzulassung erlaubt');
+  db.prepare(`UPDATE vehicles SET first_registration=? WHERE id=?`).run(ym(now), v.id); // nur Monat (JJJJ-MM)
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: old, evidence: 'x' })).status, 400, 'auch bei Erstzulassung JJJJ-MM');
+  eq((await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v2.id, downloaded_on: old, evidence: 'x' })).status, 201, 'ohne Erstzulassung keine Prüfung');
+  const tr = db.prepare(`SELECT id FROM vehicles WHERE kind='anhaenger' LIMIT 1`).get();
+  if (tr) { const r3 = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: tr.id, downloaded_on: first, evidence: 'x' }); eq(r3.status, 400); eq(r3.data.field_key, 'vehicle_id', 'Anhänger am Feld Fahrzeug'); }
+  const de = (d) => d.split('-').reverse().join('.');
+  const csv = `Art;Kennzeichen;Datum;Nachweis\nMassenspeicher;${v.plate};${de(old)};Export 1644\n`;
+  const dry = await U.fleet.req('POST', '/api/tacho/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(dry.status, 200, JSON.stringify(dry.data));
+  eq(dry.data.counts.neu, 0, 'Import übernimmt nichts'); eq(dry.data.skipped.length, 1); eq(dry.data.skipped[0].reason, `Auslesedatum vor der Erstzulassung: ${v.plate}`, 'Überspring-Grund');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(src.includes("['Auslesedatum liegt vor der Erstzulassung des Fahrzeugs.', '") && src.includes('[/^Auslesedatum vor der Erstzulassung: (.{0,200})$/'), 'Übersetzungen UK/EN');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<label for="tvfd">') && app.includes('id="tvfd" name="downloaded_on" required value="${bDate()}" max="${bDate()}"${v.first_registration ? ` min="${esc(String(v.first_registration).slice(0, 7))}-01"` : \'\'}'), 'Akte: min/max am Auslesedatum');
+  ok(app.includes('<label for="tvfe">') && app.includes('id="tvfe" name="evidence"'), 'Akte: Nachweis beschriftet');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

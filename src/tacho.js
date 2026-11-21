@@ -91,6 +91,10 @@ export async function listDownloads(env, user, envName, q = {}) {
     LEFT JOIN users u ON u.id=t.created_by WHERE t.vehicle_id=? AND t.environment=? ORDER BY t.downloaded_on DESC LIMIT 100`).bind(str(q.vehicle_id, { max: 60 }), envName).all()).results;
 }
 
+// Backlog 1644: Auslesedatum vor dem Monat der Erstzulassung (Feld B, JJJJ-MM-TT oder JJJJ-MM) – Monatsvergleich, weil Fahrtenschreiber
+// teils kurz vor der Zulassung aktiviert werden; fehlende Erstzulassung prüft nichts
+export const beforeReg = (day, fr) => !!(fr && day && String(day).slice(0, 7) < String(fr).slice(0, 7));
+
 export async function addDownload(env, user, envName, body) {
   if (!isMgr(user)) throw forbidden();
   const kind = oneOf(body.kind, TACHO_KINDS, 'Art', { key: 'kind' });
@@ -105,9 +109,12 @@ export async function addDownload(env, user, envName, body) {
     if (!d) throw notFound('Fahrer nicht gefunden.');
     driverId = d.id; label = d.display_name;
   } else {
-    const v = await env.DB.prepare(`SELECT id, plate, kind FROM vehicles WHERE id=?`).bind(str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 60, field: 'Fahrzeug' })).first();
+    const v = await env.DB.prepare(`SELECT id, plate, kind, first_registration FROM vehicles WHERE id=?`).bind(str(body.vehicle_id, { key: 'vehicle_id', required: true, max: 60, field: 'Fahrzeug' })).first();
     if (!v) throw notFound('Fahrzeug nicht gefunden.');
-    if (v.kind === 'anhaenger') throw bad('validation', 'Anhänger haben keinen Fahrtenschreiber.');
+    if (v.kind === 'anhaenger') throw bad('validation', 'Anhänger haben keinen Fahrtenschreiber.', { field_key: 'vehicle_id' });
+    // Backlog 1644 (Blickwinkel „Leitung erfasst eine Massenspeicher-Auslesung mit vertipptem Jahr, z. B. 2025 statt 2026“): ein Tag vor
+    // der Erstzulassung (Monatsvergleich wie bei HU/SP, Backlog 1089) zählte als letzte Auslesung bzw. blieb unbemerkt im Verlauf
+    if (beforeReg(on, v.first_registration)) throw bad('validation', 'Auslesedatum liegt vor der Erstzulassung des Fahrzeugs.', { field_key: 'downloaded_on' });
     vehicleId = v.id; label = v.plate;
   }
   const id = uuid();
@@ -326,7 +333,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
   const offDrivers = allDrivers.filter((d) => !d.active);
   // auch außer Betrieb genommene (Backlog 188): Massenspeicher am Verkaufstag ausgelesen, Export erst danach importiert – FIN trifft das
   // Altfahrzeug (vorher „Fahrzeug nicht gefunden“, Einzelerfassung ging); Kennzeichen zuerst an aktiven, sonst eindeutig am außer Betrieb genommenen
-  const allVehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded, active, created_at FROM vehicles`).all()).results;
+  const allVehicles = (await env.DB.prepare(`SELECT id, vin, plate, kind, eval_excluded, active, created_at, first_registration FROM vehicles`).all()).results;
   const vehicles = allVehicles.filter((v) => v.active);
   const offPlates = new Set(allVehicles.filter((v) => !v.active).map((v) => normPlate(v.plate)));
   const formerPl = await formerPlatesAll(env); // Kennzeichenwechsel (Backlog 257a)
@@ -388,6 +395,7 @@ export async function importDownloads(env, user, envName, text, { dryRun = false
       if (!vin && target && target !== 'mehrdeutig' && plateFormerOther(formerPl, target, day)) return skip(PLATE_FORMER_SKIP);
       if (!target) return skip(`Fahrzeug nicht gefunden: ${get(cells, ci.vin) || get(cells, ci.plate) || '–'}`);
       if (target.kind === 'anhaenger') return skip(`Anhänger ohne Fahrtenschreiber: ${target.plate}`);
+      if (beforeReg(day, target.first_registration)) return skip(`Auslesedatum vor der Erstzulassung: ${target.plate}`); // Backlog 1644
       label = target.plate;
     }
     const key = `${target.id}|${day}`;
