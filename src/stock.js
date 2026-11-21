@@ -200,16 +200,18 @@ async function assertNoTwin(env, envName, site, name, pn, exceptId = null) {
 }
 export async function createItem(env, user, envName, body) {
   const site = siteScope(user, body.site);
-  if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.');
+  // Backlog 1643: Feld „Werkstatt“ des Formulars „Neuer Artikel“ markieren (field_key)
+  if (!site) throw bad('validation', 'Werkstatt/Lager ist erforderlich.', { field_key: 'site' });
   const ws = await env.DB.prepare('SELECT code FROM workshops WHERE code=? AND active=1').bind(site).first();
-  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.');
+  if (!ws) throw bad('validation', 'Unbekannte Werkstatt.', { field_key: 'site' });
   // Anfangsbestand VOR dem Anlegen prüfen (17.10.2026): vorher war der Artikel bei ungültigem Anfangsbestand („1.000“, -5) trotz 400
   // schon angelegt – erneutes Senden ergab „existiert bereits“
   // Backlog 1015: Anfangs-/Mindestbestand mit Einheit („5 Stück“, „20 l“) wie Buchung und Lagerimport (`qtyNum`, Einheit laut Formular); fremde Einheit mit eigenem Grund
   const unitIn0 = stdUnit(str(body.unit, { key: 'unit', max: 20, field: 'Einheit' })) || 'Stk';
   const initial = qtyNum(body.initial_qty, unitIn0, { key: 'initial_qty', min: 0, max: 1e6, field: 'Anfangsbestand', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // 0,0004 rundet beim Buchen auf 0 → Buchung abgelehnt, Artikel aber schon angelegt (17.10.2026) – vorher prüfen
-  if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
+  // Backlog 1643: Feld heißt im Formular „initial_qty“ (vorher field_key „qty“ – kein Feld markiert, nur Toast)
+  if (initial && r3(initial) <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'initial_qty' });
   await assertNoTwin(env, envName, site, str(body.name, { key: 'name', required: true, max: 200, field: 'Bezeichnung' }), str(body.part_number, { key: 'part_number', max: 80, field: 'Teilenummer' }));
   const id = uuid();
   const now = nowIso();
@@ -286,7 +288,7 @@ export async function addMovement(env, user, envName, id, body) {
   if (dup) return { ok: true, duplicate: true, on_hand: await onHand(env, id) };
   // erst nach der Wiederholungsprüfung (23.10.2026: Ausbuchen/Zugang mit verlorener Antwort, Artikel inzwischen deaktiviert → 400 statt „duplicate“)
   if (!it.active && type !== 'korrektur') throw bad('validation', 'Artikel ist deaktiviert.');
-  if (!it.active) { const oh = await onHand(env, id); if (oh === 0 || Math.abs(oh + qty) > 1e-9) throw bad('validation', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.'); }
+  if (!it.active) { const oh = await onHand(env, id); if (oh === 0 || Math.abs(oh + qty) > 1e-9) throw bad('validation', 'Bei deaktivierten Artikeln ist nur das Ausbuchen des Restbestands auf 0 möglich.', { field_key: 'qty' }); }
   if (type !== 'korrektur' && qty <= 0) throw bad('validation', 'Menge muss größer 0 sein.', { field_key: 'qty' });
   if (type === 'korrektur' && qty === 0) throw bad('validation', 'Korrektur ungleich 0 angeben.', { field_key: 'qty' });
   if (type === 'korrektur' && !str(body.note, { key: 'note', max: 500, field: 'Bemerkung' })) throw bad('validation', 'Korrektur braucht einen Grund.', { field_key: 'note' });
@@ -386,7 +388,7 @@ export async function transfer(env, user, envName, id, body, retried = false) {
       .bind(target.id, envName, toSite, it.part_number, it.name, it.unit, it.unit_price_net, user.id, now, now, k));
   } else {
     // gleiche Standardeinheit (Altbestand „Stück“ gegen „Stk“) gilt als gleich (18.10.2026)
-    if (stdUnit(target.unit) !== stdUnit(it.unit)) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`);
+    if (stdUnit(target.unit) !== stdUnit(it.unit)) throw bad('validation', `Einheit im Ziellager abweichend (${target.unit} statt ${it.unit}) – bitte dort prüfen.`, { field_key: 'to_site' }); // Backlog 1643
     if (!target.active || (target.unit_price_net === null && it.unit_price_net !== null)) stmts.push(env.DB.prepare('UPDATE stock_items SET active=1, unit_price_net=COALESCE(unit_price_net, ?), updated_at=? WHERE id=?').bind(it.unit_price_net, now, target.id));
   }
   const ins = `INSERT INTO stock_movements(id,environment,item_id,type,qty,case_id,unit_price_net,supplier,document_ref,note,user_id,created_at,transfer_id,transfer_site,request_key) VALUES (?,?,?,?,?,NULL,?,NULL,?,?,?,?,?,?,?)`;

@@ -46390,6 +46390,37 @@ await test('Backlog 1642 (Backlog 195, Blickwinkel „Leitung gibt einen Mietlkw
   for (const l of ['de', 'uk', 'en']) { ok(STRINGS[l].em_vehicle_deact && STRINGS[l].em_vehicle_deact.includes('{n}'), l + ' Grundtext'); const p = PLURALS[l].em_vehicle_deact; ok(p && p.one.includes('{n}') && p.other.includes('{n}') && (l !== 'uk' || (p.few && p.many)), l + ' Pluralformen'); for (const f of Object.values(p)) { ok(f.includes(STRINGS[l].em_title), l + ' nennt den Bereich'); ok(f.includes(STRINGS[l].nav_more), l + ' nennt den Weg'); } }
 });
 
+await test('Backlog 1643 (Backlog 195, Blickwinkel „Nur noch eine Werkstatt aktiv – Leitung legt einen Lagerartikel an bzw. importiert eine Lagerliste“): Formular „Neuer Artikel“ sendet das einzige Lager mit, Lagerimport ebenso; Server-Prüffehler markieren Werkstatt, Anfangsbestand, Menge (deaktivierter Artikel) und Ziellager (Einheit abweichend); Beschriftungen per for/id', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  // Leitung ohne Lager: Prüffehler am Feld „Werkstatt“
+  const r0 = await U.fleet.post('/api/stock', { name: 'Ohne Lager (Test 1643)' }); eq(r0.status, 400); eq(r0.data.field_key, 'site', 'fehlendes Lager → Feld site');
+  const r0b = await U.fleet.post('/api/stock', { name: 'Unbekanntes Lager (Test 1643)', site: 'GIBTSNICHT' }); eq(r0b.status, 400); eq(r0b.data.field_key, 'site', 'unbekannte Werkstatt → Feld site');
+  // Anfangsbestand rundet auf 0 → Feld initial_qty (vorher „qty“, das es im Formular nicht gibt)
+  const r1 = await U.fleet.post('/api/stock', { name: 'Rundung (Test 1643)', site: 'DORTMUND', initial_qty: '0,0004' }); eq(r1.status, 400); eq(r1.data.field_key, 'initial_qty', 'Anfangsbestand');
+  eq(db.prepare(`SELECT COUNT(*) n FROM stock_items WHERE name LIKE '%Test 1643%'`).get().n, 0, 'nichts angelegt');
+  // deaktivierter Artikel: Korrektur ungleich Restbestand → Feld qty
+  const a = (await U.fleet.post('/api/stock', { name: 'Deaktiviert (Test 1643)', site: 'DORTMUND', initial_qty: 3 })).data.id; ok(a, 'angelegt');
+  eq((await U.fleet.patch(`/api/stock/${a}`, { active: false })).status, 200, 'deaktiviert');
+  const r2 = await U.fleet.post(`/api/stock/${a}/movements`, { type: 'korrektur', qty: -1, note: 'Bruch' }); eq(r2.status, 400); eq(r2.data.field_key, 'qty', 'Menge');
+  // Umlagerung mit abweichender Einheit im Ziellager → Feld to_site
+  const s1 = (await U.fleet.post('/api/stock', { name: 'Einheit (Test 1643)', part_number: 'E-1643', site: 'DORTMUND', unit: 'l', initial_qty: 5 })).data.id;
+  eq((await U.fleet.post('/api/stock', { name: 'Einheit (Test 1643)', part_number: 'E-1643', site: 'MUENCHEN', unit: 'kg' })).status, 201);
+  const r3 = await U.fleet.post(`/api/stock/${s1}/transfer`, { to_site: 'MUENCHEN', qty: 1 }); eq(r3.status, 400); eq(r3.data.field_key, 'to_site', 'Ziellager');
+  // Oberfläche: einziges aktives Lager wird mitgesendet (Formular + Import), Felder beschriftet
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('sites.length === 1 ? `<input type="hidden" name="site" value="${esc(sites[0].code)}">`'), 'Neuer Artikel: verstecktes Feld site bei genau einem Lager');
+  ok(app.includes("const q1 = sel ? sel.value : sites.length === 1 ? sites[0].code : '';"), 'Lagerimport: einziges Lager');
+  for (const id of ['nf_name', 'nf_pn', 'nf_unit', 'nf_init', 'nf_min', 'nf_loc', 'nf_price', 'mf_type', 'mf_qty', 'mf_price', 'mf_sup', 'mf_doc', 'mf_note']) ok(app.includes(`<label for="${id}">`) && app.includes(`id="${id}" name=`), 'Beschriftung ' + id);
+  // mit nur einer aktiven Werkstatt klappt Anlegen und Import für die Leitung (so wie die Oberfläche jetzt sendet)
+  db.prepare(`UPDATE workshops SET active=0 WHERE code IN ('MUENCHEN','EXTERN')`).run();
+  try {
+    const meta = await U.fleet.get('/api/meta'); eq(meta.status, 200); eq(meta.data.workshops.map((w) => w.code).join(), 'DORTMUND', 'nur eine aktive Werkstatt');
+    const r4 = await U.fleet.post('/api/stock', { site: meta.data.workshops[0].code, name: 'Einzellager (Test 1643)', initial_qty: '2' }); eq(r4.status, 201, JSON.stringify(r4.data));
+    const imp = await U.fleet.req('POST', `/api/stock/import?dry_run=1&site=${meta.data.workshops[0].code}`, 'Bezeichnung;Lagerbestand\nImportteil 1643;1\n', { 'content-type': 'text/csv' });
+    eq(imp.status, 200, JSON.stringify(imp.data)); eq(imp.data.site, 'DORTMUND');
+  } finally { db.prepare(`UPDATE workshops SET active=1 WHERE code IN ('MUENCHEN','EXTERN')`).run(); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
