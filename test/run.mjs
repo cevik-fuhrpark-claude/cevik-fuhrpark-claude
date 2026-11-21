@@ -46450,6 +46450,18 @@ await test('Backlog 1644 (Backlog 195, Blickwinkel „Leitung erfasst eine Masse
   ok(app.includes('<label for="tvfe">') && app.includes('id="tvfe" name="evidence"'), 'Akte: Nachweis beschriftet');
 });
 
+await test('Backlog 1645 (Folge aus 1644, WCAG 1.3.1/3.3.1): Formular „Auslesung erfassen“ der Übersicht und der Fahrerakte – Beschriftungen per for/id, Auslesedatum mit max (heute), Auswahl Fahrer/Fahrzeug trägt data-fkey driver_id/vehicle_id, damit Server-Prüffehler am Feld markiert werden', async () => {
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  for (const [l, id] of [['tnft', 'id="tnft" name="target" data-fkey="${tab === \'drivers\' ? \'driver_id\' : \'vehicle_id\'}" required'], ['tnfd', 'id="tnfd" name="downloaded_on" required value="${bDate()}" max="${bDate()}"'], ['tnfe', 'id="tnfe" name="evidence" required'], ['tnfn', 'id="tnfn" name="note" maxlength="500"'], ['tdfd', 'id="tdfd" name="downloaded_on" required value="${bDate()}" max="${bDate()}"'], ['tdfe', 'id="tdfe" name="evidence" required']]) {
+    ok(app.includes(`<label for="${l}">`), 'Beschriftung ' + l); ok(app.includes(id), 'Feld ' + l);
+  }
+  // Server liefert die passenden field_key (Datum in der Zukunft, Nachweis fehlt)
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const v = db.prepare(`SELECT id FROM vehicles WHERE active=1 AND kind<>'anhaenger' ORDER BY id LIMIT 1`).get();
+  const r1 = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: '2099-01-01', evidence: 'x' }); eq(r1.status, 400); eq(r1.data.field_key, 'downloaded_on');
+  const r2 = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: '2026-01-02' }); eq(r2.status, 400); eq(r2.data.field_key, 'evidence');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

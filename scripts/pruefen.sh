@@ -289,6 +289,7 @@ UI-Fahrzeugdokument am außer Betrieb genommenen Fahrzeug (Backlog 1641)|ui-doku
 UI-Notfallnummer am außer Betrieb genommenen Fahrzeug (Backlog 1642)|ui-notfall-ausser-betrieb.py|/tmp/cfp-notfall-ausser-betrieb.log
 UI-Lager mit nur einer aktiven Werkstatt, Feldmarkierung Anfangsbestand (Backlog 1643)|ui-lager-einzellager.py|/tmp/cfp-lager-einzellager.log
 UI-Massenspeicher-Auslesung vor der Erstzulassung (Backlog 1644)|ui-tacho-erstzulassung.py|/tmp/cfp-tacho-erstzulassung.log
+UI-Auslesung erfassen: Beschriftungen, max, Feldmarkierung (Backlog 1645)|ui-tacho-formular.py|/tmp/cfp-tacho-formular.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log
