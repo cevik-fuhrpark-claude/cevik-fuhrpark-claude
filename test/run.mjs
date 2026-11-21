@@ -46726,6 +46726,47 @@ await test('Backlog 1660 (WCAG 1.3.1/4.1.2, Blickwinkel „Fahrer mit Bildschirm
   linkLabels(root); eq(lab.htmlFor, inp.id); ok(/^cfl\d+$/.test(inp.id), 'erzeugte id'); eq(lab2.htmlFor, '', 'ohne name nicht verknüpft');
 });
 
+await test('Backlog 1661 (Backlog 195, Blickwinkel „Reifendienst wechselt Freitag, Werkstatt trägt Montag nach“): Reifenereignis mit „Durchgeführt am“ – gespeichert und im Verlauf/Positionsstand; Zukunft, vor 2000, vor dem Monat der Erstzulassung und vor der letzten Erfassung derselben Position abgelehnt (field_key performed_on); heute = leer; Formular mit for/id/min/max; Texte DE/UK/EN', async () => {
+  const { e, U, V1 } = await freshWorld(); const db = e.DB.db;
+  const day = (n) => new Date(Date.parse(BERLIN_TODAY + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const post = (b) => U.ws.post(`/api/vehicles/${V1}/tires/events`, { request_key: rk(), ...b });
+  db.prepare(`UPDATE vehicles SET first_registration=? WHERE id=?`).run(day(-400).slice(0, 7), V1);
+  for (const [v, why] of [[day(1), 'Zukunft'], ['1999-12-31', 'vor 2000'], ['2026-02-30', 'kein Kalendertag'], ['20.11.2026', 'Format'], [day(-500), 'vor Erstzulassung']]) {
+    const r = await post({ event_type: 'wechsel', position: 'VA-L', size: '385/65 R22.5', performed_on: v });
+    eq(r.status, 400, why + ' ' + JSON.stringify(r.data)); eq(r.data.field_key, 'performed_on', why);
+  }
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tire_events').get().n, 0, 'nichts gespeichert');
+  const w = await post({ event_type: 'wechsel', position: 'VA-L', positions: ['VA-R'], size: '385/65 R22.5', tread_mm: 17, performed_on: day(-3) }); eq(w.status, 201, JSON.stringify(w.data));
+  eq(db.prepare(`SELECT COUNT(*) AS n FROM tire_events WHERE performed_on=?`).get(day(-3)).n, 2, 'beide Positionen mit Datum');
+  // jüngere Messung am Vortag, danach ein Nachtrag vor dieser Messung → abgelehnt (Reihenfolge bleibt fachlich richtig); andere Position frei
+  eq((await post({ event_type: 'messung', position: 'VA-L', tread_mm: 16.5, performed_on: day(-1) })).status, 201);
+  const late = await post({ event_type: 'messung', position: 'VA-L', tread_mm: 16.8, performed_on: day(-2) });
+  eq(late.status, 400, JSON.stringify(late.data)); eq(late.data.field_key, 'performed_on'); eq(late.data.last_on, day(-1)); ok(/vor der letzten Erfassung/.test(late.data.message), 'Meldung');
+  const multi = await post({ event_type: 'messung', position: 'VA-R', positions: ['VA-L'], tread_mm: 16, performed_on: day(-2) }); eq(multi.status, 400, 'eine der Positionen jünger'); eq(multi.data.field_key, 'performed_on');
+  eq((await post({ event_type: 'messung', position: 'VA-R', tread_mm: 16.9, performed_on: day(-2) })).status, 201, 'VA-R: letzte Erfassung älter');
+  eq((await post({ event_type: 'messung', position: 'VA-L', tread_mm: 16.4, performed_on: day(-1) })).status, 201, 'gleicher Tag wie zuletzt zulässig');
+  // heute = Erfassungstag → wird leer gespeichert
+  const td = await post({ event_type: 'sichtpruefung', position: 'HA-L-aussen', performed_on: BERLIN_TODAY }); eq(td.status, 201);
+  eq(db.prepare('SELECT performed_on FROM tire_events WHERE id=?').get(td.data.id).performed_on, null, 'heute = leer');
+  // ohne Datum wie bisher
+  eq((await post({ event_type: 'messung', position: 'HA-R-aussen', tread_mm: 12 })).status, 201);
+  const ov = (await U.ws.get(`/api/vehicles/${V1}/tires`)).data;
+  const va = ov.positions.find((x) => x.position === 'VA-L'); eq(va.tread_mm, 16.4); eq(va.tread_at, day(-1), 'Messtag laut Durchführung'); eq(va.last_event_at, day(-1));
+  const var_ = ov.positions.find((x) => x.position === 'VA-R'); eq(var_.tread_at, day(-2));
+  ok(ov.history.some((h) => h.performed_on === day(-3) && h.event_type === 'wechsel'), 'Verlauf liefert performed_on');
+  ok(ov.positions.find((x) => x.position === 'HA-R-aussen').tread_at.length > 10, 'ohne Datum: Erfassungszeitpunkt');
+  // Wiederholung mit gleichem request_key nach Erfolg → duplicate, kein Prüffehler „vor der letzten Erfassung“
+  const k = rk(); eq((await post({ event_type: 'messung', position: 'HA-L-innen', tread_mm: 11, performed_on: day(-1), request_key: k })).status, 201);
+  const dup = await post({ event_type: 'messung', position: 'HA-L-innen', tread_mm: 11, performed_on: day(-1), request_key: k }); ok([200, 201].includes(dup.status) && dup.data.duplicate, JSON.stringify(dup.data));
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes(`<label for="tfdone">`) && app.includes('<input type="date" id="tfdone" name="performed_on" min="2000-01-01" max="${bDate()}"'), 'Formular for/id/min/max');
+  ok(app.includes('data-tedone'), 'Verlauf zeigt Durchführungstag');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const key of ['tf_done_on', 'tf_done_on_hint', 'tf_recorded_at']) ok(STRINGS[l][key], `${l}.${key}`);
+  const i18 = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(i18.includes("['Durchgeführt am liegt vor der letzten Erfassung dieser Position – bitte Datum prüfen.', '") && i18.includes("['Durchgeführt am liegt vor dem Monat der Erstzulassung – bitte Jahr prüfen.', '"), 'Übersetzungen');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

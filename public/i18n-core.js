@@ -241,6 +241,8 @@ const V_MORE = [
   ['Gewährleistung bis: höchstens 10 Jahre voraus.', 'Гарантія до: не більше ніж на 10 років уперед.', 'Warranty until: at most 10 years ahead.'],
   ['Fahrerkarte gilt höchstens 5 Jahre – „Gültig bis“ liegt zu weit nach der Ausstellung bzw. nach heute. Bitte Jahr prüfen.', 'Картка водія дійсна не більше 5 років – «Дійсне до» надто далеко після видачі або після сьогодні. Перевірте рік.', 'A driver card is valid for at most 5 years – “Valid until” is too far after the issue date or after today. Please check the year.'],
   ['Abgeschleppt am liegt vor dem Schadenzeitpunkt.', 'Дата евакуації раніша за час пошкодження.', 'The towing date is before the time of the damage.'],
+  ['Durchgeführt am liegt vor dem Monat der Erstzulassung – bitte Jahr prüfen.', 'Дата виконання раніша за місяць першої реєстрації – перевірте рік.', 'Performed on is before the month of first registration – please check the year.'],
+  ['Durchgeführt am liegt vor der letzten Erfassung dieser Position – bitte Datum prüfen.', 'Дата виконання раніша за останній запис цієї позиції – перевірте дату.', 'Performed on is before the last entry for this position – please check the date.'],
   ['Gewährleistung bis liegt vor 2000 – bitte Jahr prüfen.', 'Гарантія до — раніше 2000 року, перевірте рік.', 'Warranty until is before 2000 – please check the year.'],
   ['Gewährleistung bis liegt vor der Erstzulassung des Fahrzeugs – bitte Jahr prüfen.', 'Гарантія до — раніше першої реєстрації транспортного засобу, перевірте рік.', 'Warranty until is before the vehicle’s first registration – please check the year.'],
   ['Gewährleistung bis: bitte gültiges Datum (JJJJ-MM-TT) angeben.', 'Гарантія до: вкажіть дійсну дату (РРРР-ММ-ДД).', 'Warranty until: please enter a valid date (YYYY-MM-DD).'],
@@ -1433,6 +1435,9 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1648: Begründung per Rückfrage leer/zu kurz/zu lang (feste Grenzen des Servers: 3 bzw. 300 Zeichen)
 // Backlog 1652: Vertragsbeginn vor der Erstzulassung (gespeichert, nur Hinweis)
 // Backlog 1653: Vertragsimport – Beginn vor der Erstzulassung (nur Hinweis)
+// Backlog 1661: Reifenereignis mit Datum der Durchführung (nachträglich erfasst)
+Object.assign(FIELD_NAMES.uk, { 'Durchgeführt am': 'Виконано' });
+Object.assign(FIELD_NAMES.en, { 'Durchgeführt am': 'Performed on' });
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

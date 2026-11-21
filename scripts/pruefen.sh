@@ -303,6 +303,7 @@ UI-Abschleppung nicht vor dem Schadenzeitpunkt: min, Feldmarkierung (Backlog 165
 UI-Dokumentablage: Gültig bis min/max, Beschriftungen, Feldmarkierung (Backlog 1658)|ui-dokument-gueltig.py|/tmp/cfp-dokument-gueltig.log
 UI-Wiedervorlage in der Vergangenheit: Feld markiert trotz eigenem Fehlercode (Backlog 1659)|ui-datum-vergangenheit-feld.py|/tmp/cfp-datum-vergangenheit-feld.log
 UI-Beschriftungen mit Feldern verknüpft (Bildschirmleser, Tippen fokussiert) auf Vorgang/Akte/Lager/Fahrer/Einstellungen (Backlog 1660)|ui-beschriftung-verknuepft.py|/tmp/cfp-beschriftung-verknuepft.log
+UI-Reifen: Durchgeführt am (Nachtrag), Feldmarkierung vor letzter Erfassung (Backlog 1661)|ui-reifen-durchgefuehrt.py|/tmp/cfp-reifen-durchgefuehrt.log
 UI-Meldung stellvertretend: Leitung trägt „Gemeldet von“ ein → Vorgang zeigt „Angabe von“; Fahrer ohne Feld (Backlog 1510)|ui-meldung-stellvertretend.py|/tmp/cfp-meldung-stellvertretend.log
 UI-Heute zu tun – Abschlusskontrolle mit Werkstatt und Zeitpunkt der Meldung (Backlog 1505)|ui-heute-kontrolle-seit.py|/tmp/cfp-heute-kontrolle-seit.log
 UI-Meldung Abkürzungen (Telegrammstil): Bremsl. li def., Kühlw. verlust, Luftfed. hi li undicht, Hupe o. Fkt., MKL leuchtet … → genau der Hinweis wie ausgeschrieben; Reparaturvermerke, ca./evtl./Str. ohne (Backlog 1468)|ui-meldung-abkuerzungen.py|/tmp/cfp-meldung-abkuerzungen.log

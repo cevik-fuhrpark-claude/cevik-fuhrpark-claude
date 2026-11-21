@@ -71,7 +71,7 @@ export async function personExport(env, actor, { userId = null, driverId = null 
       ORDER BY e.created_at`, userId),
     vehicle_notes_written: q(`SELECT n.environment, n.text, n.for_driver, n.created_at, n.valid_until, n.archived_at, v.plate FROM vehicle_notes n JOIN vehicles v ON v.id=n.vehicle_id WHERE n.created_by=? ORDER BY n.created_at`, userId),
     // weitere Erfassungen dieser Person (17.10.2026 ergänzt – vorher fehlten u. a. Reifenmessungen und Teile in der Auskunft)
-    tire_events_recorded: q(`SELECT t.environment, t.position, t.event_type, t.tread_mm, t.pressure_bar, t.dot, t.created_at, v.plate FROM tire_events t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.recorded_by=? ORDER BY t.created_at`, userId),
+    tire_events_recorded: q(`SELECT t.environment, t.position, t.event_type, t.tread_mm, t.pressure_bar, t.dot, t.created_at, t.performed_on, v.plate FROM tire_events t JOIN vehicles v ON v.id=t.vehicle_id WHERE t.recorded_by=? ORDER BY t.created_at`, userId),
     tire_specs_verified: q(`SELECT s.axle, s.size, s.verified_at, v.plate FROM tire_specs s JOIN vehicles v ON v.id=s.vehicle_id WHERE s.verified_by=? ORDER BY s.verified_at`, userId),
     parts_recorded: q(`SELECT c.case_no, p.name, p.quantity, p.unit, p.created_at FROM parts p JOIN cases c ON c.id=p.case_id WHERE p.user_id=? ORDER BY p.created_at`, userId),
     external_costs_recorded: q(`SELECT c.case_no, x.supplier, x.created_at FROM external_costs x JOIN cases c ON c.id=x.case_id WHERE x.user_id=? ORDER BY x.created_at`, userId),
