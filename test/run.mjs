@@ -46523,6 +46523,23 @@ await test('Backlog 1648 (Backlog 195, Blickwinkel „Leitung storniert einen Na
   const fn2 = new Function('prompt', 't', body + '\nreturn askReason;')(() => null, (k) => k); eq(fn2('x'), null, 'Abbrechen → null');
 });
 
+await test('Backlog 1649 (Folge aus 1647): Fremdleistung mit km-Stand – Datum laut Rechnung vor dem Monat der Erstzulassung wird abgelehnt (Feld odometer_on, nichts gebucht); Monat der Erstzulassung und Fahrzeug ohne Erstzulassung bleiben möglich; Formular setzt min; Texte DE/UK/EN', async () => {
+  const { e, U, cmd, toRepair, V1 } = await freshWorld(); const db = e.DB.db;
+  const a = await toRepair();
+  const now = new Date(); const first = now.toISOString().slice(0, 7) + '-01';
+  const old = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15)).toISOString().slice(0, 10);
+  db.prepare(`UPDATE vehicles SET first_registration=? WHERE id=?`).run(first, V1);
+  const n = () => db.prepare('SELECT COUNT(*) AS n FROM external_costs WHERE case_id=?').get(a).n; const n0 = n();
+  const r1 = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-1649-1', amount_net: '100', odometer_km: '1000', odometer_on: old });
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'odometer_on', 'Feld Datum laut Rechnung'); ok(/vor der Erstzulassung/.test(JSON.stringify(r1.data)), 'Meldung'); eq(n(), n0, 'nichts gebucht');
+  const r2 = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-1649-2', amount_net: '100', odometer_km: '1000', odometer_on: first }); eq(r2.status, 200, 'Monat der Erstzulassung: ' + JSON.stringify(r2.data));
+  db.prepare(`UPDATE vehicles SET first_registration=NULL WHERE id=?`).run(V1);
+  const r3 = await cmd(U.fleet, a, 'add_external_cost', { supplier: 'Truck-Service Nord', invoice_no: 'R-1649-3', amount_net: '100', odometer_km: '900', odometer_on: old }); eq(r3.status, 200, 'ohne Erstzulassung: ' + JSON.stringify(r3.data));
+  const fs = await import('node:fs');
+  ok(fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8').includes("['Datum laut Rechnung liegt vor der Erstzulassung des Fahrzeugs.', '"), 'Übersetzung UK/EN');
+  ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes('id="extkmo" name="odometer_on" min="2000-01-01" max="${bDate()}"'), 'Formular: min/max');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2226,6 +2226,9 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
         if (extOn) {
           if (!isCalendarDate(extOn) || extOn < '2000-01-01') throw bad('validation', 'Datum laut Rechnung ungültig (JJJJ-MM-TT).', { field_key: 'odometer_on' });
           if (extOn > berlinDate()) throw bad('validation', 'Datum laut Rechnung darf nicht in der Zukunft liegen.', { field_key: 'odometer_on' });
+          // Backlog 1649 (wie 1647 „Kilometerstand erfassen“): Datum laut Rechnung vor dem Monat der Erstzulassung = Tippfehler im Jahr
+          const extFr = (await env.DB.prepare('SELECT first_registration FROM vehicles WHERE id=?').bind(c.vehicle_id).first() || {}).first_registration;
+          if (extFr && extOn.slice(0, 7) < String(extFr).slice(0, 7)) throw bad('validation', 'Datum laut Rechnung liegt vor der Erstzulassung des Fahrzeugs.', { field_key: 'odometer_on' });
           if (extOn < berlinDate()) at = `${extOn}T12:00:00.000Z`;
         }
         const [prev, next] = await Promise.all([
