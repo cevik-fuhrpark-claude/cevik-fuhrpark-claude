@@ -46462,6 +46462,24 @@ await test('Backlog 1645 (Folge aus 1644, WCAG 1.3.1/3.3.1): Formular „Auslesu
   const r2 = await U.fleet.post('/api/tacho/downloads', { kind: 'massenspeicher', vehicle_id: v.id, downloaded_on: '2026-01-02' }); eq(r2.status, 400); eq(r2.data.field_key, 'evidence');
 });
 
+await test('Backlog 1646 (Backlog 1501 Nachlese, WCAG 3.3.1): km-Stand, Position und Vorgang der Reifenakte sowie km-Stand der Abfahrtskontrolle und der Fremdleistung melden field_key; Abfahrtskontrolle/Kontrolle nach Reparatur markieren das km-Feld per data-fkey', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const v = db.prepare(`SELECT id FROM vehicles WHERE active=1 AND kind<>'anhaenger' ORDER BY id LIMIT 1`).get().id;
+  const tp = `/api/vehicles/${v}/tires/events`;
+  const r1 = await U.fleet.post(tp, { event_type: 'messung', position: 'VA-L', tread_mm: 5, odometer_km: 'viel' }); eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'odometer_km', 'Reifen: km-Stand');
+  const r2 = await U.fleet.post(tp, { event_type: 'messung', position: 'AH1-L', tread_mm: 5 }); eq(r2.status, 400, JSON.stringify(r2.data)); eq(r2.data.field_key, 'position', 'Reifen: Position passt nicht zum Lkw');
+  const r3 = await U.fleet.post(tp, { event_type: 'messung', position: 'VA-L', positions: ['AH1-L'], tread_mm: 5 }); eq(r3.status, 400); eq(r3.data.field_key, 'positions', 'Reifen: weitere Position passt nicht');
+  const r4 = await U.fleet.post(tp, { event_type: 'messung', position: 'VA-L', tread_mm: 5, case_id: 'gibtsnicht' }); eq(r4.status, 400); eq(r4.data.field_key, 'case_id', 'Reifen: Vorgang');
+  const keys = (await U.driver.get('/api/meta')).data.checklist.map((i) => i.key);
+  const who = (await U.fleet.post('/api/inspections', { kind: 'abfahrt', vehicle_id: v, request_key: rk(), items: keys.map((k) => ({ key: k, result: 'ok' })), odometer_km: 'viel' }));
+  eq(who.status, 400, JSON.stringify(who.data)); eq(who.data.field_key, 'odometer_km', 'Abfahrtskontrolle: km-Stand');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<input id="km" name="km" data-fkey="odometer_km" inputmode="numeric"') && app.includes('<input id="km" data-fkey="odometer_km" inputmode="numeric"'), 'km-Felder der Kontrollen mit data-fkey');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/cases.js', import.meta.url), 'utf8');
+  ok(src.includes("kmNum(p.odometer_km, { key: 'odometer_km' })"), 'Fremdleistung: km-Stand mit Feldbezug');
+  for (const f of ['tires', 'cases', 'vehicles', 'contracts', 'tacho']) { const t = (await import('node:fs')).readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8'); ok(!/kmNum\([^,()]+\)/.test(t), f + ': kein kmNum ohne Feldbezug'); }
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);

@@ -2218,7 +2218,7 @@ export async function runCommand(env, ctx, user, envName, caseId, body) {
       // Backlog 887 (Folge aus 886, Blickwinkel „Fremdwerkstatt-Rechnung mit unpassendem km-Stand“): optional km-Stand laut Rechnung (mit Datum
       // laut Rechnung, ohne = heute). Gleiche Regel wie „Kilometerstand erfassen“/Kontrolle: nicht kleiner als der Stand davor, nicht größer als
       // ein später erfasster – sonst nicht in die Fahrzeugakte, nur im Verlauf und in der Antwort (`km_rejected`). Keine Pflichtangabe.
-      const extOdo = p.odometer_km === undefined || p.odometer_km === null || String(p.odometer_km).trim() === '' ? null : kmNum(p.odometer_km);
+      const extOdo = p.odometer_km === undefined || p.odometer_km === null || String(p.odometer_km).trim() === '' ? null : kmNum(p.odometer_km, { key: 'odometer_km' }); // Backlog 1646
       const extOn = extOdo !== null && typeof p.odometer_on === 'string' && p.odometer_on.trim() ? p.odometer_on.trim() : null;
       let extKmRej = null, extKmTestOnly = false;
       if (extOdo !== null) {
@@ -2547,7 +2547,7 @@ export async function submitInspection(env, ctx, user, envName, body, retried = 
     byKey.set(it.key, { key: it.key, result, note, safety_relevant: flag(it.safety_relevant, 'Sicherheitsrelevant'), followup_priority: it.followup_priority && PRIORITIES.includes(it.followup_priority) ? it.followup_priority : null, ...(onCoupled ? { on_coupled: true } : {}) });
   }
   if (byKey.size !== keys.size) throw bad('incomplete', 'Bitte alle Prüfpunkte bewerten (OK / Mangel / entfällt).');
-  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
+  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km, { key: 'odometer_km' }); // Backlog 1646: Feld km markieren
   const defects = [...byKey.values()].filter((i) => i.result === 'mangel');
   // Backlog 824 (Blickwinkel „Fahrer mit Zugmaschine + Anhänger – Abfahrtskontrolle für beide“): ein Mangel am fest gekoppelten Fahrzeug
   // landete bisher als Folgeauftrag (und ggf. Sperre) am gewählten Fahrzeug – Werkstatt am falschen Fahrzeug, Anhänger ohne Sperre/Verlauf.

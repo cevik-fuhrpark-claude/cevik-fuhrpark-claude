@@ -207,11 +207,11 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   // Sammel-Erfassung (z. B. Umrüstung auf Winterreifen): gleiche Angaben für weitere Positionen, atomar in einem Batch
   // `positions` als Text o. Ä. wurde still ignoriert (18.10.2026: nur die erste Position erfasst) – nur Liste oder nichts
   if (body.positions != null && !Array.isArray(body.positions)) throw bad('tire_positions_list', 'Weitere Positionen bitte als Liste angeben.');
-  const extra = Array.isArray(body.positions) ? body.positions.map((p) => oneOf(p, POSITIONS, 'Position')) : [];
+  const extra = Array.isArray(body.positions) ? body.positions.map((p) => oneOf(p, POSITIONS, 'Position', { key: 'positions' })) : [];
   const positions = [...new Set([position, ...extra])];
   const allowed = positionsForKind(v.kind);
   const wrong = positions.filter((p) => !allowed.includes(p));
-  if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).');
+  if (wrong.length) throw bad('validation', v.kind === 'anhaenger' ? 'Position passt nicht zum Anhänger (nur AH-Achsen oder Reserve).' : 'Position passt nicht zum Lkw (Anhängerachsen AH beim Anhänger erfassen).', { field_key: wrong.includes(position) ? 'position' : 'positions' }); // Backlog 1646
   const tread0 = num(body.tread_mm, { key: 'tread_mm', min: 0, max: 30, field: 'Profiltiefe', unit: 'mm', nullable: true, decimalComma: commaDec(user), decimalPoint: pointDec(user) });
   // auf 3 Nachkommastellen wie die Anzeige – sonst „1,6 mm liegt unter dem Minimum von 1,6 mm“ bei 1,5996 (18.10.2026)
   const tread = tread0 === null ? null : Math.round(tread0 * 1000) / 1000;
@@ -226,15 +226,15 @@ export async function addTireEvent(env, user, envName, vehicleId, body) {
   const caseId = body.case_id ? str(body.case_id, { key: 'case_id', max: 40, field: 'Vorgang' }) : null;
   if (caseId) {
     const c = await env.DB.prepare('SELECT id, status, workshop_site, suggested_workshop_site, reporter_id FROM cases WHERE id=? AND environment=? AND vehicle_id=?').bind(caseId, envName, vehicleId).first();
-    if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.');
+    if (!c) throw bad('validation', 'Vorgang passt nicht zu diesem Fahrzeug.', { field_key: 'case_id' }); // Backlog 1646
     // Backlog 1603 (Blickwinkel „Werkstatt wechselt den platten Reifen im Auftrag und erfasst ihn in der Reifenakte“): eine andere Werkstatt
     // hängte den Wechsel an den Auftrag (Auftrag zeigte dann „Rad gewechselt“ und den Radmuttern-Hinweis), ebenso an abgelehnte/ohne Reparatur
     // beendete Vorgänge – Werkstatt nur an Aufträge mit vollem Zugriff, niemand an abgelehnte Vorgänge
-    if (c.status === 'abgelehnt') throw bad('validation', 'Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.');
-    if (user.role === 'workshop' && caseAccess(user, c) !== 'full') throw bad('validation', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.');
+    if (c.status === 'abgelehnt') throw bad('validation', 'Vorgang ist abgelehnt bzw. ohne Reparatur beendet – Reifen ohne Vorgang erfassen.', { field_key: 'case_id' });
+    if (user.role === 'workshop' && caseAccess(user, c) !== 'full') throw bad('validation', 'Auftrag gehört nicht zu Ihrer Werkstatt – Reifen ohne Vorgang erfassen.', { field_key: 'case_id' });
   }
   const winter = body.winter_mark === undefined || body.winter_mark === null || body.winter_mark === '' ? null : oneOf(body.winter_mark, WINTER_MARKS, 'Winterkennzeichnung', { key: 'winter_mark' });
-  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km);
+  const odo = body.odometer_km === undefined || body.odometer_km === null || body.odometer_km === '' ? null : kmNum(body.odometer_km, { key: 'odometer_km' }); // Backlog 1646: Feld markieren
   const now = nowIso();
   const brand = str(body.brand, { key: 'brand', max: 60, field: 'Marke' }); const note = str(body.note, { key: 'note', max: 1000, field: 'Bemerkung' });
   // Wiederholung mit gleichem request_key (Netzabbruch, erneutes Absenden): keine doppelten Ereignisse, Antwort duplicate (19.10.2026, Migration 0064)
