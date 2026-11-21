@@ -46504,6 +46504,25 @@ await test('Backlog 1647 (Backlog 195, Blickwinkel „Leitung trägt einen km-St
   ok(app.includes('<label for="kfnote">') && app.includes('<input id="kfnote" name="note"'), 'Akte: Begründung beschriftet');
 });
 
+await test('Backlog 1648 (Backlog 195, Blickwinkel „Leitung storniert einen Nachweis mit zu kurzer oder leerer Begründung“): Begründungs-Rückfragen (Auslesung/Führerscheinkontrolle/Nachweis stornieren, außer Betrieb nehmen, aus Bewertung nehmen) laufen über askReason – leer, zu kurz oder zu lang fragt erneut mit Hinweis statt Server-Toast; Grenzen wie der Server; Texte DE/UK/EN', async () => {
+  const fs = await import('node:fs'); const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(/function askReason\(key, min = 3, max = 300\)/.test(app), 'Helfer askReason');
+  for (const k of ['tacho_cancel_reason', 'lc_cancel_reason', 'ddoc_cancel_reason', 'deactivate_reason', 'evx_reason']) {
+    ok(!app.includes(`prompt(t('${k}'))`), k + ': kein rohes prompt mehr'); ok(app.includes(`askReason('${k}'`), k + ': über askReason');
+  }
+  ok(app.includes("askReason('deactivate_reason', 1)") && app.includes("askReason('evx_reason', 1)"), 'außer Betrieb/Bewertung: nur Pflicht (Server prüft keine Mindestlänge)');
+  for (const f of ['drivers', 'tacho']) ok(fs.readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8').includes("if (reason.length < 3) throw bad('validation', 'Begründung ist zu kurz.');"), f + ': Server-Grenze 3 Zeichen unverändert');
+  const { STRINGS } = await import('../public/i18n.js');
+  for (const l of ['de', 'uk', 'en']) for (const k of ['reason_empty', 'reason_too_short', 'reason_too_long']) ok(STRINGS[l][k] && STRINGS[l][k].length > 5, `${l}.${k}`);
+  // Verhalten des Helfers (nachgebaut aus dem Quelltext): leer → reason_empty, „ab“ → zu kurz, 301 Zeichen → zu lang, dann gültig
+  const body = app.slice(app.indexOf('function askReason('), app.indexOf('\nfunction toast('));
+  const answers = ['   ', 'ab', 'x'.repeat(301), '  Tippfehler im Datum  ']; const asked = [];
+  const fn = new Function('prompt', 't', body + '\nreturn askReason;')((m) => { asked.push(m); return answers.shift(); }, (k) => '[' + k + ']');
+  eq(fn('tacho_cancel_reason'), 'Tippfehler im Datum', 'getrimmte Begründung');
+  eq(asked.length, 4); eq(asked[0], '[tacho_cancel_reason]'); ok(asked[1].startsWith('[reason_empty]') && asked[2].startsWith('[reason_too_short]') && asked[3].startsWith('[reason_too_long]'), JSON.stringify(asked));
+  const fn2 = new Function('prompt', 't', body + '\nreturn askReason;')(() => null, (k) => k); eq(fn2('x'), null, 'Abbrechen → null');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
