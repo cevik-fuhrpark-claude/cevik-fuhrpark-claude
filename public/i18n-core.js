@@ -269,6 +269,7 @@ const V_MORE = [
   ['App-Konto nicht gefunden (Rolle Fahrer, gleiche Umgebung).', 'Обліковий запис не знайдено (роль «Водій», те саме середовище).', 'App account not found (role driver, same environment).'],
   ['Anhänger haben keinen Fahrtenschreiber.', 'Причепи не мають тахографа.', 'Trailers have no tachograph.'],
   ['Auslesedatum liegt vor der Erstzulassung des Fahrzeugs.', 'Дата зчитування раніша за першу реєстрацію транспортного засобу.', 'The download date is before the vehicle’s first registration.'],
+  ['Ablesedatum liegt vor der Erstzulassung des Fahrzeugs.', 'Дата зчитування пробігу раніша за першу реєстрацію транспортного засобу.', 'The reading date is before the vehicle’s first registration.'],
   ['Ablesedatum ungültig (JJJJ-MM-TT).', 'Недійсна дата зчитування пробігу (РРРР-ММ-ДД).', 'Invalid reading date (YYYY-MM-DD).'],
   ['HU/SP sind zeitabhängig – keine km-Fälligkeit angeben.', 'HU/SP залежать лише від часу – не вказуйте строк за пробігом.', 'HU/SP depend on time only – do not enter a mileage due.'],
   ['Fällig bei km liegt nicht nach dem km-Stand der letzten Prüfung.', '«Строк за пробігом, км» не перевищує пробіг під час останньої перевірки.', '“Due at km” is not above the mileage at the last inspection.'],

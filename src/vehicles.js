@@ -1857,8 +1857,14 @@ export async function addOdometer(env, user, vehicleId, body) {
     if (d < today) measuredAt = `${d}T12:00:00.000Z`;
   }
   const note = str(body.note, { key: 'note', max: 300, field: 'Bemerkung' });
-  const v = await env.DB.prepare('SELECT id, active FROM vehicles WHERE id=?').bind(vehicleId).first();
+  const v = await env.DB.prepare('SELECT id, active, first_registration FROM vehicles WHERE id=?').bind(vehicleId).first();
   if (!v) throw notFound('Fahrzeug nicht gefunden.');
+  // Backlog 1647 (Blickwinkel „Leitung trägt einen km-Stand mit vertipptem Jahr nach“, z. B. 20.11.2016 statt 2026): ein Ablesedatum vor dem
+  // Monat der Erstzulassung (Feld B, Monatsvergleich wie HU/SP Backlog 1089 und Auslesung Backlog 1644) gibt es nicht – der Stand landete sonst
+  // als ältester Wert im Verlauf und verschob die Plausibilität aller späteren Erfassungen; fehlende Erstzulassung prüft nichts
+  if (mOn && v.first_registration && String(mOn).slice(0, 7) < String(v.first_registration).slice(0, 7)) {
+    throw bad('validation', 'Ablesedatum liegt vor der Erstzulassung des Fahrzeugs.', { field_key: 'measured_on' });
+  }
   // Backlog 1636 (Blickwinkel „Fahrer erfasst einen Kilometerstand an einem außer Betrieb genommenen Fahrzeug“, z. B. über einen alten
   // QR-Aufkleber oder Link): Abfahrtskontrolle/Meldung lehnen außer Betrieb genommene Fahrzeuge ab, der km-Stand nahm ihn an – ein Stand
   // eines verkauften Lkw verfälschte dann Verlauf/Datenqualität. Nur Inhaber/Leitung dürfen nachtragen (z. B. Stand bei Rückgabe/Verkauf).

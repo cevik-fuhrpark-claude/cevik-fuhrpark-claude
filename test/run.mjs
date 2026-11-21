@@ -46480,6 +46480,30 @@ await test('Backlog 1646 (Backlog 1501 Nachlese, WCAG 3.3.1): km-Stand, Position
   for (const f of ['tires', 'cases', 'vehicles', 'contracts', 'tacho']) { const t = (await import('node:fs')).readFileSync(new URL(`../src/${f}.js`, import.meta.url), 'utf8'); ok(!/kmNum\([^,()]+\)/.test(t), f + ': kein kmNum ohne Feldbezug'); }
 });
 
+await test('Backlog 1647 (Backlog 195, Blickwinkel „Leitung trägt einen km-Stand mit vertipptem Jahr nach“): Ablesedatum vor dem Monat der Erstzulassung wird abgelehnt (Feld measured_on, nichts gespeichert); Monat der Erstzulassung, Erstzulassung JJJJ-MM und Fahrzeuge ohne Erstzulassung bleiben erfassbar; Akte setzt min am Ablesedatum und beschriftet Datum/Begründung per for/id; Texte DE/UK/EN', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const [v, v2] = db.prepare(`SELECT id FROM vehicles WHERE active=1 AND kind<>'anhaenger' ORDER BY id LIMIT 2`).all().map((x) => x.id);
+  const now = new Date(); const ym = now.toISOString().slice(0, 7); const first = ym + '-01';
+  const old = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15)).toISOString().slice(0, 10);
+  db.prepare(`UPDATE vehicles SET first_registration=? WHERE id=?`).run(first, v);
+  db.prepare(`UPDATE vehicles SET first_registration=NULL WHERE id=?`).run(v2);
+  const cnt = (id) => db.prepare(`SELECT COUNT(*) n FROM odometer_readings WHERE vehicle_id=?`).get(id).n;
+  const n0 = cnt(v);
+  const r1 = await U.fleet.post(`/api/vehicles/${v}/odometer`, { km: 1234, measured_on: old, note: 'Nachtrag 1647' });
+  eq(r1.status, 400, JSON.stringify(r1.data)); eq(r1.data.field_key, 'measured_on', 'Feld Ablesedatum');
+  ok(/vor der Erstzulassung/.test(JSON.stringify(r1.data)), 'Meldung nennt die Erstzulassung'); eq(cnt(v), n0, 'nichts gespeichert');
+  const r2 = await U.fleet.post(`/api/vehicles/${v}/odometer`, { km: 1234, measured_on: first, note: 'Nachtrag 1647' }); ok(r2.status < 300, 'Monat der Erstzulassung erlaubt: ' + JSON.stringify(r2.data));
+  db.prepare(`UPDATE vehicles SET first_registration=? WHERE id=?`).run(ym, v); // nur Monat
+  eq((await U.fleet.post(`/api/vehicles/${v}/odometer`, { km: 1200, measured_on: old, note: 'x' })).status, 400, 'auch bei Erstzulassung JJJJ-MM');
+  const r3 = await U.fleet.post(`/api/vehicles/${v2}/odometer`, { km: 1234, measured_on: old, note: 'x' }); ok(r3.status < 300, 'ohne Erstzulassung keine Prüfung: ' + JSON.stringify(r3.data));
+  const r4 = await U.fleet.post(`/api/vehicles/${v}/odometer`, { km: 'viel' }); eq(r4.status, 400); eq(r4.data.field_key, 'km', 'km-Feld');
+  const src = (await import('node:fs')).readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+  ok(src.includes("['Ablesedatum liegt vor der Erstzulassung des Fahrzeugs.', '"), 'Übersetzung UK/EN');
+  const app = (await import('node:fs')).readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  ok(app.includes('<label for="kfdate">') && app.includes(`id="kfdate" name="measured_on" max="\${bDate()}" min="\${v.first_registration && String(v.first_registration).slice(0, 7) > '2000-01'`), 'Akte: min/max und for/id am Ablesedatum');
+  ok(app.includes('<label for="kfnote">') && app.includes('<input id="kfnote" name="note"'), 'Akte: Begründung beschriftet');
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
