@@ -4312,3 +4312,7 @@ Object.assign(STRINGS.en, { reason_empty: 'Please enter a reason.', reason_too_s
 Object.assign(STRINGS.de, { ct_start_before_reg: 'Gespeichert. Hinweis: Vertragsbeginn {d} liegt vor der Erstzulassung ({ez}) – bitte Jahr laut Vertrag prüfen.' });
 Object.assign(STRINGS.uk, { ct_start_before_reg: 'Збережено. Увага: початок договору {d} раніший за першу реєстрацію ({ez}) – перевірте рік за договором.' });
 Object.assign(STRINGS.en, { ct_start_before_reg: 'Saved. Note: contract start {d} is before the first registration ({ez}) – please check the year per contract.' });
+// Backlog 1653: Vertragsimport – Beginn vor der Erstzulassung (nur Hinweis)
+Object.assign(STRINGS.de, { ct_imp_before_reg: 'Beginn {d} liegt vor der Erstzulassung ({ez}) – Jahr prüfen.' });
+Object.assign(STRINGS.uk, { ct_imp_before_reg: 'Початок {d} раніший за першу реєстрацію ({ez}) – перевірте рік.' });
+Object.assign(STRINGS.en, { ct_imp_before_reg: 'Start {d} is before the first registration ({ez}) – check the year.' });

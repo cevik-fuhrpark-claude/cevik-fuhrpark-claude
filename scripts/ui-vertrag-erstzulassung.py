@@ -1,6 +1,6 @@
 # [CLAUDE] UI-Test (21.11.2026, Backlog 1652, Blickwinkel „Leitung erfasst einen Leasingvertrag mit vertipptem Beginn“): Fahrzeugakte →
 # „Vertrag hinzufügen“ mit Vertragsbeginn vor der Erstzulassung → Vertrag gespeichert, Hinweis mit beiden Daten übersetzt sichtbar (DE/UK/EN);
-# Beginn im Monat der Erstzulassung → normales „Gespeichert“. 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig.
+# Backlog 1653: Vertragsimport-Vorschau nennt die Zeile mit Beginn vor der Erstzulassung. 390/820/1366 px, ohne Querscrollen/Skriptfehler. Frischer Dev-Server nötig.
 import os, datetime
 from playwright.sync_api import sync_playwright
 B=os.environ.get('CFP_URL','http://localhost:8787'); PW='Sicheres-Passwort-2026'; SHOTS=os.environ.get('CFP_SHOTS')
@@ -38,6 +38,18 @@ with sync_playwright() as p:
         cts=api('GET','/api/vehicles/VIN:'+VIN)['d'].get('contracts') or []
         check(any(c.get('contract_no')==f'L-1652-{n}' for c in cts), f'{tag}: Vertrag gespeichert')
         check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{tag}: kein Querscrollen')
+        # Backlog 1653: Importvorschau
+        CCSV=('\ufeffKennzeichen;FIN;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);km-Kontingent;km bei Übernahme;Monatsrate;Nachweis\r\n'
+              +f'VT-AB 1652;{VIN};Versicherung;Vers AG;V-1653-{n};01.01.2014;;;;;;Import 1653\r\n').encode('utf-8')
+        q.goto(B+'/#/contracts'); q.wait_for_selector('#ctimp',state='attached')
+        q.evaluate("()=>{const d=document.querySelector('#ctimp').closest('details'); if(d) d.open=true}")
+        q.set_input_files('#ctimp',{'name':'v.csv','mimeType':'text/csv','buffer':CCSV})
+        try: q.wait_for_selector('#ctimpr [data-ctimpreg]',state='attached',timeout=10000); hint=q.evaluate("()=>document.querySelector('#ctimpr [data-ctimpreg]').textContent")
+        except Exception: hint=''
+        check(('15.03.2024' in hint or '2024' in hint) and len(hint)>20, f'{tag}: Importvorschau nennt Erstzulassung ({hint[:80]!r})')
+        q.evaluate("()=>{const x=document.querySelector('#ctimpr [data-ctimpreg]'); if(x){ x.closest('details') && (x.closest('details').open=true); x.scrollIntoView({block:'center'}); }}")
+        if SHOTS: q.screenshot(path=f'{SHOTS}/vtimp_{lang}_{w}.png')
+        check(q.evaluate('()=>document.documentElement.scrollWidth<=window.innerWidth+1'),f'{tag}: Import kein Querscrollen')
         check(not errs,f'{tag}: keine Skriptfehler {errs}')
         ctx.close()
     br.close()

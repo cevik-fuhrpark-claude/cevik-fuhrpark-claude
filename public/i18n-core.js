@@ -1428,6 +1428,7 @@ Object.assign(VALIDATION_TEXTS.en, { zgm_tonnes: 'Permissible gross weight (kg):
 // Backlog 1640: Fahrzeughinweis am außer Betrieb genommenen Fahrzeug – oft für den Nachfolger mit gleichem Kennzeichen gemeint
 // Backlog 1648: Begründung per Rückfrage leer/zu kurz/zu lang (feste Grenzen des Servers: 3 bzw. 300 Zeichen)
 // Backlog 1652: Vertragsbeginn vor der Erstzulassung (gespeichert, nur Hinweis)
+// Backlog 1653: Vertragsimport – Beginn vor der Erstzulassung (nur Hinweis)
 // Sprachpaket nachladen (vollständig, deutsche Rückfalltexte sind enthalten); Fehler (z. B. offline ohne Cache) → erneut versuchbar
 const LOADING = {}, LOADED = new Set();
 export const langLoaded = (l) => LOADED.has(l);

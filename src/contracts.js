@@ -694,7 +694,7 @@ export async function importContracts(env, user, text, { dryRun = false, source 
   if (ci.ev < 0 && !fallbackEv) throw bad('validation', 'Spalte „Nachweis“ oder Angabe „Quelle“ für alle Zeilen erforderlich.', { field_key: 'source' }); // Backlog 1580: Feld „Quelle“ markieren
 
   const [vehRes, exRes, formerPl] = await Promise.all([
-    env.DB.prepare('SELECT id, vin, plate, active, eval_excluded FROM vehicles').all(),
+    env.DB.prepare('SELECT id, vin, plate, active, eval_excluded, first_registration FROM vehicles').all(),
     env.DB.prepare('SELECT vehicle_id, kind, contract_no, partner, start_date, end_date, ended_on FROM vehicle_contracts').all(),
     formerPlatesAll(env), // Kennzeichenwechsel (Backlog 257a)
   ]);
@@ -765,7 +765,9 @@ export async function importContracts(env, user, text, { dryRun = false, source 
     // Nur Hinweis: z. B. Haftpflicht und Kasko bei verschiedenen Versicherern laufen legitim parallel.
     const par = status === 'neu' ? exRes.results.find((c) => c.vehicle_id === v.id && c.kind === f.kind && !c.ended_on && (!c.end_date || !f.start_date || c.end_date >= f.start_date)
       && (!f.end_date || !c.start_date || c.start_date <= f.end_date)) : null;
-    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status, ...(par ? { parallel: { partner: par.partner, contract_no: par.contract_no || null, start_date: par.start_date || null, end_date: par.end_date || null } } : {}) });
+    // Backlog 1653 (Folge aus 1652): Beginn vor dem Monat der Erstzulassung – nur Hinweis in Vorschau/Ergebnis (`start_before_registration` = Erstzulassung)
+    const sbr = status === 'neu' && f.start_date && v.first_registration && f.start_date.slice(0, 7) < String(v.first_registration).slice(0, 7) ? v.first_registration : null;
+    rows.push({ line, vehicle_id: v.id, plate: v.plate, ...f, status, ...(par ? { parallel: { partner: par.partner, contract_no: par.contract_no || null, start_date: par.start_date || null, end_date: par.end_date || null } } : {}), ...(sbr ? { start_before_registration: sbr } : {}) });
   });
   const fresh = rows.filter((r) => r.status === 'neu');
   // Backlog 846 (Folge aus 844): neue Zeile mit km-Kontingent, deren „km bei Übernahme“ weniger Stellen hat als die letzte Ablesung bis Ende des

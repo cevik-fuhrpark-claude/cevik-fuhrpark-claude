@@ -46592,6 +46592,22 @@ await test('Backlog 1652 (Backlog 195, Blickwinkel „Leitung erfasst einen Leas
   const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_start_before_reg.includes('{d}') && STRINGS[l].ct_start_before_reg.includes('{ez}'), l);
 });
 
+await test('Backlog 1653 (Folge aus 1652): Vertragsimport nennt in Vorschau und Ergebnis neue Zeilen mit Beginn vor dem Monat der Erstzulassung (start_before_registration), importiert sie trotzdem; Oberfläche zeigt den Hinweis (DE/UK/EN)', async () => {
+  const { e, U } = await freshWorld(); const db = e.DB.db;
+  const [a, b] = db.prepare(`SELECT id, plate, vin FROM vehicles WHERE active=1 AND vin IS NOT NULL ORDER BY id LIMIT 2`).all();
+  db.prepare(`UPDATE vehicles SET first_registration='2024-03-15' WHERE id IN (?, ?)`).run(a.id, b.id);
+  const csv = '﻿Kennzeichen;FIN;Vertragsart;Vertragspartner;Vertragsnummer;Beginn;Ende;Kündigungsfrist (Monate);km-Kontingent;km bei Übernahme;Monatsrate;Nachweis\r\n'
+    + `${a.plate};${a.vin};Leasing;Leasing AG;L-1653-1;01.03.2014;;;;;;Import 1653\r\n${b.plate};${b.vin};Leasing;Leasing AG;L-1653-2;01.03.2024;;;;;;Import 1653\r\n`;
+  const pv = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); eq(pv.status, 200, JSON.stringify(pv.data));
+  eq(pv.data.rows.find((r) => r.contract_no === 'L-1653-1').start_before_registration, '2024-03-15', 'Vorschau nennt die Erstzulassung');
+  ok(!('start_before_registration' in pv.data.rows.find((r) => r.contract_no === 'L-1653-2')), 'gleicher Monat ohne Hinweis');
+  const ir = await U.fleet.req('POST', '/api/contracts/import', csv, { 'content-type': 'text/csv' }); eq(ir.status, 200); eq(ir.data.counts.neu, 2, 'trotzdem importiert');
+  eq(ir.data.rows.find((r) => r.contract_no === 'L-1653-1').start_before_registration, '2024-03-15', 'Ergebnis');
+  const again = await U.fleet.req('POST', '/api/contracts/import?dry_run=1', csv, { 'content-type': 'text/csv' }); ok(again.data.rows.every((r) => !('start_before_registration' in r)), 'vorhandene Zeilen ohne Hinweis');
+  const fs = await import('node:fs'); ok(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8').includes("data-ctimpreg") , 'Oberfläche');
+  const { STRINGS } = await import('../public/i18n.js'); for (const l of ['de', 'uk', 'en']) ok(STRINGS[l].ct_imp_before_reg.includes('{ez}'), l);
+});
+
 await test('Dokumentation (README, CHECKPOINT) nennt die aktuelle Anzahl der Abnahmetests', async () => {
   const n = passed + failed + 1; const { readFileSync } = await import('node:fs');
   const rd = readFileSync(new URL('../README.md', import.meta.url), 'utf8').match(/# (\d+) Abnahmetests/);
